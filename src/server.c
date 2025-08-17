@@ -22,100 +22,31 @@
 */
 
 #include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
+
 #include <stdint.h>
 #include <stdbool.h>
 
 #include <winsock2.h>
 #include <windows.h>
-#include <tchar.h>
-#include <setupapi.h>
-#include <devguid.h>
-#include <regstr.h>
-#include <ws2tcpip.h>
-#include <inttypes.h>
 #include <time.h>
 
-#define MAX_CLIENTS   3
-#define DEFAULT_PORT  9000
-#define BUFFER_SIZE   1024*10
-#define CTRL_HEADER   "ctrlInfo:"
-#define DECOLLATOR    ",\n"
+#include "main.h"
+#include "DCM.h"
+#include "logPrint.h"
+#include "public.h"
+#include "client.h"
+#include "COM.h"
 
-
-
-
-typedef struct {
-    SOCKET socket;
-    HANDLE hThread;
-    DWORD threadId;
-    uint8_t index;
-    __int64 connectTime;    // 连接时间（毫秒级时间戳）
-} ClientInfo_t;
-
-typedef struct {
-    HANDLE hCom;
-    BOOL isOpen;
-    char portName[10];
-    DCB dcb;
-    HANDLE hThread;
-    DWORD threadId;
-} ComPortInfo_t;
-
-typedef struct {
-    uint8_t serverPrintData; // 0，不显示，1为字符串显示，2为Hex显示
-    uint8_t clientCount;
-    SOCKET *monopolizeSoclet; // 独占串口收到的数据
-    int8_t  monopolizeIndex;
-    uint16_t port;
-    time_t startTime;
-    uint32_t linkCount;
-} runInfo_t;
-
-runInfo_t  runInfo = {
-  .serverPrintData = 0,
-  .clientCount = 0,
-  .monopolizeSoclet = NULL,
-  .monopolizeIndex = 0,
-  .port = DEFAULT_PORT,
-  .startTime = 0,
-  .linkCount = 0,
-};
-
-ClientInfo_t clients[MAX_CLIENTS];
-ComPortInfo_t comPort = { INVALID_HANDLE_VALUE, FALSE, "", {0}, NULL, 0 };
-CRITICAL_SECTION csClient, csComPort;
-SOCKET serverSocket = INVALID_SOCKET;
-HANDLE hComThread = NULL;
-CRITICAL_SECTION g_log_cs;
-
-
-int SendToAllClients(const char* message, int len);
-void CloseClient(uint8_t index, char *func);
-void HandleClientCommand(SOCKET clientSocket, uint8_t clientIndex, const char* command);
-void ListComPorts(SOCKET *clientSocket);
-int8_t OpenComPort(const char* portName, uint32_t baudRate, uint8_t dataBits, uint8_t stopBits, uint8_t parity);
-void CloseComPort();
-DWORD WINAPI ComRecvDataThread(LPVOID lpParam);
-int printfSend(SOCKET *Socket, const char *fmt, ...);
-void printf_hex8(const uint8_t *pdata, uint16_t len, uint8_t numEnter, uint8_t endEnter);
-char *getCurrentTime(void) ;
-void updataConsoleTitle(char *threadName, DWORD theradID);
-__int64 GetCurrentTimeMillis(void);
-char *getSendRecvDirectionStr(char *direct, uint8_t index);
-void StopDeviceChangeMonitor(void);
-void StartDeviceChangeMonitor(void);
+static SOCKET serverSocket = INVALID_SOCKET;
 int ParsePortParameter(int argc, char const* argv[], int defaultPort);
-int SafePrintf(const char* format, ...) __attribute__((format(printf, 1, 2)));
-
-void HandleClientCommand(SOCKET clientSocket, uint8_t clientIndex, const char* command) 
+ 
+void HandleClientCommand( SOCKET clientSocket, uint8_t clientIndex, const char* command) 
 {
     char *token, temp[100];
     strcpy(temp, command);
 
     if (strncmp(command, "comlist", strlen("comlist")) == 0) {
-      ListComPorts(&clientSocket);
+      sendListComPorts(&clientSocket);
     }
     else if (strncmp(command, "setRecvCOMdataTo", strlen("setRecvCOMdataTo")) == 0) {
       token = strtok(temp, DECOLLATOR);
@@ -210,471 +141,9 @@ void HandleClientCommand(SOCKET clientSocket, uint8_t clientIndex, const char* c
 }
 
 
-void ListComPorts(SOCKET *clientSocket) 
-{
-    HDEVINFO hDevInfo = SetupDiGetClassDevs(&GUID_DEVCLASS_PORTS, NULL, NULL, DIGCF_PRESENT);
-    if (hDevInfo == INVALID_HANDLE_VALUE) {
-      printfSend(clientSocket, "%sFailed to get COM port list\n", CTRL_HEADER); 
-      return;
-    }
-
-    bool first = true;  
-    char response[1024] = CTRL_HEADER "COM Ports: ";
-
-    SP_DEVINFO_DATA deviceInfoData;
-    deviceInfoData.cbSize = sizeof(SP_DEVINFO_DATA);
-    for (DWORD i = 0; SetupDiEnumDeviceInfo(hDevInfo, i, &deviceInfoData); i++) { 
-        BYTE buffer[256];
-        DWORD dataType, bufferSize = sizeof buffer;
-        WINBOOL ret = SetupDiGetDeviceRegistryPropertyA(hDevInfo, &deviceInfoData, 
-            SPDRP_FRIENDLYNAME, &dataType, buffer, bufferSize, &bufferSize);
-        if ( ret == FALSE ) 
-          continue;
-
-        char* portName = strstr((char*)buffer, "COM");
-        if (portName) {
-            char* end = strchr(portName, ')');
-            if (end) *end = '\0';
-            if (!first) 
-                strcat(response, ", ");
-            strcat(response, portName);
-            first = false;
-        }
-    }
-
-    SetupDiDestroyDeviceInfoList(hDevInfo);
-
-    if (first)
-        strcat(response, "No COM ports found"); 
- 
-    printfSend(clientSocket, "%s\n", response);
-}
-
-int8_t OpenComPort(const char* portName, uint32_t baudRate, 
-  uint8_t dataBits, uint8_t stopBits, uint8_t parity)
-{
-    char fullPortName[20];
-    sprintf(fullPortName, "\\\\.\\%s", portName);
-
-    EnterCriticalSection(&csComPort);
-    if ( comPort.isOpen )
-        CloseComPort();
-
-    comPort.hCom = CreateFileA(fullPortName, 
-                              GENERIC_READ | GENERIC_WRITE,
-                              0,
-                              NULL,
-                              OPEN_EXISTING,
-                              FILE_FLAG_OVERLAPPED, // 异步模式，同步模式写0
-                              NULL);
-
-    if (comPort.hCom == INVALID_HANDLE_VALUE) {
-        LeaveCriticalSection(&csComPort);
-        return -1;
-    }
-
-    // 设置串口参数
-    memset(&comPort.dcb, 0, sizeof(DCB));
-    comPort.dcb.DCBlength = sizeof(DCB);
-    if (!GetCommState(comPort.hCom, &comPort.dcb)) {
-        CloseHandle(comPort.hCom);
-        comPort.hCom = INVALID_HANDLE_VALUE;
-        LeaveCriticalSection(&csComPort);
-        return -2;
-    }
-
-    // 确保 DCB 正确配置
-    comPort.dcb.BaudRate = baudRate;          // 波特率（如 9600, 115200）
-    comPort.dcb.ByteSize = (BYTE)dataBits;    // 数据位（5,6,7,8）
-    comPort.dcb.StopBits = stopBits == 1 ? ONESTOPBIT : TWOSTOPBITS;  // 停止位（1 或 2）
-    comPort.dcb.Parity = (BYTE)parity;        // 校验位（0=NONE, 1=ODD, 2=EVEN, 3=MARK, 4=SPACE）
-    
-    // 必须设置的标志位
-    comPort.dcb.fBinary = TRUE;               // 必须为 TRUE（Windows 串口仅支持二进制模式）
-    comPort.dcb.fOutxCtsFlow = FALSE;         // 禁用 CTS 流控
-    comPort.dcb.fOutxDsrFlow = FALSE;         // 禁用 DSR 流控
-    comPort.dcb.fDtrControl = DTR_CONTROL_ENABLE;  // DTR 信号控制
-    comPort.dcb.fRtsControl = RTS_CONTROL_ENABLE;  // RTS 信号控制
-    comPort.dcb.fOutX = FALSE;                // 禁用 XON/XOFF 输出流控
-    comPort.dcb.fInX = FALSE;                 // 禁用 XON/XOFF 输入流控
-    comPort.dcb.fErrorChar = FALSE;           // 禁用错误替换字符
-    comPort.dcb.fNull = FALSE;                // 禁止丢弃 NULL 字节
-    comPort.dcb.fAbortOnError = FALSE;        // 发生错误时不终止读写操作
-
-    if (!SetCommState(comPort.hCom, &comPort.dcb)) {
-        CloseHandle(comPort.hCom);
-        comPort.hCom = INVALID_HANDLE_VALUE;
-        LeaveCriticalSection(&csComPort);
-        return -3;
-    }
-
-    // 设置超时
-    COMMTIMEOUTS timeouts = {0};
-    timeouts.ReadIntervalTimeout = MAXDWORD;
-    timeouts.ReadTotalTimeoutMultiplier = 0;
-    timeouts.ReadTotalTimeoutConstant = 0;
-    timeouts.WriteTotalTimeoutMultiplier = 10;
-    timeouts.WriteTotalTimeoutConstant = 1000;
-    SetCommTimeouts(comPort.hCom, &timeouts);
-
-    //strcpy(comPort.portName, portName, sizeof(comPort.portName) - 1);
-    memset(comPort.portName, 0, sizeof comPort.portName);
-    strcpy(comPort.portName, portName);
-    comPort.isOpen = TRUE;
-    
-    // 创建串口读取线程
-    comPort.hThread = CreateThread(NULL, 0, ComRecvDataThread, NULL, 0, &comPort.threadId);
-    if (comPort.hThread == NULL) {
-        CloseHandle(comPort.hCom);
-        comPort.hCom = INVALID_HANDLE_VALUE;
-        comPort.isOpen = FALSE;
-        LeaveCriticalSection(&csComPort);
-        return -4;
-    }
-
-    LeaveCriticalSection(&csComPort);
-    return 0;
-}
-
-void CloseComPort(void) 
-{
-  if (comPort.isOpen == FALSE) 
-    return;
-
-  comPort.isOpen = FALSE;
-  WINBOOL closeComRet = FALSE, closeThreadRet = FALSE ;
-
-  EnterCriticalSection(&csComPort);
-  if (comPort.hThread) {
-    // 等待线程退出
-    WaitForSingleObject(comPort.hThread, 1000);
-    closeThreadRet = CloseHandle(comPort.hThread);
-    comPort.hThread = NULL;
-  }
-  
-  if (comPort.hCom != INVALID_HANDLE_VALUE) {
-      closeComRet = CloseHandle(comPort.hCom);
-      comPort.hCom = INVALID_HANDLE_VALUE;
-  }
-
-  printfSend(NULL, "%sclosed %s %s, thread exit %s.\n", CTRL_HEADER, comPort.portName, 
-     closeComRet == FALSE? "failed":"success", closeThreadRet == FALSE? "failed":"success");
-  memset(comPort.portName, 0, sizeof comPort.portName);
-  
-  LeaveCriticalSection(&csComPort);
-}
-
-DWORD WINAPI ComRecvDataThread(LPVOID lpParam) {
-    if(lpParam){}
-    char comRecvBuffer[BUFFER_SIZE];
-    DWORD bytesRead;
-    OVERLAPPED overlapped = {0};
-    overlapped.hEvent = CreateEvent(NULL, TRUE, FALSE, NULL);
-    WINBOOL readRet;
-    DWORD lastUpdateTime = 0, currentTime = 0;
-    const DWORD updateInterval = 1500; // 1.5秒更新一次
-
-    while ( comPort.isOpen ) {
-        // 重置重叠结构
-        memset(&overlapped, 0, sizeof(OVERLAPPED));
-        overlapped.hEvent = CreateEvent(NULL, TRUE, FALSE, NULL);
-        
-        // 发起异步读取
-        readRet = ReadFile(comPort.hCom, comRecvBuffer, (sizeof comRecvBuffer) - 1, &bytesRead, &overlapped);
-        
-        if (!readRet) {
-            DWORD error = GetLastError();
-            if (error == ERROR_IO_PENDING) {
-                // 等待读取完成或超时
-                DWORD waitResult = WaitForSingleObject(overlapped.hEvent, 1000);
-                if (waitResult == WAIT_TIMEOUT) {
-                    // 超时处理 - 按间隔更新状态
-                    updataConsoleTitle("COM: Waiting", GetCurrentThreadId());
-                    CloseHandle(overlapped.hEvent);
-                    continue;
-                }
-                else if (waitResult == WAIT_OBJECT_0) {
-                    // 读取完成
-                    if (!GetOverlappedResult(comPort.hCom, &overlapped, &bytesRead, FALSE)) {
-                        error = GetLastError();
-                        if (error != ERROR_OPERATION_ABORTED) {
-                            printfSend(NULL, "%s%s error %ld\n", CTRL_HEADER, comPort.portName, error);
-                            CloseComPort();
-                            break;
-                        }
-                    }
-                }
-            }
-            else if (error != ERROR_OPERATION_ABORTED) { 
-              printfSend(NULL, "%s%s error %ld\n", CTRL_HEADER, comPort.portName, error);
-              CloseComPort();
-              break;
-            }
-        }
-
-        // 处理接收到的数据或空读取
-        if (bytesRead == 0) {
-            CloseHandle(overlapped.hEvent);
-            
-            // 按间隔更新状态
-            currentTime = GetTickCount();
-            if (currentTime - lastUpdateTime >= updateInterval) {
-                updataConsoleTitle("COM", GetCurrentThreadId());
-                lastUpdateTime = currentTime;
-            }
-            continue;
-        }
- 
-        // 处理接收到的数据
-        int sendRet = 0;
-        if (runInfo.monopolizeSoclet != NULL) {
-            // 发送给独立客户端
-            sendRet = send(*runInfo.monopolizeSoclet, comRecvBuffer, bytesRead, 0);
-            if (sendRet <= 0) {
-                SafePrintf("send monopolize clients failed ! code: %d\n", sendRet);
-                runInfo.monopolizeSoclet = NULL;
-                sendRet = SendToAllClients(comRecvBuffer, bytesRead);
-            }
-        }
-        else 
-            sendRet = SendToAllClients(comRecvBuffer, bytesRead);
-        
-
-        // 打印日志
-        char *Direct = getSendRecvDirectionStr("[COM --> TCP]", 0);
-        char *timeStr = getCurrentTime();
-        timeStr[strlen(timeStr)] = ' ';
-        static uint64_t sendCount = 0;
-
-        SafePrintf("%s%6I64d [%s]  %-6d/%-6ld Byte (%s : %ld)%s\n", 
-            timeStr, ++sendCount, Direct, sendRet, bytesRead, 
-            sendRet == (int)bytesRead ? "OK":"Fail", bytesRead - sendRet,
-            runInfo.serverPrintData != 0? " data:":" ");
-            
-        if (runInfo.serverPrintData != 0) { 
-            if (runInfo.serverPrintData == 1)
-                puts(comRecvBuffer);
-            if (runInfo.serverPrintData == 2)
-                printf_hex8((uint8_t*)comRecvBuffer, bytesRead, 40, 2);
-        }
-
-        CloseHandle(overlapped.hEvent);
-    }
-
-    CloseHandle(overlapped.hEvent); 
-    return 0;
-}
-
-int SendToAllClients(const char* message, int len) 
-{
-    int ret = 0;
-    EnterCriticalSection(&csClient);
-    for (int i = 0; i < MAX_CLIENTS; i++) {
-        if (clients[i].socket != INVALID_SOCKET) 
-          ret = send(clients[i].socket, message, len, 0);
-    }
-    LeaveCriticalSection(&csClient);
-    return ret;
-}
-
-DWORD WINAPI ClientRecvDataThread(LPVOID lpParam) 
-{
-    if (lpParam == NULL) { 
-        SafePrintf("client thread not Client info introduction\n");
-        return -1;
-    }
-
-    ClientInfo_t *clientInfo = (ClientInfo_t*)lpParam;
-    char tcpRecvBuffer[BUFFER_SIZE];
-    int bytesReceived = 0, ret;
-    fd_set readSet;
-    struct timeval timeout;
-    uint64_t sendCount = 0;
-    OVERLAPPED writeOverlapped = {0};
-
-    // 设置socket为非阻塞模式
-    u_long mode = 1; // 1表示非阻塞，0表示阻塞
-    if (ioctlsocket(clientInfo->socket, FIONBIO, &mode) != 0) {
-        SafePrintf("Set non-blocking failed for client %d, error: %d\n", 
-               clientInfo->index, WSAGetLastError());
-        CloseClient(clientInfo->index, "设置非阻塞失败");
-        return -1;
-    }
-
-    char threadNameStr[20];
-
-    // 发送连接成功消息  
-    printfSend(&clientInfo->socket, "%sOK! your index %d\n", CTRL_HEADER, clientInfo->index);
-
-    while (true) {
-        // 检查客户端socket是否仍然有效
-        if (clientInfo->socket == INVALID_SOCKET)
-            break;
-
-        FD_ZERO(&readSet);
-        FD_SET(clientInfo->socket, &readSet);
-
-        // 设置超时时间为100毫秒
-        timeout.tv_sec = 1;
-        timeout.tv_usec = 0; // 100毫秒
-
-        ret = select(0, &readSet, NULL, NULL, &timeout);
-        
-        if (ret == SOCKET_ERROR) {
-            SafePrintf("select error for client %d, error: %d\n",
-                   clientInfo->index, WSAGetLastError());
-            break;
-        }
-        else if (ret == 0) {
-            // 超时，没有数据可读，继续循环
-            memset(threadNameStr, 0, sizeof threadNameStr );
-            sprintf(threadNameStr, "client %d ", clientInfo->index);
-            updataConsoleTitle(threadNameStr, GetCurrentThreadId());
-            continue;
-        }
-
-        // 有数据可读
-        bytesReceived = recv(clientInfo->socket, tcpRecvBuffer, sizeof(tcpRecvBuffer) - 1, 0);
-        
-        if (bytesReceived == SOCKET_ERROR) {
-            int error = WSAGetLastError();
-            if (error == WSAEWOULDBLOCK) {
-                // 非阻塞模式下没有数据是正常情况
-                continue;
-            }
-            else {
-                // 其他错误，断开连接
-                SafePrintf("recv error for client %d, error: %d\n", 
-                       clientInfo->index, error);
-                break;
-            }
-        }
-        else if (bytesReceived == 0) {
-            // 客户端正常关闭连接
-            SafePrintf("client %d gracefully disconnected\n", clientInfo->index);
-            break;
-        }
-
-        // 正常接收到数据
-        tcpRecvBuffer[bytesReceived] = '\0';
-
-        // 检查是否是控制命令
-        if (strncmp(tcpRecvBuffer, CTRL_HEADER, strlen(CTRL_HEADER)) == 0) {
-            HandleClientCommand(clientInfo->socket, clientInfo->index, 
-                              tcpRecvBuffer + strlen(CTRL_HEADER));
-            continue;
-        }
-        
-        // 判断串口是否已经打开
-        if (comPort.isOpen == FALSE) {
-            printfSend(&clientInfo->socket, "%sCOM not open !\n", CTRL_HEADER);
-            continue;
-        }
-
-        // 普通数据，发送到串口 
-        DWORD bytesWritten, error = 0;
-        EnterCriticalSection(&csComPort);
-
-        writeOverlapped.hEvent = CreateEvent(NULL, TRUE, FALSE, NULL); 
-        WINBOOL WriteRet = WriteFile(comPort.hCom, tcpRecvBuffer, bytesReceived, &bytesWritten, &writeOverlapped);
-        if (!WriteRet) {
-            error = GetLastError();
-            if (error == ERROR_IO_PENDING) {
-                // 等待写入完成
-                if (!GetOverlappedResult(comPort.hCom, &writeOverlapped, &bytesWritten, TRUE)) {
-                    // 这里还是真正的错误
-                    error = GetLastError();
-                    printfSend(&clientInfo->socket, "%sCOM write failed: %d\n", CTRL_HEADER, error);
-                }
-                else{
-                  error = 0;
-                  WriteRet = TRUE;
-                }
-            } 
-            else {
-                printfSend(&clientInfo->socket, "%sCOM write error: %d\n", CTRL_HEADER, error);
-            }
-        }
-        CloseHandle(writeOverlapped.hEvent);
-
-        LeaveCriticalSection(&csComPort);
-        
-        if( error == 22 ) // 设备可能已经拔出
-          CloseComPort(); 
-
-        char *Direct = getSendRecvDirectionStr("[TCP --> COM]", clientInfo->index);
-        char *timeStr = getCurrentTime();
-        timeStr[strlen(timeStr)] = ' ';
- 
-        SafePrintf("%s%6I64d [%s]  %-6ld/%-6d Byte (%s : %ld)%s\n",  timeStr, ++sendCount, Direct,
-               bytesWritten, bytesReceived, WriteRet ? "OK" : "Fail", error,
-               runInfo.serverPrintData != 0 ? " data:" : " ");
-               
-        if (runInfo.serverPrintData != 0) {
-            if (runInfo.serverPrintData == 1) {
-                SafePrintf("%s", tcpRecvBuffer);
-            }
-            if (runInfo.serverPrintData == 2) {
-                printf_hex8((uint8_t*)tcpRecvBuffer, bytesReceived, 40, 2);
-            }
-        }
-    }
-
-    SafePrintf("client %d disconnected, last recv code: %d\n", 
-           clientInfo->index, bytesReceived);
- 
-    CloseClient(clientInfo->index, "线程关闭");
- 
-    return 0;
-}
-
-void addClient(uint8_t index, SOCKET socket)
-{
-    // 添加新客户端并记录精确连接时间
-    clients[index].index = index;
-    clients[index].socket = socket;
-    clients[index].connectTime = GetCurrentTimeMillis();  // 记录精确到毫秒的连接时间
-    clients[index].hThread = CreateThread(NULL, 0, ClientRecvDataThread, 
-      &clients[index], 0, &clients[index].threadId);
-    
-    if( clients[index].hThread != NULL ){
-      runInfo.clientCount++;
-      runInfo.linkCount++;
-      SafePrintf("The %d(index %d) Client connected at %I64d ms, Total clients: %d\n", 
-        runInfo.clientCount, clients[index].index, clients[index].connectTime, runInfo.linkCount);
-    }
-}
 
 
-void CloseClient(uint8_t index, char *reason) 
-{
-    if (index >= MAX_CLIENTS || clients[index].socket == INVALID_SOCKET) {
-        SafePrintf("Invalid client index %d or socket already closed\n", index);
-        return;
-    }
-
-    EnterCriticalSection(&csClient); 
-
-    // 关闭套接字
-    closesocket(clients[index].socket);
-    clients[index].socket = INVALID_SOCKET;
-
-    // 关闭线程
-    if (clients[index].hThread) {
-        WaitForSingleObject(clients[index].hThread, 1000);
-        CloseHandle(clients[index].hThread);
-        clients[index].hThread = NULL;
-    }
-
-    if (runInfo.clientCount > 0)
-        runInfo.clientCount--;
-
-    SafePrintf("Closed client %d, reason: %s\n", index, reason);
-    LeaveCriticalSection(&csClient);
-}
-
-
-int FindAvailablePort(int startPort) {
+static int FindAvailablePort(int startPort) {
     WSADATA wsaData;
     if (WSAStartup(MAKEWORD(2, 2), &wsaData) != 0) {
         return -1;
@@ -707,94 +176,13 @@ int FindAvailablePort(int startPort) {
     return -1;
 }
 
-/*=============================================================================
- 功   能：以16进制打印输出单字节数组
- 参   数：pdata			-->字节数组
-					len				-->数组长度
-					numEnter 	-->显示多少个字节换行，0则不换行
-					endEnter	-->打印结束后进行多少次换行
- 返   回：无
- 描   述：无
-=============================================================================*/
-void printf_hex8(const uint8_t *pdata, uint16_t len, uint8_t numEnter, uint8_t endEnter)
-{
-  EnterCriticalSection(&g_log_cs);
- 
-	uint16_t i;
-	for(i = 0; i< len; i++){
-		if(numEnter && i%numEnter == 0 && i!=0)
-			printf("\n");
-		printf("%02X ", pdata[i]);
-	}
-	while(endEnter--)
-		printf("\n");
-  LeaveCriticalSection(&g_log_cs);
-}
 
-/**
- * @brief  套接字发送字符串，使用类似于printf函数
- * @param 
- *		@arg Socket：指定发给客户端套接字指针，如果为孔就不指定客户端发送给所有客户端
- *		@arg fmt: printf 格式
- * @retval 
- */
-int printfSend(SOCKET *Socket, const char *fmt, ...)
-{
-  EnterCriticalSection(&g_log_cs);
-  
-	static char char_buff[1024]; // 字符串缓冲区
-	memset(char_buff, 0, sizeof char_buff);
- 
-  // args为定义的一个指向可变参数的变量，va_list以及下边要用到的
-  // va_start,va_end都是是在定义可变参数函数中必须要用到宏，在stdarg.h头文件中定义
-	va_list args; 
-  va_start(args, fmt);
-  int retLen = vsprintf(char_buff, fmt, args);
-  va_end(args); // 初始化args的函数，使其指向可变参数的第一个参数，fmt是可变参数的前一个参数
-  LeaveCriticalSection(&g_log_cs);
 
-  if( Socket == NULL )
-    return SendToAllClients(char_buff, retLen);
-  else
-    return send(*Socket, char_buff, retLen, 0);
-}
 
-int SafePrintf(const char* format, ...)
-{
-    EnterCriticalSection(&g_log_cs);
-    
-    va_list args;
-    va_start(args, format);
-    int ret = vprintf(format, args);
-    va_end(args);
-    
-    LeaveCriticalSection(&g_log_cs);
-    return ret;
-}
 
-char *getCurrentTime(void) 
-{
-  static char timeStr[40];
-  memset(timeStr, 0, sizeof timeStr);
-  SYSTEMTIME st;
-  GetLocalTime(&st);  // 获取本地时间
 
-  // 格式化为 "YYYY-MM-DD HH:MM:SS"
-  sprintf(timeStr, "%04d-%02d-%02d %02d:%02d:%02d",
-          st.wYear, st.wMonth, st.wDay,
-          st.wHour, st.wMinute, st.wSecond);
-  return timeStr;
-}
 
-void print_build_info(void) 
-{
-    printf("\n========================================\n");
-    printf("  Program    : %s\n", "串口转TCP服务端");
-    printf("  Version    : %s\n", "1.0.0");
-    printf("  Build Date : %s %s\n", __DATE__, __TIME__);
-    printf("  Compiler   : GCC %d.%d.%d\n", __GNUC__, __GNUC_MINOR__, __GNUC_PATCHLEVEL__);
-    printf("========================================\n\n");
-}
+
 
 int main(int argc, char const *argv[])
 {
@@ -810,9 +198,10 @@ int main(int argc, char const *argv[])
         return 1;
     }
 
-    InitializeCriticalSection(&g_log_cs);
-    InitializeCriticalSection(&csClient);
-    InitializeCriticalSection(&csComPort);
+    logPrintResourceInit(true); 
+    ClientResourceInit(true);
+    ComPortResourceInit(true);
+    
 
     // 初始化客户端数组
     for (uint8_t i = 0; i < MAX_CLIENTS; i++) {
@@ -880,7 +269,7 @@ int main(int argc, char const *argv[])
     struct timeval timeout;
     int selRet;
     SOCKET clientSocket;
-
+    
     while (true) {
         FD_ZERO(&readSet);
         FD_SET(serverSocket, &readSet);
@@ -906,7 +295,8 @@ int main(int argc, char const *argv[])
             SafePrintf("accept failed, error=%d\n", WSAGetLastError());
             continue;
         }
-
+        
+        extern CRITICAL_SECTION csClient;
         EnterCriticalSection(&csClient);
 
         // 查找空闲位置或最早的客户端
@@ -952,80 +342,13 @@ int main(int argc, char const *argv[])
     CloseClient( i, "清理");
   CloseComPort();
   closesocket(serverSocket);
-  DeleteCriticalSection(&csClient);
-  DeleteCriticalSection(&csComPort);
-  DeleteCriticalSection(&g_log_cs);
+  ClientResourceInit(false);
+  ComPortResourceInit(true);
+  logPrintResourceInit(false);
   WSACleanup();
   StopDeviceChangeMonitor();  
   return 0;
 }
-
-void updataConsoleTitle(char *threadName, DWORD theradID)
-{ 
-  char title[100];
-  memset(title, 0, sizeof title);
-  time_t currentTime;
-  time(&currentTime); 
-  currentTime -= runInfo.startTime;
-  //currentTime += 60*60*24 - 6;
-
-  time_t sec = currentTime % 60;
-  time_t min = currentTime / 60 % 60;
-  time_t hour = currentTime / 60 / 60 % 24;
-  time_t day = currentTime / 60 / 60 / 24;
- 
-
-  sprintf(title,"串口转TCP     服务端口号：%d   "
-    "已运行%I64u天：%02I64u:%02I64u:%02I64u   客户端：%d/%d   %s%s   线程%ld：%s", 
-       runInfo.port, day, hour, min,sec, runInfo.clientCount, MAX_CLIENTS,
-       comPort.isOpen? "打开串口：":" ", comPort.portName, theradID, threadName =! NULL? threadName:" "); 
-  SetConsoleTitleA( title );
-}
-
-// 获取当前时间戳（毫秒）
-__int64 GetCurrentTimeMillis(void) 
-{
-    struct _timeb timebuffer;
-    _ftime_s(&timebuffer);
-    return (__int64)timebuffer.time * 1000 + timebuffer.millitm;
-}
-
-
-/*
-获取收发方向字符串
- direct 参数如下是如下字符串
-   [COM --> TCP]
-   [TCP --> COM]
-
-  index 客户端索引号
-*/
-char *getSendRecvDirectionStr(char *direct, uint8_t index)
-{
-  char *endptr;  // 用于检测未转换的字符 
-  uint8_t comNum = strtol(&comPort.portName[3], &endptr, 10);
-
-  static char retStr[20];
-  memset(retStr, 0, sizeof retStr);
-  strcpy(retStr, "[    -->    ]");
-
-  if( strcmp(direct, "[TCP --> COM]") == 0 ){
-    memset(retStr, 0, sizeof retStr);
-    sprintf(retStr, "TCP%-3d--> COM%-3d" , index, comNum);
-  }
-
-  if( strcmp(direct, "[COM --> TCP]") == 0 ){
-    memset(retStr, 0, sizeof retStr);
-
-    if( runInfo.monopolizeSoclet != NULL ) // 独占串口数据
-      sprintf(retStr, "COM%-3d--> TCP%-3d" , comNum, runInfo.monopolizeIndex);
-    else
-      sprintf(retStr, "COM%-3d--> TCP   " , comNum);
-  }
-
-  return retStr;
-}
-
-
 
 
 #define MIN_USER_PORT   1024
@@ -1104,93 +427,4 @@ int ParsePortParameter(int argc, char const* argv[], int defaultPort)
 
 
 
-
-#include <dbt.h>       // 设备通知相关定义
-#include <winuser.h>   // 窗口消息相关
-
-// 全局变量
-static volatile BOOL g_bDeviceChangeThreadRunning = FALSE;
-HANDLE g_hDeviceChangeThread = NULL;
-
-// 设备变化通知线程
-DWORD WINAPI DeviceChangeMonitorThread(LPVOID lpParam)
-{
-    if( lpParam == NULL ){}
-
-    // 创建隐藏窗口接收消息
-    HWND hWnd = CreateWindowEx(0, "STATIC", "DeviceMonitor", 0, 0, 0, 0, 0, NULL, NULL, NULL, NULL);
-
-    // 设置设备接口通知
-    DEV_BROADCAST_DEVICEINTERFACE NotificationFilter = {0};
-    NotificationFilter.dbcc_size = sizeof NotificationFilter;
-    NotificationFilter.dbcc_devicetype = DBT_DEVTYP_DEVICEINTERFACE;
-    NotificationFilter.dbcc_classguid = GUID_DEVINTERFACE_COMPORT;
-
-    HDEVNOTIFY hDevNotify = RegisterDeviceNotification(hWnd, &NotificationFilter, DEVICE_NOTIFY_WINDOW_HANDLE);
-    if (hDevNotify == NULL) {
-        SafePrintf("RegisterDeviceNotification failed: %ld\n", GetLastError());
-        DestroyWindow(hWnd);
-        return 1;
-    }
-
-    g_bDeviceChangeThreadRunning = TRUE;
-    MSG msg;
-    while ( g_bDeviceChangeThreadRunning && GetMessage(&msg, hWnd, 0, 0) ) {
-      updataConsoleTitle("DCM",  GetCurrentThreadId());
-
-      // 打开 word 后 任何地方按下 crtl+c crtl+V 等快捷键操作这里的消息就会变的很多*/
-      SafePrintf("Device change detected, wParam:%I64d, lParam:%I64d, message:%d, theradID:%ld\n", 
-        msg.wParam, msg.lParam, msg.message, GetCurrentThreadId());
-      
-      // 以下参数是设备插拔或最明显的变化
-      if( msg.wParam == 0 && msg.lParam == 0 && msg.message == 49926 ){
-        printfSend(NULL, "%sDevice change detected (%I64d:%I64d)\n", 
-          CTRL_HEADER, msg.wParam, msg.message); 
-        ListComPorts(NULL);
-      }
-
-      #if 0
-        if (msg.message == WM_DEVICECHANGE) {
-            switch (msg.wParam) {
-                case DBT_DEVICEARRIVAL:         // 设备插入
-                case DBT_DEVICEREMOVECOMPLETE:  // 设备拔出 
-                    // 通知所有客户端串口列表变化
-                    break;
-            }
-        }
-        #endif
-        TranslateMessage(&msg);
-        DispatchMessage(&msg);
-    }
-
-    // 清理
-    UnregisterDeviceNotification(hDevNotify);
-    DestroyWindow(hWnd);
-    return 0;
-}
-
-// 启动设备监听线程
-void StartDeviceChangeMonitor(void)
-{
-  // 在main函数开始处添加
-  WNDCLASS wc = {0};
-  wc.lpfnWndProc = DefWindowProc;
-  wc.hInstance = GetModuleHandle(NULL);
-  wc.lpszClassName = "DeviceMonitor";
-  RegisterClass(&wc);
-
-  if (g_hDeviceChangeThread == NULL)
-    g_hDeviceChangeThread = CreateThread(NULL, 0, DeviceChangeMonitorThread, NULL, 0, NULL);
-}
-
-// 停止设备监听线程
-void StopDeviceChangeMonitor(void)
-{
-    g_bDeviceChangeThreadRunning = FALSE;
-    if (g_hDeviceChangeThread) {
-        WaitForSingleObject(g_hDeviceChangeThread, 1000);
-        CloseHandle(g_hDeviceChangeThread);
-        g_hDeviceChangeThread = NULL;
-    }
-}
 

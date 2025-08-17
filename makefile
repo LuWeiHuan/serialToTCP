@@ -29,12 +29,13 @@ PS_MKDIR = powershell -Command "if (-not (Test-Path '$(1)')) { New-Item -ItemTyp
 PS_COPY = powershell -Command "if (Test-Path '$(1)') { Copy-Item -Path '$(1)' -Destination '$(2)' -Force }"
 PS_REMOVE_FILE = powershell -Command "if (Test-Path '$(1)') { Remove-Item -Force '$(1)' }"
 PS_MAKE_SHORTCUT = powershell -Command "$$WshShell = New-Object -ComObject WScript.Shell; $$Shortcut = $$WshShell.CreateShortcut('$(1)'); $$Shortcut.TargetPath = '$(2)'; $$Shortcut.Save()"
+PS_CLEAR_SCREEN = powershell -Command "Clear-Host"  # 新增清屏命令
 
 .PHONY: all clean kill check install uninstall shortcut copy-to-root
 
-all: check $(EXE) copy-to-root
+all: clear-screen check $(EXE) copy-to-root  # 添加清屏依赖
 
-$(EXE): $(OBJS)
+$(EXE): $(OBJS) 
 	@$(call PS_MKDIR,$(BIN_DIR))
 	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS)
 
@@ -45,6 +46,10 @@ $(BUILD_DIR)/%.o: $(SRC_DIR)/%.c
 
 # 包含自动生成的依赖关系
 -include $(DEPS)
+
+# 清屏目标
+clear-screen:
+	@$(PS_CLEAR_SCREEN)
 
 # 检查并终止正在运行的进程
 check:
