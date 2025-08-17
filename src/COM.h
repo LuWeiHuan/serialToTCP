@@ -36,6 +36,11 @@ char *getComPortList(void);
 int8_t OpenComPort(const char* portName, uint32_t baudRate, uint8_t dataBits, uint8_t stopBits, uint8_t parity);
 void CloseComPort();
 
+DWORD ComPortSendData(char const *tcpRecvBuffer, int bytesReceived, DWORD *retError);
+
+void setSendDataToCOMwhetherWait(bool wait);
+bool InitSerialCompletionPort();
+
 #ifdef __cplusplus
 }
 #endif

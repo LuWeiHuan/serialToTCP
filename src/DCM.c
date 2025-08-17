@@ -12,17 +12,8 @@
 */
 
 /*================== 头文件包含     =========================================*/
- 
- 
-
 #include <winsock2.h>
 #include <windows.h>
-#include <tchar.h>
-#include <setupapi.h>
-#include <devguid.h>
-#include <regstr.h>
-
-
 #include <dbt.h>       // 设备通知相关定义
 #include <winuser.h>   // 窗口消息相关
 
@@ -35,14 +26,11 @@
 /*================== 全局共享变量    ========================================*/
 /*================== 本地常量声明    ========================================*/
 /*================== 本地变量声明    ========================================*/
+static volatile BOOL g_bDeviceChangeThreadRunning = FALSE;
+
 /*================== 本地函数声明    ========================================*/
 /*================== 外部函数和变量声明    ==================================*/
 
-
-
-// 全局变量
-static volatile BOOL g_bDeviceChangeThreadRunning = FALSE;
-static HANDLE g_hDeviceChangeThread = NULL;
 
 // 设备变化通知线程
 static DWORD WINAPI DeviceChangeMonitorThread(LPVOID lpParam)
@@ -78,7 +66,7 @@ static DWORD WINAPI DeviceChangeMonitorThread(LPVOID lpParam)
       if( msg.wParam == 0 && msg.lParam == 0 && msg.message == 49926 ){
         printfSend(NULL, "%sDevice change detected (%I64d:%I64d)\n", 
           CTRL_HEADER, msg.wParam, msg.message); 
-        sendListComPorts( NULL ); 
+        sendComPortsListToClient( NULL ); 
       }
 
       #if 0
@@ -101,30 +89,33 @@ static DWORD WINAPI DeviceChangeMonitorThread(LPVOID lpParam)
     return 0;
 }
 
-// 启动设备监听线程
-void StartDeviceChangeMonitor(void)
-{
-  // 在main函数开始处添加
-  WNDCLASS wc = {0};
-  wc.lpfnWndProc = DefWindowProc;
-  wc.hInstance = GetModuleHandle(NULL);
-  wc.lpszClassName = "DeviceMonitor";
-  RegisterClass(&wc);
 
-  if (g_hDeviceChangeThread == NULL)
-    g_hDeviceChangeThread = CreateThread(NULL, 0, DeviceChangeMonitorThread, NULL, 0, NULL);
-}
-
-// 停止设备监听线程
-void StopDeviceChangeMonitor(void)
+void DeviceChangeMonitor(bool state)
 {
+  static HANDLE g_hDeviceChangeThread = NULL; 
+  if( state ) {// 启动设备监听线程
+    WNDCLASS wc = {0};
+    wc.lpfnWndProc = DefWindowProc;
+    wc.hInstance = GetModuleHandle(NULL);
+    wc.lpszClassName = "DeviceMonitor";
+    RegisterClass(&wc);
+
+    if (g_hDeviceChangeThread == NULL)
+      g_hDeviceChangeThread = CreateThread(NULL, 0, 
+          DeviceChangeMonitorThread, NULL, 0, NULL);
+  }
+  else{// 停止设备监听线程
     g_bDeviceChangeThreadRunning = FALSE;
     if (g_hDeviceChangeThread) {
         WaitForSingleObject(g_hDeviceChangeThread, 1000);
         CloseHandle(g_hDeviceChangeThread);
         g_hDeviceChangeThread = NULL;
     }
+
+  }
+
 }
+ 
 
 
 

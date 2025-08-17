@@ -11,6 +11,7 @@ extern "C" {
 #include <stdbool.h>
 
 #include <winsock2.h>
+#include <windows.h>
 
 /*================== 宏定义声明			=========================================*/
 //#define

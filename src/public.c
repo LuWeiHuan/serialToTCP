@@ -17,8 +17,9 @@
 #include "COM.h"
 
 #include <stdio.h>
-
 #include <time.h>
+
+#include <winsock2.h>
 #include <windows.h>
 
 /*================== 本地宏定义     =========================================*/

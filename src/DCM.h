@@ -21,8 +21,7 @@ extern "C" {
 //extern
 
 /*================== 外部函数声明		=========================================*/
-void StopDeviceChangeMonitor(void);
-void StartDeviceChangeMonitor(void);
+void DeviceChangeMonitor(bool state);
 
 #ifdef __cplusplus
 }

@@ -34,12 +34,12 @@ extern ClientInfo_t clients[];
 void ClientResourceInit(bool start);
 int8_t findClientSlot(void);
 
-int SendToClients(SOCKET *Socket, const char* buff, int len);
+int SendDataToClients(SOCKET *Socket, const char* buff, int len);
 void CloseClient(uint8_t index, char *func);
 void addNewClient(uint8_t index, SOCKET socket);
 int printfSend(SOCKET *Socket, const char *fmt, ...);
 
-void sendListComPorts( SOCKET *socket);
+void sendComPortsListToClient( SOCKET *socket);
 #ifdef __cplusplus
 }
 #endif

@@ -30,7 +30,6 @@ ClientInfo_t clients[MAX_CLIENTS];
 
 /*================== 外部函数和变量声明    ==================================*/
 void HandleClientCommand( SOCKET clientSocket, uint8_t clientIndex, const char* command);
-DWORD ComPortSendData(SOCKET Socket,  char const *tcpRecvBuffer, int bytesReceived, uint32_t *retError);
 
 void ClientResourceInit(bool start) 
 {
@@ -51,6 +50,8 @@ void ClientResourceInit(bool start)
     
 }
 
+
+
 DWORD WINAPI ClientRecvDataThread(LPVOID lpParam) 
 {
     if (lpParam == NULL) { 
@@ -60,11 +61,11 @@ DWORD WINAPI ClientRecvDataThread(LPVOID lpParam)
 
     ClientInfo_t *clientInfo = (ClientInfo_t*)lpParam;
     char tcpRecvBuffer[RECV_BUFFER_SIZE];
-    int bytesReceived = 0, ret;
+    int bytesReceived = 0, retSelect;
     fd_set readSet;
     struct timeval timeout;
     uint64_t sendCount = 0;
-    
+    char threadNameStr[20];
 
     // 设置socket为非阻塞模式
     u_long mode = 1; // 1表示非阻塞，0表示阻塞
@@ -74,8 +75,6 @@ DWORD WINAPI ClientRecvDataThread(LPVOID lpParam)
         CloseClient(clientInfo->index, "设置非阻塞失败");
         return -1;
     }
-
-    char threadNameStr[20];
 
     // 发送连接成功消息  
     printfSend(&clientInfo->socket, "%sOK! your index %d\n", CTRL_HEADER, clientInfo->index);
@@ -92,13 +91,13 @@ DWORD WINAPI ClientRecvDataThread(LPVOID lpParam)
         timeout.tv_sec = 1;
         timeout.tv_usec = 0; // 100毫秒
 
-        ret = select(0, &readSet, NULL, NULL, &timeout);
-        if (ret == SOCKET_ERROR) {
+        retSelect = select(0, &readSet, NULL, NULL, &timeout);
+        if (retSelect == SOCKET_ERROR) {
             SafePrintf("select error for client %d, error: %d\n",
                    clientInfo->index, WSAGetLastError());
             break;
         }
-        else if (ret == 0) {
+        else if (retSelect == 0) {
             // 超时，没有数据可读，继续循环
             memset(threadNameStr, 0, sizeof threadNameStr );
             sprintf(threadNameStr, "client %d ", clientInfo->index);
@@ -108,17 +107,16 @@ DWORD WINAPI ClientRecvDataThread(LPVOID lpParam)
 
         // 有数据可读
         bytesReceived = recv(clientInfo->socket, tcpRecvBuffer, sizeof(tcpRecvBuffer) - 1, 0);
-        
         if (bytesReceived == SOCKET_ERROR) {
-            int error = WSAGetLastError();
-            if (error == WSAEWOULDBLOCK) {
+            int WSAerror = WSAGetLastError();
+            if (WSAerror == WSAEWOULDBLOCK) {
                 // 非阻塞模式下没有数据是正常情况
                 continue;
             }
             else {
                 // 其他错误，断开连接
                 SafePrintf("recv error for client %d, error: %d\n", 
-                       clientInfo->index, error);
+                       clientInfo->index, WSAerror);
                 break;
             }
         }
@@ -129,7 +127,7 @@ DWORD WINAPI ClientRecvDataThread(LPVOID lpParam)
         }
         
         // 正常接收到数据
-        tcpRecvBuffer[bytesReceived] = '\0';
+        tcpRecvBuffer[bytesReceived] = '\0';  // 防止命令解析异常
 
         // 检查是否是控制命令
         if (strncmp(tcpRecvBuffer, CTRL_HEADER, strlen(CTRL_HEADER)) == 0) {
@@ -144,53 +142,26 @@ DWORD WINAPI ClientRecvDataThread(LPVOID lpParam)
             continue;
         }
 
-        // 普通数据，发送到串口 
-        DWORD bytesWritten, error = 0;
-        extern CRITICAL_SECTION csComPort;
-        EnterCriticalSection(&csComPort);
+        // 普通数据，发送到串口  
+        DWORD getError = 0;
+        DWORD bytesWritten = ComPortSendData(tcpRecvBuffer, bytesReceived, &getError);
+        if( bytesWritten != (DWORD)bytesReceived )
+          printfSend(&clientInfo->socket, "%sCOM write error: %d\n", CTRL_HEADER, getError);
 
-        OVERLAPPED writeOverlapped = {0};
-        writeOverlapped.hEvent = CreateEvent(NULL, TRUE, FALSE, NULL); 
-        WINBOOL WriteRet = WriteFile(comPort.hCom, tcpRecvBuffer, bytesReceived, &bytesWritten, &writeOverlapped);
-        if (!WriteRet) {
-            error = GetLastError();
-            if (error == ERROR_IO_PENDING) {
-                // 等待写入完成
-                if (!GetOverlappedResult(comPort.hCom, &writeOverlapped, &bytesWritten, TRUE)) {
-                    // 这里还是真正的错误
-                    error = GetLastError();
-                    printfSend(&clientInfo->socket, "%sCOM write failed: %d\n", CTRL_HEADER, error);
-                }
-                else{
-                  error = 0;
-                  WriteRet = TRUE;
-                }
-            }
-            else 
-                printfSend(&clientInfo->socket, "%sCOM write error: %d\n", CTRL_HEADER, error);
-        }
-        CloseHandle(writeOverlapped.hEvent);
-        
-        LeaveCriticalSection(&csComPort);
-        
-        if( error == 22 ) // 设备可能已经拔出
-          CloseComPort(); 
-        
         char *Direct = getSendRecvDirectionStr("[TCP --> COM]", clientInfo->index);
         char *timeStr = getCurrentTime();
-        timeStr[strlen(timeStr)] = ' ';
+        strcat(timeStr, " " );
  
-        SafePrintf("%s%6I64d [%s]  %-6ld/%-6d Byte (%s : %ld)%s\n",  timeStr, ++sendCount, Direct,
-               bytesWritten, bytesReceived, WriteRet ? "OK" : "Fail", error,
+        SafePrintf("%s%6I64d [%s]  %-6ld/%-6d Byte (%s : %ld)%s\n", timeStr, ++sendCount, Direct,
+               bytesWritten, bytesReceived, bytesWritten == (DWORD)bytesReceived? "OK" : "Fail", getError,
                runInfo.serverPrintData != 0 ? " data:" : " ");
                
         if (runInfo.serverPrintData != 0) {
-            if (runInfo.serverPrintData == 1) {
-                SafePrintf("%s", tcpRecvBuffer);
-            }
-            if (runInfo.serverPrintData == 2) {
-                printf_hex8((uint8_t*)tcpRecvBuffer, bytesReceived, 40, 2);
-            }
+            if (runInfo.serverPrintData == 1) 
+              SafePrintf("%s", tcpRecvBuffer);
+              
+            if (runInfo.serverPrintData == 2) 
+              printf_hex8((uint8_t*)tcpRecvBuffer, bytesReceived, 40, 2);
         }
     }
 
@@ -250,7 +221,7 @@ void CloseClient(uint8_t index, char *reason)
 
 
 // Socket 如果为就会发送给所有客户端，不为空且有效的话就会只发送给指定的客户端
-int SendToClients(SOCKET *socket, const char* buff, int len) 
+int SendDataToClients(SOCKET *socket, const char* buff, int len) 
 {
     int ret = 0;
     EnterCriticalSection(&csClient);
@@ -266,9 +237,8 @@ int SendToClients(SOCKET *socket, const char* buff, int len)
     return ret;
 }
 
-void sendListComPorts( SOCKET *socket)
-{ 
-  //SafePrintf("获取串口列表\n");
+void sendComPortsListToClient( SOCKET *socket)
+{
   char *ComList = getComPortList();
   printfSend(socket, "%s%s\n", CTRL_HEADER, 
     ComList == NULL? "Failed to get COM port list":ComList); 
@@ -297,7 +267,7 @@ int printfSend(SOCKET *Socket, const char *fmt, ...)
 
   //LeaveCriticalSection(&g_log_cs);
  
-  return SendToClients(Socket, char_buff, retLen); 
+  return SendDataToClients(Socket, char_buff, retLen); 
 }
 
 // 查找可用的客户端槽位

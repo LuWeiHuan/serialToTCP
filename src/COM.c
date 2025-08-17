@@ -23,22 +23,14 @@
 #include <string.h>
 #include <stdint.h>
 
-#include <winsock2.h>
-#include <windows.h>
-#include <tchar.h>
 #include <setupapi.h>
 #include <devguid.h>
-#include <regstr.h>
-#include <ws2tcpip.h>
-#include <inttypes.h>
-#include <time.h>
-
 
 /*================== 本地宏定义     =========================================*/
 /*================== 全局共享变量    ========================================*/
 /*================== 本地常量声明    ========================================*/
 /*================== 本地变量声明    ========================================*/
-  CRITICAL_SECTION csComPort;
+static  CRITICAL_SECTION csComPort;
 ComPortInfo_t comPort = { INVALID_HANDLE_VALUE, FALSE, "", {0}, NULL, 0 };
 
 /*================== 本地函数声明    ========================================*/
@@ -55,7 +47,6 @@ void ComPortResourceInit(bool start)
       CloseComPort();
     DeleteCriticalSection(&csComPort);
   }
-    
 }
 
 void CloseComPort(void) 
@@ -276,24 +267,18 @@ static DWORD WINAPI ComRecvDataThread(LPVOID lpParam) {
                 updataConsoleTitle("COM", GetCurrentThreadId());
                 lastUpdateTime = currentTime;
             }
-            Sleep(1); // 5ms延迟可使CPU占用降至20%以下
+            Sleep(1); // 1msCPU占用也能很低
             continue;
         }
  
         // 处理接收到的数据
-        int sendRet = 0;
-        if (runInfo.monopolizeSoclet != NULL) {
-            // 发送给独立客户端
-            sendRet = send(*runInfo.monopolizeSoclet, comRecvBuffer, bytesRead, 0);
-            if (sendRet <= 0) {
-                SafePrintf("send monopolize clients failed ! code: %d\n", sendRet);
-                runInfo.monopolizeSoclet = NULL;
-                sendRet = SendToClients(NULL, comRecvBuffer, bytesRead);
-            }
+        int sendRet = SendDataToClients(runInfo.monopolizeSoclet, comRecvBuffer, bytesRead);
+        // 指定客户端发送失败后，再发给其他所有客户端，并将指定的客户端设置为空，下次就是直接发给所有客户端
+        if (sendRet <= 0) {
+          runInfo.monopolizeSoclet = NULL;
+          SafePrintf("send monopolize clients failed ! code: %d\n", sendRet);
+          sendRet = SendDataToClients(NULL, comRecvBuffer, bytesRead);
         }
-        else 
-            sendRet = SendToClients(NULL, comRecvBuffer, bytesRead);
-        
 
         // 打印日志
         char *Direct = getSendRecvDirectionStr("[COM --> TCP]", 0);
@@ -319,3 +304,41 @@ static DWORD WINAPI ComRecvDataThread(LPVOID lpParam) {
     CloseHandle(overlapped.hEvent); 
     return 0;
 }
+
+
+
+
+
+
+static bool waitDataSendComplete = true;
+void setSendDataToCOMwhetherWait(bool wait)
+{
+  waitDataSendComplete = wait;
+}
+
+DWORD ComPortSendData(char const *tcpRecvBuffer, int bytesReceived, DWORD *retError)
+{
+  DWORD bytesWritten = 0, error = 0;
+  OVERLAPPED writeOverlapped = {0};
+  
+  EnterCriticalSection(&csComPort);
+  writeOverlapped.hEvent = CreateEvent(NULL, TRUE, FALSE, NULL); 
+  WINBOOL WriteRet = WriteFile(comPort.hCom, tcpRecvBuffer, bytesReceived, &bytesWritten, &writeOverlapped);
+
+  // 写失败的情况下，如果是IO重叠，可以等待写入完成，如果完不成就是真正的错误 
+  if (!WriteRet &&  (error = GetLastError()) == ERROR_IO_PENDING && waitDataSendComplete) 
+    error = GetOverlappedResult(comPort.hCom, &writeOverlapped, &bytesWritten, TRUE)? 0:GetLastError() ;
+
+  CloseHandle(writeOverlapped.hEvent); 
+  LeaveCriticalSection(&csComPort);
+  
+  if( error == 22 ) // 设备可能已经拔出
+    CloseComPort();
+  if( retError != NULL) 
+    *retError  = error;
+  return bytesWritten;
+}
+
+
+
+
