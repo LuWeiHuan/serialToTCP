@@ -25,17 +25,30 @@
 /*================== 本地常量声明    ========================================*/
 /*================== 本地变量声明    ========================================*/
 /*================== 本地函数声明    ========================================*/
-CRITICAL_SECTION csClient;
+static CRITICAL_SECTION csClient;
 ClientInfo_t clients[MAX_CLIENTS];
 
 /*================== 外部函数和变量声明    ==================================*/
+void HandleClientCommand( SOCKET clientSocket, uint8_t clientIndex, const char* command);
+DWORD ComPortSendData(SOCKET Socket,  char const *tcpRecvBuffer, int bytesReceived, uint32_t *retError);
 
 void ClientResourceInit(bool start) 
 {
-  if( start )
+  if( start ){
+    // 初始化客户端数组
+    for (uint8_t i = 0; i < MAX_CLIENTS; i++) {
+        clients[i].socket = INVALID_SOCKET;
+        clients[i].hThread = NULL;
+    }
     InitializeCriticalSection(&csClient);
-  else
+  }
+  else{
+    // 清理
+    for (uint8_t i = 0; i < MAX_CLIENTS; i++)
+      CloseClient( i, "清理");
     DeleteCriticalSection(&csClient);
+  }
+    
 }
 
 DWORD WINAPI ClientRecvDataThread(LPVOID lpParam) 
@@ -46,12 +59,12 @@ DWORD WINAPI ClientRecvDataThread(LPVOID lpParam)
     }
 
     ClientInfo_t *clientInfo = (ClientInfo_t*)lpParam;
-    char tcpRecvBuffer[BUFFER_SIZE];
+    char tcpRecvBuffer[RECV_BUFFER_SIZE];
     int bytesReceived = 0, ret;
     fd_set readSet;
     struct timeval timeout;
     uint64_t sendCount = 0;
-    OVERLAPPED writeOverlapped = {0};
+    
 
     // 设置socket为非阻塞模式
     u_long mode = 1; // 1表示非阻塞，0表示阻塞
@@ -136,6 +149,7 @@ DWORD WINAPI ClientRecvDataThread(LPVOID lpParam)
         extern CRITICAL_SECTION csComPort;
         EnterCriticalSection(&csComPort);
 
+        OVERLAPPED writeOverlapped = {0};
         writeOverlapped.hEvent = CreateEvent(NULL, TRUE, FALSE, NULL); 
         WINBOOL WriteRet = WriteFile(comPort.hCom, tcpRecvBuffer, bytesReceived, &bytesWritten, &writeOverlapped);
         if (!WriteRet) {
@@ -187,21 +201,23 @@ DWORD WINAPI ClientRecvDataThread(LPVOID lpParam)
     return 0;
 }
 
-void addClient(uint8_t index, SOCKET socket)
-{
-    // 添加新客户端并记录精确连接时间
-    clients[index].index = index;
-    clients[index].socket = socket;
-    clients[index].connectTime = GetCurrentTimeMillis();  // 记录精确到毫秒的连接时间
-    clients[index].hThread = CreateThread(NULL, 0, ClientRecvDataThread, 
-      &clients[index], 0, &clients[index].threadId);
-    
-    if( clients[index].hThread != NULL ){
-      runInfo.clientCount++;
-      runInfo.linkCount++;
-      SafePrintf("The %d(index %d) Client connected at %I64d ms, Total clients: %d\n", 
-        runInfo.clientCount, clients[index].index, clients[index].connectTime, runInfo.linkCount);
-    }
+void addNewClient(uint8_t index, SOCKET socket)
+{       
+  EnterCriticalSection(&csClient); 
+  // 添加新客户端并记录精确连接时间
+  clients[index].index = index;
+  clients[index].socket = socket;
+  clients[index].connectTime = GetCurrentTimeMillis();  // 记录精确到毫秒的连接时间
+  clients[index].hThread = CreateThread(NULL, 0, ClientRecvDataThread, 
+    &clients[index], 0, &clients[index].threadId);
+  
+  if( clients[index].hThread != NULL ){
+    runInfo.clientCount++;
+    runInfo.linkCount++;
+    SafePrintf("The %d(index %d) Client connected at %I64d ms, Total clients: %d\n", 
+      runInfo.clientCount, clients[index].index, clients[index].connectTime, runInfo.linkCount);
+  }
+  LeaveCriticalSection(&csClient);
 }
 
 
@@ -282,4 +298,31 @@ int printfSend(SOCKET *Socket, const char *fmt, ...)
   //LeaveCriticalSection(&g_log_cs);
  
   return SendToClients(Socket, char_buff, retLen); 
+}
+
+// 查找可用的客户端槽位
+int8_t findClientSlot(void)
+{
+    // 寻找新空位
+    for (int i = 0; i < MAX_CLIENTS; i++) 
+        if (clients[i].socket == INVALID_SOCKET) 
+            return i;
+
+    // 没有空位就找到最早连接的客户端
+    uint8_t oldestIndex = 0;
+    for (uint8_t i = 1; i < MAX_CLIENTS; i++) 
+        if (clients[i].connectTime < clients[oldestIndex].connectTime) 
+            oldestIndex = i;
+
+    // 通知告诉最早客户端下线
+    printfSend(&clients[oldestIndex].socket, 
+        "%sYou are kicked due to server full! Your index %d\n", 
+        CTRL_HEADER, oldestIndex);
+    
+    SafePrintf("Kicked oldest client index %d\n", oldestIndex);
+
+    // 踢出最早的客户端
+    CloseClient(oldestIndex, "Server full");
+    
+    return oldestIndex;
 }

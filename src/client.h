@@ -28,15 +28,15 @@ typedef struct {
 
 
 /*================== 外部变量声明		=========================================*/
-extern ClientInfo_t clients[];
-//extern CRITICAL_SECTION csClient;
+extern ClientInfo_t clients[]; 
 
 /*================== 外部函数声明		=========================================*/
 void ClientResourceInit(bool start);
+int8_t findClientSlot(void);
 
 int SendToClients(SOCKET *Socket, const char* buff, int len);
 void CloseClient(uint8_t index, char *func);
-void addClient(uint8_t index, SOCKET socket);
+void addNewClient(uint8_t index, SOCKET socket);
 int printfSend(SOCKET *Socket, const char *fmt, ...);
 
 void sendListComPorts( SOCKET *socket);

@@ -28,7 +28,7 @@ runInfo_t  runInfo = {
   .clientCount = 0,
   .monopolizeSoclet = NULL,
   .monopolizeIndex = 0,
-  .port = DEFAULT_PORT,
+  .port = 0,
   .startTime = 0,
   .linkCount = 0,
 };
@@ -42,9 +42,19 @@ runInfo_t  runInfo = {
 // 获取当前时间戳（毫秒）
 __int64 GetCurrentTimeMillis(void) 
 {
-    struct _timeb timebuffer;
-    _ftime_s(&timebuffer);
-    return (__int64)timebuffer.time * 1000 + timebuffer.millitm;
+  static __int64 initAt = 0;
+  if( initAt == 0 ){ 
+    static struct _timeb timebufferInit; 
+    _ftime_s(&timebufferInit);
+    initAt = timebufferInit.time * 1000 + timebufferInit.millitm;
+  }
+
+  struct _timeb timebuffer;
+  
+  _ftime_s(&timebuffer);
+  __int64 atPresent = timebuffer.time * 1000 + timebuffer.millitm;
+
+  return atPresent - initAt;
 }
 
 

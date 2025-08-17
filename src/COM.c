@@ -50,8 +50,12 @@ void ComPortResourceInit(bool start)
 {
   if( start )
     InitializeCriticalSection(&csComPort);
-  else
+  else{
+    if( comPort.isOpen )
+      CloseComPort();
     DeleteCriticalSection(&csComPort);
+  }
+    
 }
 
 void CloseComPort(void) 
@@ -216,7 +220,7 @@ int8_t OpenComPort(const char* portName, uint32_t baudRate,
 
 static DWORD WINAPI ComRecvDataThread(LPVOID lpParam) {
     if(lpParam){}
-    char comRecvBuffer[BUFFER_SIZE];
+    char comRecvBuffer[RECV_BUFFER_SIZE];
     DWORD bytesRead;
     OVERLAPPED overlapped = {0};
     overlapped.hEvent = CreateEvent(NULL, TRUE, FALSE, NULL);
