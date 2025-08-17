@@ -107,7 +107,7 @@ char *getSendRecvDirectionStr(char *direct, uint8_t index);
 void StopDeviceChangeMonitor(void);
 void StartDeviceChangeMonitor(void);
 int ParsePortParameter(int argc, char const* argv[], int defaultPort);
-void SafePrintf(const char* format, ...) __attribute__((format(printf, 1, 2)));
+int SafePrintf(const char* format, ...) __attribute__((format(printf, 1, 2)));
 
 void HandleClientCommand(SOCKET clientSocket, uint8_t clientIndex, const char* command) 
 {
@@ -265,8 +265,7 @@ int8_t OpenComPort(const char* portName, uint32_t baudRate,
                               0,
                               NULL,
                               OPEN_EXISTING,
-                              // 0, 
-                              FILE_FLAG_OVERLAPPED,
+                              FILE_FLAG_OVERLAPPED, // 异步模式，同步模式写0
                               NULL);
 
     if (comPort.hCom == INVALID_HANDLE_VALUE) {
@@ -583,10 +582,16 @@ DWORD WINAPI ClientRecvDataThread(LPVOID lpParam)
             if (error == ERROR_IO_PENDING) {
                 // 等待写入完成
                 if (!GetOverlappedResult(comPort.hCom, &writeOverlapped, &bytesWritten, TRUE)) {
+                    // 这里还是真正的错误
                     error = GetLastError();
                     printfSend(&clientInfo->socket, "%sCOM write failed: %d\n", CTRL_HEADER, error);
                 }
-            } else {
+                else{
+                  error = 0;
+                  WriteRet = TRUE;
+                }
+            } 
+            else {
                 printfSend(&clientInfo->socket, "%sCOM write error: %d\n", CTRL_HEADER, error);
             }
         }
@@ -754,16 +759,17 @@ int printfSend(SOCKET *Socket, const char *fmt, ...)
     return send(*Socket, char_buff, retLen, 0);
 }
 
-void SafePrintf(const char* format, ...)
+int SafePrintf(const char* format, ...)
 {
     EnterCriticalSection(&g_log_cs);
     
     va_list args;
     va_start(args, format);
-    vprintf(format, args);
+    int ret = vprintf(format, args);
     va_end(args);
     
     LeaveCriticalSection(&g_log_cs);
+    return ret;
 }
 
 char *getCurrentTime(void) 
@@ -780,13 +786,23 @@ char *getCurrentTime(void)
   return timeStr;
 }
 
-
+void print_build_info(void) 
+{
+    printf("\n========================================\n");
+    printf("  Program    : %s\n", "串口转TCP服务端");
+    printf("  Version    : %s\n", "1.0.0");
+    printf("  Build Date : %s %s\n", __DATE__, __TIME__);
+    printf("  Compiler   : GCC %d.%d.%d\n", __GNUC__, __GNUC_MINOR__, __GNUC_PATCHLEVEL__);
+    printf("========================================\n\n");
+}
 
 int main(int argc, char const *argv[])
 {
+    print_build_info();
+
     if( argc || argv){} 
     time(&runInfo.startTime);  // 获取当前时间（从 1970-01-01 00:00:00 开始的秒数）
-
+ 
     WSADATA wsaData;
     int iResult = WSAStartup(MAKEWORD(2, 2), &wsaData);
     if (iResult != 0) {
