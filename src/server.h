@@ -21,7 +21,7 @@ extern "C" {
 /*================== 外部函数声明		=========================================*/
 int ParsePortParameter(int argc, char const* argv[]); 
 int serverInit(int port, SOCKET *ServerSocket);
-int8_t listenNewClientLink( SOCKET *ServerSocket, SOCKET * retSocket);
+int8_t listenNewClientLink( SOCKET *ServerSocket, SOCKET * retSocket, char *retIP);
 
 #ifdef __cplusplus
 }

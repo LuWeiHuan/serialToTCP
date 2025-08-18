@@ -15,6 +15,7 @@
 #include "public.h"
 #include "main.h"
 #include "COM.h"
+#include "traffic.h"
 
 #include <stdio.h>
 #include <time.h>
@@ -75,9 +76,12 @@ void updataConsoleTitle(char *threadName, DWORD theradID)
  
 
   sprintf(title,"串口转TCP     服务端口号：%d   "
-    "已运行%I64u天：%02I64u:%02I64u:%02I64u   客户端：%d/%d   %s%s   线程%ld：%s", 
+    "已运行%I64u天：%02I64u:%02I64u:%02I64u  客户端：%d/%d  %s%s 线程%ld：%s", 
        runInfo.port, day, hour, min,sec, runInfo.clientCount, MAX_CLIENTS,
-       comPort.isOpen? "打开串口：":" ", comPort.portName, theradID, threadName =! NULL? threadName:" "); 
+       comPort.isOpen? "打开串口：":" ", comPort.portName, 
+        // trafficStats.comTraffic.sendRateStr,
+        // trafficStats.comTraffic.recvRateStr,
+       theradID, threadName =! NULL? threadName:" "); 
   SetConsoleTitleA( title );
 }
 
@@ -98,7 +102,7 @@ char *getCurrentTime(void)
 
 void print_build_info(void) 
 {
-    printf("\n========================================\n");
+    printf("========================================\n");
     printf("  Program    : %s\n", "串口转TCP服务端");
     printf("  Version    : %s\n", "1.0.0");
     printf("  Build Date : %s %s\n", __DATE__, __TIME__);
@@ -135,8 +139,32 @@ char *getSendRecvDirectionStr(char *direct, uint8_t index)
     if( runInfo.monopolizeSoclet != NULL ) // 独占串口数据
       sprintf(retStr, "COM%-3d--> TCP%-3d" , comNum, runInfo.monopolizeIndex);
     else
-      sprintf(retStr, "COM%-3d--> TCP   " , comNum);
+      sprintf(retStr, "COM%-3d--> TCP%3d" , comNum, runInfo.clientCount);
   }
 
   return retStr;
 }
+
+// 自动转换单位为最佳可读格式（Byte/s → KB/s → MB/s → GB/s）
+void formatSpeedString(uint64_t bytesPerSec, char* output) {
+    const char* units[] = {"Byte/s", "KB/s", "MB/s", "GB/s"};
+    double speed = (double)bytesPerSec;
+    int unitIndex = 0;
+
+    while (speed >= 1024.0 && unitIndex < 3) {
+        speed /= 1024.0;
+        unitIndex++;
+    }
+
+    snprintf(output, 16, "%.2f %s", speed, units[unitIndex]);
+}
+
+
+
+
+
+
+
+
+
+

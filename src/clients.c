@@ -17,6 +17,8 @@
 #include "public.h"
 #include "logPrint.h"
 #include "COM.h"
+#include "client.h"
+#include "traffic.h"
 
 #include <stdio.h>
 
@@ -60,7 +62,7 @@ DWORD WINAPI ClientRecvDataThread(LPVOID lpParam)
     }
 
     ClientInfo_t *clientInfo = (ClientInfo_t*)lpParam;
-    char tcpRecvBuffer[RECV_BUFFER_SIZE];
+    char *tcpRecvBuffer = malloc( RECV_BUFFER_SIZE );
     int bytesReceived = 0, retSelect;
     fd_set readSet;
     struct timeval timeout;
@@ -73,13 +75,16 @@ DWORD WINAPI ClientRecvDataThread(LPVOID lpParam)
         SafePrintf("Set non-blocking failed for client %d, error: %d\n", 
                clientInfo->index, WSAGetLastError());
         CloseClient(clientInfo->index, "设置非阻塞失败");
-        return -1;
+      if( tcpRecvBuffer != NULL)
+        free( tcpRecvBuffer );
+      return -1;
     }
 
     // 发送连接成功消息  
     printfSend(&clientInfo->socket, "%sOK! your index %d\n", CTRL_HEADER, clientInfo->index);
+    sendComPortsListToClient( &clientInfo->socket );  // 像该客户端发送可用端口号
 
-    while (true) {
+    while ( tcpRecvBuffer != NULL ) {
         // 检查客户端socket是否仍然有效
         if (clientInfo->socket == INVALID_SOCKET)
             break;
@@ -106,7 +111,7 @@ DWORD WINAPI ClientRecvDataThread(LPVOID lpParam)
         }
 
         // 有数据可读
-        bytesReceived = recv(clientInfo->socket, tcpRecvBuffer, sizeof(tcpRecvBuffer) - 1, 0);
+        bytesReceived = recv(clientInfo->socket, tcpRecvBuffer, RECV_BUFFER_SIZE - 1, 0);
         if (bytesReceived == SOCKET_ERROR) {
             int WSAerror = WSAGetLastError();
             if (WSAerror == WSAEWOULDBLOCK) {
@@ -131,8 +136,11 @@ DWORD WINAPI ClientRecvDataThread(LPVOID lpParam)
 
         // 检查是否是控制命令
         if (strncmp(tcpRecvBuffer, CTRL_HEADER, strlen(CTRL_HEADER)) == 0) {
+            // if (runInfo.serverPrintData == 1) 
+            //   SafePrintf("%s\n", tcpRecvBuffer); 
             HandleClientCommand(clientInfo->socket, clientInfo->index, 
                               tcpRecvBuffer + strlen(CTRL_HEADER));
+            
             continue;
         }
         
@@ -163,21 +171,32 @@ DWORD WINAPI ClientRecvDataThread(LPVOID lpParam)
             if (runInfo.serverPrintData == 2) 
               printf_hex8((uint8_t*)tcpRecvBuffer, bytesReceived, 40, 2);
         }
+
+        // 收到客户端数据时（发送到串口）
+        trafficStats.clients[ clientInfo->index ].totalBytesReceived += bytesReceived;
+        trafficStats.comTraffic.totalBytesSent += bytesWritten;
     }
 
+    if( tcpRecvBuffer != NULL){
+      free( tcpRecvBuffer );
+      SafePrintf("client %d disconnected, free memory \n", clientInfo->index);
+    }
+      
+
     SafePrintf("client %d disconnected, last recv code: %d\n", 
-           clientInfo->index, bytesReceived);
+      clientInfo->index, bytesReceived);
  
     CloseClient(clientInfo->index, "线程关闭");
     return 0;
 }
 
-void addNewClient(uint8_t index, SOCKET socket)
+void addNewClient(uint8_t index, SOCKET socket, char *ip)
 {       
   EnterCriticalSection(&csClient); 
   // 添加新客户端并记录精确连接时间
   clients[index].index = index;
-  clients[index].socket = socket;
+  clients[index].socket = socket; 
+  strcpy(clients[index].ipAddress, ip != NULL? ip : "Unknown");
   clients[index].connectTime = GetCurrentTimeMillis();  // 记录精确到毫秒的连接时间
   clients[index].hThread = CreateThread(NULL, 0, ClientRecvDataThread, 
     &clients[index], 0, &clients[index].threadId);
@@ -185,8 +204,8 @@ void addNewClient(uint8_t index, SOCKET socket)
   if( clients[index].hThread != NULL ){
     runInfo.clientCount++;
     runInfo.linkCount++;
-    SafePrintf("The %d(index %d) Client connected at %I64d ms, Total clients: %d\n", 
-      runInfo.clientCount, clients[index].index, clients[index].connectTime, runInfo.linkCount);
+    SafePrintf("Client connected IP:%s, Count:%d, index %d, connectTime %I64d ms, Total clients: %d\n", 
+      clients[index].ipAddress, runInfo.clientCount, clients[index].index, clients[index].connectTime, runInfo.linkCount);
   }
   LeaveCriticalSection(&csClient);
 }
@@ -223,18 +242,23 @@ void CloseClient(uint8_t index, char *reason)
 // Socket 如果为就会发送给所有客户端，不为空且有效的话就会只发送给指定的客户端
 int SendDataToClients(SOCKET *socket, const char* buff, int len) 
 {
-    int ret = 0;
+    int sendRet = 0;
     EnterCriticalSection(&csClient);
 
     if( socket != NULL && *socket != INVALID_SOCKET )
-      ret = send(*socket, buff, len, 0);
+      sendRet = send(*socket, buff, len, 0);
     else  // 无效的 套接字会发给所有客户端
       for (int i = 0; i < MAX_CLIENTS; i++)
-          if (clients[i].socket != INVALID_SOCKET) 
-            ret = send(clients[i].socket, buff, len, 0);
+          if (clients[i].socket != INVALID_SOCKET){ 
+            sendRet = send(clients[i].socket, buff, len, 0);
+
+            // 发送数据到客户端时 
+            trafficStats.clients[i].totalBytesSent += sendRet;
+          }
+            
     
     LeaveCriticalSection(&csClient);
-    return ret;
+    return sendRet;
 }
 
 void sendComPortsListToClient( SOCKET *socket)
@@ -296,3 +320,9 @@ int8_t findClientSlot(void)
     
     return oldestIndex;
 }
+
+
+
+
+
+

@@ -99,11 +99,21 @@ int serverInit(int port, SOCKET *ServerSocket)
   return port;
 }
 
-// 监听新客户端连接
-int8_t listenNewClientLink( SOCKET *ServerSocket, SOCKET * retSocket )
+/*=============================================================================
+ 功   能：监听新客户端连接
+ 参   数：ServerSocket  --> 服务端套接字
+					retSocket		  --> 有新的客户端连接这里会返回客户端套接字
+					retIP 	      --> 有新的客户端连接这里会返回客户端IP 
+ 返   回：-2  请传递有效的服务端套接字
+          -1  这个服务端套接字是无效的，建议重新创建服务端套接字
+           0  则是有新的客户端连接
+      大于 0  的话请重新监听
+ 描   述：无
+=============================================================================*/
+int8_t listenNewClientLink(SOCKET *ServerSocket, SOCKET *retSocket, char *retIP)
 {    
-  if( retSocket == NULL ) 
-    return 1;
+  if( ServerSocket == NULL ) 
+    return -2;
  
   fd_set readSet;
   FD_ZERO(&readSet);
@@ -115,7 +125,7 @@ int8_t listenNewClientLink( SOCKET *ServerSocket, SOCKET * retSocket )
 
   int selRet = select(0, &readSet, NULL, NULL, &timeout);
   if (selRet == 0) {
-      return 2;
+      return 1;
   }
   else if (selRet == SOCKET_ERROR) {
     SafePrintf("select failed, error=%d\n", WSAGetLastError());
@@ -123,15 +133,24 @@ int8_t listenNewClientLink( SOCKET *ServerSocket, SOCKET * retSocket )
   } 
 
   if (!FD_ISSET(*ServerSocket, &readSet)) 
-    return 3;
+    return 2;
 
-  SOCKET clientSocket = accept(*ServerSocket, NULL, NULL);
+    // 接受客户端连接
+  struct sockaddr_in clientAddr;
+  int addrLen = sizeof clientAddr;
+  SOCKET clientSocket = accept(*ServerSocket, (struct sockaddr*)&clientAddr, &addrLen);
   if (clientSocket == INVALID_SOCKET) {
-    SafePrintf("accept failed, error=%d\n", WSAGetLastError());
-    return 4;
+      SafePrintf("accept failed, error=%d\n", WSAGetLastError());
+      return 3;
   }
 
-  *retSocket = clientSocket;
+  // 获取客户端IP地址
+  char *clientIP = inet_ntoa( clientAddr.sin_addr );
+  if( retIP != NULL ) 
+    strcpy(retIP, clientIP != NULL ? clientIP:"Unknown");
+
+  if( retSocket != NULL)
+    *retSocket = clientSocket;
   return 0;
 }
 

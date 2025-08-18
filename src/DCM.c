@@ -59,13 +59,15 @@ static DWORD WINAPI DeviceChangeMonitorThread(LPVOID lpParam)
       updataConsoleTitle("DCM",  GetCurrentThreadId());
 
       // 打开 word 后 任何地方按下 crtl+c crtl+V 等快捷键操作这里的消息就会变的很多*/
-      SafePrintf("Device change detected, wParam:%I64d, lParam:%I64d, message:%d, theradID:%ld\n", 
-        msg.wParam, msg.lParam, msg.message, GetCurrentThreadId());
+      SafePrintf("Device change detected, wParam:%I64d, lParam:%I64d, "
+        "message:%d, XY(%ld:%ld), time:%ld hwnd:0x%I64d theradID:%ld\n",
+        msg.wParam, msg.lParam, msg.message, msg.pt.x, msg.pt.y, msg.time, 
+        (uint64_t)msg.hwnd, GetCurrentThreadId());
       
       // 以下参数是设备插拔或最明显的变化
-      if( msg.wParam == 0 && msg.lParam == 0 && msg.message == 49926 ){
+      if( msg.wParam == 0 && msg.lParam == 0 ){ 
         printfSend(NULL, "%sDevice change detected (%I64d:%I64d)\n", 
-          CTRL_HEADER, msg.wParam, msg.message); 
+          CTRL_HEADER, msg.wParam, msg.message);
         sendComPortsListToClient( NULL ); 
       }
 
@@ -111,7 +113,6 @@ void DeviceChangeMonitor(bool state)
         CloseHandle(g_hDeviceChangeThread);
         g_hDeviceChangeThread = NULL;
     }
-
   }
 
 }
