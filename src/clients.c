@@ -114,20 +114,18 @@ DWORD WINAPI ClientRecvDataThread(LPVOID lpParam)
         bytesReceived = recv(clientInfo->socket, tcpRecvBuffer, RECV_BUFFER_SIZE - 1, 0);
         if (bytesReceived == SOCKET_ERROR) {
             int WSAerror = WSAGetLastError();
-            if (WSAerror == WSAEWOULDBLOCK) {
-                // 非阻塞模式下没有数据是正常情况
-                continue;
+            if (WSAerror == WSAEWOULDBLOCK) { 
+                continue; // 非阻塞模式下没有数据是正常情况
             }
-            else {
-                // 其他错误，断开连接
-                SafePrintf("recv error for client %d, error: %d\n", 
+            else {        // 其他错误，断开连接 
+                SafePrintf("client %d recv error: %d\n", 
                        clientInfo->index, WSAerror);
                 break;
             }
         }
-        else if (bytesReceived == 0) {
-            // 客户端正常关闭连接
-            SafePrintf("client %d gracefully disconnected\n", clientInfo->index);
+        else if (bytesReceived == 0) { // 客户端正常关闭连接
+            SafePrintf("client index:%d IP:%s gracefully disconnected\n", 
+              clientInfo->index, clientInfo->ipAddress);
             break;
         }
         
@@ -136,18 +134,17 @@ DWORD WINAPI ClientRecvDataThread(LPVOID lpParam)
 
         // 检查是否是控制命令
         if (strncmp(tcpRecvBuffer, CTRL_HEADER, strlen(CTRL_HEADER)) == 0) {
-            // if (runInfo.serverPrintData == 1) 
-            //   SafePrintf("%s\n", tcpRecvBuffer); 
+            if (runInfo.serverPrintData == 3) 
+              SafePrintf("%s\n", tcpRecvBuffer);
             HandleClientCommand(clientInfo->socket, clientInfo->index, 
                               tcpRecvBuffer + strlen(CTRL_HEADER));
-            
             continue;
         }
         
         // 判断串口是否已经打开
         if (comPort.isOpen == FALSE) {
-            printfSend(&clientInfo->socket, "%sCOM not open !\n", CTRL_HEADER);
-            continue;
+          printfSend(&clientInfo->socket, "%sCOM not open !\n", CTRL_HEADER);
+          continue;
         }
 
         // 普通数据，发送到串口  
@@ -173,20 +170,18 @@ DWORD WINAPI ClientRecvDataThread(LPVOID lpParam)
         }
 
         // 收到客户端数据时（发送到串口）
-        trafficStats.clients[ clientInfo->index ].totalBytesReceived += bytesReceived;
-        trafficStats.comTraffic.totalBytesSent += bytesWritten;
+        trafficStats.net.totalBytesReceived += bytesReceived;
+        trafficStats.com.totalBytesSent += bytesWritten;
     }
 
-    if( tcpRecvBuffer != NULL){
+    SafePrintf("Client index:%d IP:%s disconnected, last recv code: %d%s\n", 
+      clientInfo->index, clientInfo->ipAddress, bytesReceived, 
+      tcpRecvBuffer != NULL? ", free memory":" ");
+
+    if( tcpRecvBuffer != NULL)
       free( tcpRecvBuffer );
-      SafePrintf("client %d disconnected, free memory \n", clientInfo->index);
-    }
-      
 
-    SafePrintf("client %d disconnected, last recv code: %d\n", 
-      clientInfo->index, bytesReceived);
- 
-    CloseClient(clientInfo->index, "线程关闭");
+    CloseClient(clientInfo->index, "客户端线程关闭");
     return 0;
 }
 
@@ -233,8 +228,9 @@ void CloseClient(uint8_t index, char *reason)
 
     if (runInfo.clientCount > 0)
         runInfo.clientCount--;
-
+    
     SafePrintf("Closed client %d, reason: %s\n", index, reason);
+    memset(clients[index].ipAddress, 0, sizeof clients[index].ipAddress);
     LeaveCriticalSection(&csClient);
 }
 
@@ -242,30 +238,36 @@ void CloseClient(uint8_t index, char *reason)
 // Socket 如果为就会发送给所有客户端，不为空且有效的话就会只发送给指定的客户端
 int SendDataToClients(SOCKET *socket, const char* buff, int len) 
 {
-    int sendRet = 0;
-    EnterCriticalSection(&csClient);
+  int sendRet = 0;
+  EnterCriticalSection(&csClient);
 
-    if( socket != NULL && *socket != INVALID_SOCKET )
-      sendRet = send(*socket, buff, len, 0);
-    else  // 无效的 套接字会发给所有客户端
-      for (int i = 0; i < MAX_CLIENTS; i++)
-          if (clients[i].socket != INVALID_SOCKET){ 
-            sendRet = send(clients[i].socket, buff, len, 0);
+  if( socket != NULL && *socket != INVALID_SOCKET ){
+    sendRet = send(*socket, buff, len, 0);
+    trafficStats.net.totalBytesSent += sendRet;
+  }
+  // 无效的 套接字会发给所有客户端
+  else for (uint8_t i = 0; i < MAX_CLIENTS; i++)
+    if (clients[i].socket != INVALID_SOCKET) {
+      sendRet = send(clients[i].socket, buff, len, 0); 
+      
+      trafficStats.net.totalBytesSent += sendRet; // 发送数据到客户端时 
+    }
 
-            // 发送数据到客户端时 
-            trafficStats.clients[i].totalBytesSent += sendRet;
-          }
-            
-    
-    LeaveCriticalSection(&csClient);
-    return sendRet;
+  LeaveCriticalSection(&csClient);
+  return sendRet;
 }
 
 void sendComPortsListToClient( SOCKET *socket)
 {
   char *ComList = getComPortList();
   printfSend(socket, "%s%s\n", CTRL_HEADER, 
-    ComList == NULL? "Failed to get COM port list":ComList); 
+    ComList == NULL? "Failed to get COM port list":ComList);
+  
+  if( comPort.isOpen && strstr(ComList, comPort.portName) == NULL ){
+    SafePrintf("%s disconnection!\n", comPort.portName);
+    printfSend(socket, "%s%s disconnection!\n", CTRL_HEADER, comPort.portName);
+    CloseComPort();
+  }
 }
 
 /**
@@ -320,9 +322,4 @@ int8_t findClientSlot(void)
     
     return oldestIndex;
 }
-
-
-
-
-
 

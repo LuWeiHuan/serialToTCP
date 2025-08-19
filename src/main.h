@@ -10,10 +10,10 @@ extern "C" {
 #include <stdbool.h>
 
 /*================== 宏定义声明			=========================================*/
-#define MAX_CLIENTS       3
-#define DEFAULT_PORT       9000
-#define RECV_BUFFER_SIZE  1024*10
-#define CTRL_HEADER       "ctrlInfo:"
+#define MAX_CLIENTS         5
+#define DEFAULT_PORT        9000
+#define RECV_BUFFER_SIZE    1024*10
+#define CTRL_HEADER         "ctrlInfo:"
 
 
 /*================== 数据类型声明		=========================================*/

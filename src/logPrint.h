@@ -24,6 +24,8 @@ void logPrintResourceInit(bool start);
 int SafePrintf(const char* format, ...) __attribute__((format(printf, 1, 2)));
 void printf_hex8(const uint8_t *pdata, uint16_t len, uint8_t numEnter, uint8_t endEnter);
 
+
+
 #ifdef __cplusplus
 }
 #endif

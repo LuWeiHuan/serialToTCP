@@ -27,12 +27,6 @@ typedef struct {
     DWORD threadId;
 } ComPortInfo_t;
 
-
-
-
-
-
-
 /*================== 外部变量声明		=========================================*/
 extern ComPortInfo_t comPort;
 
@@ -45,13 +39,10 @@ void CloseComPort();
 
 DWORD ComPortSendData(char const *tcpRecvBuffer, int bytesReceived, DWORD *retError);
 
-
-bool InitSerialCompletionPort();
-
-BOOL AddDataToAsyncQueue(const char *data, uint32_t size);
+BOOL InitAsyncSendThread(int queueSize);
 void FreeAsyncSendQueue(void);
 
-BOOL InitAsyncSendThread(int queueSize);
+
 
 #ifdef __cplusplus
 }

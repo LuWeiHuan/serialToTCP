@@ -5,7 +5,12 @@
   * @date    日期 2025-08-17
   * @brief   简介 本代码绝大部分都由AI完成，部分经过人工修改
   * 
-AI 平台 ：DeepSeek
+
+ AI 平台：DeepSeek
+运行系统：Windows
+编译工具：MinGW
+工程管理：make
+
 实现将串口数据转到TCP收发的能力
 环境Win平台，使用C语言编写一个服务端程序，接受任何网段连接该服务器
 
@@ -25,20 +30,7 @@ AI 平台 ：DeepSeek
 如果该端口号被占用就自动加1，尝试10次。可能是启用IPv6和IPv4问题，第二次运行还是同一个端口号切不支持IPv6，只有第三次运行才会是新的端口号
 13. USB设备插入或拔出通知所有客户端
 最后给出使用MakeFile管理编译。
-
-
-14. 串口异步发送能力
-请设计一个独立线程，主要任务是异步发送数据到串口。
-
-创建线程的时候，通过传递数量要申请多少个结构体成员所需要的内存空间，
-传入0的时候就释放队列申请的空间，结束线程
-
-使用循环队列的思路对客户端数据进行缓存起来，
-有数据就调用 ComPortSendData 发出去，
-如果串口没有打开就不缓存。
-串口没有打开、没有数据的时候或数据发送完了，
-就让线程就等待不要消耗CPU资源，
-
+14. 串口异步发送能力。使用独立线程使用队列，主要任务是异步发送数据到串口。
   ******************************************************************************
   * @attention 注意
   *
@@ -60,12 +52,13 @@ AI 平台 ：DeepSeek
 #include "traffic.h"
 
 /*================== 本地宏定义     =========================================*/
- #define DECOLLATOR    ",\n"
+#define DECOLLATOR    ",\n"
 
 /*================== 全局共享变量    ========================================*/
 /*================== 本地常量声明    ========================================*/
 /*================== 本地变量声明    ========================================*/
 /*================== 本地函数声明    ========================================*/
+static void microFuncCodeTest(void);
 /*================== 外部函数和变量声明    ==================================*/
 
 /*=============================================================================
@@ -77,14 +70,15 @@ AI 平台 ：DeepSeek
 =============================================================================*/
 int main(int argc, char const *argv[])
 {
-  print_build_info();
   GetCurrentTimeMillis();
-  time(&runInfo.startTime);  // 获取当前时间（从 1970-01-01 00:00:00 开始的秒数）
-
+  printBuildInfo();
+  microFuncCodeTest();
+  
   logPrintResourceInit(true); 
   ClientResourceInit(true);
   ComPortResourceInit(true);
-  
+
+  StartTrafficMonitor(); //流量统计
   // 解析来自程序传递的端口号
   int port = ParsePortParameter(argc, argv);
   if( port <= 0 )
@@ -131,9 +125,6 @@ int main(int argc, char const *argv[])
   return 0;
 }
 
-
-
-
 // 处理客户端发过来的指令
 void HandleClientCommand( SOCKET clientSocket, uint8_t clientIndex, const char* command) 
 {
@@ -146,16 +137,15 @@ void HandleClientCommand( SOCKET clientSocket, uint8_t clientIndex, const char* 
       sendComPortsListToClient( &clientSocket );
     }
 
-    else if ( strnicmp(command, "PrintAllclientIP", strlen("PrintAllclientIP")) == 0) { 
-      
+    else if ( strnicmp(command, "PrintAllclientIP", strlen("PrintAllclientIP")) == 0) {
       memset(handleString, 0, sizeof handleString);
-      char client[40];
+      char clientInfo[40];
       for (uint8_t i = 0; i < MAX_CLIENTS; i++) 
         if (clients[i].socket != INVALID_SOCKET) {
-          memset(client, 0, sizeof client);
-          sprintf(client, "client index %d, IP:%s\n", i, clients[i].ipAddress );
-          strcat(handleString, client);
-        } 
+          memset(clientInfo, 0, sizeof clientInfo);
+          sprintf(clientInfo, "client index %d, IP:%s\n", i, clients[i].ipAddress );
+          strcat(handleString, clientInfo);
+        }
       SafePrintf("All Client IP:\n%s\n", handleString);
       printfSend(&clientSocket, "%sAll Client IP:\n%s\n", CTRL_HEADER, handleString);
     }
@@ -169,11 +159,10 @@ void HandleClientCommand( SOCKET clientSocket, uint8_t clientIndex, const char* 
         printfSend(NULL, "%sset COM sedn NO Wiat\n", CTRL_HEADER);
         return;
       }
-      if( 5 < num && num < 100 ){
-        BOOL ret = InitAsyncSendThread(num);
-        printfSend(NULL, "%ssetCOMsednWiat %s !\n", CTRL_HEADER, ret? "OK!":"Fail!");
-      }else 
-        printfSend(NULL, "%ssetCOMsednWiat scope 5~100 !\n", CTRL_HEADER);
+
+      BOOL ret = InitAsyncSendThread(num);
+      printfSend(NULL, "%sset COM sedn Wiat %s set Queue num %d\n", 
+        CTRL_HEADER, ret? "OK!":"Fail! scope 10~200 !", num);
     }
 
     else if (strnicmp(command, "setRecvCOMdataTo", strlen("setRecvCOMdataTo")) == 0) {
@@ -195,7 +184,7 @@ void HandleClientCommand( SOCKET clientSocket, uint8_t clientIndex, const char* 
     }
 
     else if (strnicmp(command, "exit", strlen("exit")) == 0) {
-      printfSend(&clientSocket, "%sserver ready exit\n", CTRL_HEADER );
+      printfSend(NULL, "%sserver ready exit\n", CTRL_HEADER );
       exit(0);
     }
 
@@ -209,12 +198,13 @@ void HandleClientCommand( SOCKET clientSocket, uint8_t clientIndex, const char* 
           runInfo.serverPrintData = 1;
         if( strnicmp(token, "HEX", strlen("HEX")) == 0 )
           runInfo.serverPrintData = 2;
+        if( strnicmp(token, "CMD", strlen("CMD")) == 0 )
+          runInfo.serverPrintData = 3;
         printfSend(NULL, "%sserver Print Data: %d %s \n", 
           CTRL_HEADER, runInfo.serverPrintData, token);
     }
 
     else if (strnicmp(command, "system", strlen("system") ) == 0) {
-        // 解析命令
         token = strtok(handleString, DECOLLATOR);
         token = strtok(NULL, DECOLLATOR); // 指令 
         int ret = system(token);
@@ -223,7 +213,6 @@ void HandleClientCommand( SOCKET clientSocket, uint8_t clientIndex, const char* 
     }
 
     else if (strnicmp(command, "open", strlen("open")) == 0) {
-        // 解析命令
         token = strtok(handleString, DECOLLATOR);
         token = strtok(NULL, DECOLLATOR); // 串口号
 
@@ -240,8 +229,9 @@ void HandleClientCommand( SOCKET clientSocket, uint8_t clientIndex, const char* 
           printfSend(&clientSocket, "%sthe %s has been turned on\n", CTRL_HEADER, portName);
           return;
         }
-
-        uint32_t baudRate = 115200;
+        
+        /* 解析串口设置的参数 */
+        uint32_t baudRate = 921600;
         uint8_t dataBits = 8, stopBits = 1, parity = 0;
         token = strtok(NULL, DECOLLATOR); // 波特率
         if (token) baudRate = atoi(token);
@@ -270,3 +260,8 @@ void HandleClientCommand( SOCKET clientSocket, uint8_t clientIndex, const char* 
     }
 }
 
+
+static void microFuncCodeTest(void)
+{
+ 
+}

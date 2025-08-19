@@ -16,6 +16,7 @@
 #include "main.h"
 #include "COM.h"
 #include "traffic.h"
+#include "logPrint.h"
 
 #include <stdio.h>
 #include <time.h>
@@ -38,6 +39,8 @@ runInfo_t  runInfo = {
 /*================== 本地常量声明    ========================================*/
 /*================== 本地变量声明    ========================================*/
 /*================== 本地函数声明    ========================================*/
+
+
 /*================== 外部函数和变量声明    ==================================*/
 
 
@@ -46,6 +49,7 @@ __int64 GetCurrentTimeMillis(void)
 {
   static __int64 initAt = 0;
   if( initAt == 0 ){ 
+    time(&runInfo.startTime);  // 获取当前时间（从 1970-01-01 00:00:00 开始的秒数）
     static struct _timeb timebufferInit; 
     _ftime_s(&timebufferInit);
     initAt = timebufferInit.time * 1000 + timebufferInit.millitm;
@@ -69,19 +73,27 @@ void updataConsoleTitle(char *threadName, DWORD theradID)
   currentTime -= runInfo.startTime;
   //currentTime += 60*60*24 - 6;
 
-  time_t sec = currentTime % 60;
-  time_t min = currentTime / 60 % 60;
-  time_t hour = currentTime / 60 / 60 % 24;
-  time_t day = currentTime / 60 / 60 / 24;
- 
+  uint8_t sec = currentTime % 60;
+  uint8_t min = currentTime / 60 % 60;
+  uint8_t hour = currentTime / 360 % 24;
+  uint32_t day = currentTime / 360 / 24;
+  
+  
+  if( sec % 3 == 0 || sec % 4 == 0 )
+    snprintf(title, sizeof title, "串口转TCP     串口:↑ %s  ↓ %s   网络：↑ %s  ↓ %s    线程%ld：%s",
+      trafficStats.com.recvRateStr,
+      trafficStats.com.sendRateStr,
+      trafficStats.net.sendRateStr,
+      trafficStats.net.recvRateStr,
+      theradID, threadName =! NULL? threadName:"NULL");
+  else
+    snprintf(title, sizeof title, "串口转TCP     服务端口号：%d   "
+      "已运行%d天：%02d:%02d:%02d  客户端：%d/%d  线程%ld：%s",
+        runInfo.port, day, hour, min,sec, runInfo.clientCount, MAX_CLIENTS, 
+        theradID, threadName =! NULL? threadName:" ");
 
-  sprintf(title,"串口转TCP     服务端口号：%d   "
-    "已运行%I64u天：%02I64u:%02I64u:%02I64u  客户端：%d/%d  %s%s 线程%ld：%s", 
-       runInfo.port, day, hour, min,sec, runInfo.clientCount, MAX_CLIENTS,
-       comPort.isOpen? "打开串口：":" ", comPort.portName, 
-        // trafficStats.comTraffic.sendRateStr,
-        // trafficStats.comTraffic.recvRateStr,
-       theradID, threadName =! NULL? threadName:" "); 
+
+
   SetConsoleTitleA( title );
 }
 
@@ -100,14 +112,14 @@ char *getCurrentTime(void)
   return timeStr;
 }
 
-void print_build_info(void) 
+void printBuildInfo(void) 
 {
-    printf("========================================\n");
-    printf("  Program    : %s\n", "串口转TCP服务端");
-    printf("  Version    : %s\n", "1.0.0");
-    printf("  Build Date : %s %s\n", __DATE__, __TIME__);
-    printf("  Compiler   : GCC %d.%d.%d\n", __GNUC__, __GNUC_MINOR__, __GNUC_PATCHLEVEL__);
-    printf("========================================\n\n");
+  printf("========================================\n");
+  printf("  Program    : %s\n", "串口转TCP服务端");
+  printf("  Version    : %s\n", "1.0.0");
+  printf("  Build Date : %s %s\n", __DATE__, __TIME__);
+  printf("  Compiler   : GCC %d.%d.%d\n", __GNUC__, __GNUC_MINOR__, __GNUC_PATCHLEVEL__);
+  printf("========================================\n\n");
 }
 
 
@@ -144,27 +156,3 @@ char *getSendRecvDirectionStr(char *direct, uint8_t index)
 
   return retStr;
 }
-
-// 自动转换单位为最佳可读格式（Byte/s → KB/s → MB/s → GB/s）
-void formatSpeedString(uint64_t bytesPerSec, char* output) {
-    const char* units[] = {"Byte/s", "KB/s", "MB/s", "GB/s"};
-    double speed = (double)bytesPerSec;
-    int unitIndex = 0;
-
-    while (speed >= 1024.0 && unitIndex < 3) {
-        speed /= 1024.0;
-        unitIndex++;
-    }
-
-    snprintf(output, 16, "%.2f %s", speed, units[unitIndex]);
-}
-
-
-
-
-
-
-
-
-
-

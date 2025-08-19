@@ -13,80 +13,82 @@
 
 /*================== 头文件包含     =========================================*/
 #include "traffic.h"
-#include "main.h"
 #include "public.h"
-#include "client.h"
+
 #include <windows.h>
+#include <stdio.h>
 
 /*================== 本地宏定义     =========================================*/
 /*================== 全局共享变量    ========================================*/
-
-
 GlobalTrafficStats_t trafficStats;
 
 /*================== 本地常量声明    ========================================*/
 /*================== 本地变量声明    ========================================*/
 /*================== 本地函数声明    ========================================*/
+static void formatSpeedString(uint64_t bytesPerSec, char* output, uint16_t retMax) ;
+static DWORD WINAPI TrafficMonitorThread(LPVOID lpParam);
+
 /*================== 外部函数和变量声明    ==================================*/
- 
-
-
-
-
-
-
-DWORD WINAPI TrafficMonitorThread(LPVOID lpParam)
-{
-  if( lpParam ){}
-    const DWORD intervalMs = 1000; // 统计间隔1秒
-    uint64_t lastComSent = 0, lastComRecv = 0;
-    uint64_t lastClientSent[MAX_CLIENTS] = {0};
-    uint64_t lastClientRecv[MAX_CLIENTS] = {0};
-
-    while (1) {
-        // 统计串口流量
-        uint64_t currentComSent = trafficStats.comTraffic.totalBytesSent;
-        uint64_t currentComRecv = trafficStats.comTraffic.totalBytesReceived;
-        
-        trafficStats.comTraffic.currentSendRate = (currentComSent - lastComSent) * 1000.0 / intervalMs;
-        trafficStats.comTraffic.currentRecvRate = (currentComRecv - lastComRecv) * 1000.0 / intervalMs;
-        
-        formatSpeedString((uint64_t)trafficStats.comTraffic.currentSendRate, 
-                         trafficStats.comTraffic.sendRateStr);
-        formatSpeedString((uint64_t)trafficStats.comTraffic.currentRecvRate, 
-                         trafficStats.comTraffic.recvRateStr);
-        
-        lastComSent = currentComSent;
-        lastComRecv = currentComRecv;
-
-        // 统计各客户端流量
-        for (int i = 0; i < MAX_CLIENTS; i++) {
-            if (clients[i].socket == INVALID_SOCKET) continue;
-            
-            uint64_t currentSent = trafficStats.clients[i].totalBytesSent;
-            uint64_t currentRecv = trafficStats.clients[i].totalBytesReceived;
-            
-            trafficStats.clients[i].currentSendRate = 
-                (currentSent - lastClientSent[i]) * 1000.0 / intervalMs;
-            trafficStats.clients[i].currentRecvRate = 
-                (currentRecv - lastClientRecv[i]) * 1000.0 / intervalMs;
-            
-            formatSpeedString((uint64_t)trafficStats.clients[i].currentSendRate,
-                            trafficStats.clients[i].sendRateStr);
-            formatSpeedString((uint64_t)trafficStats.clients[i].currentRecvRate,
-                            trafficStats.clients[i].recvRateStr);
-            
-            lastClientSent[i] = currentSent;
-            lastClientRecv[i] = currentRecv;
-        }
-
-        Sleep(intervalMs);
-    }
-    return 0;
-}
 
 // 启动流量统计线程
-void StartTrafficMonitor(void) {
-  memset(&trafficStats, 0, sizeof(trafficStats));
+void StartTrafficMonitor(void) 
+{
+  memset(&trafficStats, 0, sizeof trafficStats);
   CreateThread(NULL, 0, TrafficMonitorThread, NULL, 0, NULL);
+}
+
+static DWORD WINAPI TrafficMonitorThread(LPVOID lpParam)
+{
+  (void)( lpParam );
+  uint8_t updataConsoConut = 0;
+ 
+  while ( true ) {
+ 
+    formatSpeedString(trafficStats.com.totalBytesSent, 
+      trafficStats.com.sendRateStr, sizeof trafficStats.com.sendRateStr);
+
+    formatSpeedString(trafficStats.com.totalBytesReceived, 
+      trafficStats.com.recvRateStr, sizeof trafficStats.com.recvRateStr);
+ 
+    formatSpeedString(trafficStats.net.totalBytesSent,
+      trafficStats.net.sendRateStr, sizeof trafficStats.net.sendRateStr);
+
+    formatSpeedString(trafficStats.net.totalBytesReceived,
+      trafficStats.net.recvRateStr, sizeof trafficStats.net.recvRateStr);
+
+    trafficStats.com.totalBytesSent = 0;
+    trafficStats.com.totalBytesReceived = 0;
+    trafficStats.net.totalBytesSent = 0;
+    trafficStats.net.totalBytesReceived = 0;
+    
+    if( ++updataConsoConut > 1 ){
+      updataConsoConut = 0;
+      updataConsoleTitle("TrafficMonitor", GetCurrentThreadId());
+    }
+    Sleep( 1000 );// 统计间隔1秒
+  }
+  return 0;
+}
+
+// 自动转换单位为最佳可读格式（Byte/s → KB/s → MB/s → GB/s）
+static void formatSpeedString(uint64_t bytesPerSec, char* output, uint16_t retMax) 
+{
+  const char *units[] = {"B/s", "KB/s", "MB/s", "GB/s"};
+  double speed = (double)bytesPerSec;
+  uint8_t unitIndex = 0;
+  for (unitIndex = 0; 1024 <= speed && unitIndex < 3; unitIndex++) 
+    speed /= 1024.0;
+  #if 1
+  uint32_t speedInt = (uint32_t)speed;
+  uint8_t speedDec = (uint8_t)(speed * 10) % 10;
+
+  memset(output, 0, retMax);
+  if( speedDec == 0)
+    snprintf(output, retMax, "%d %s", speedInt, units[unitIndex]);
+  else
+    snprintf(output, retMax, "%d.%d %s", speedInt, speedDec, units[unitIndex]);
+  #else
+  snprintf(output, retMax, "%0.1f %s", speed, units[unitIndex]);
+  #endif
+  
 }

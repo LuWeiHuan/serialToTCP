@@ -13,9 +13,6 @@ extern "C" {
 #include <winsock2.h>
 #include <windows.h>
 
-
-
-
 /*================== 宏定义声明			=========================================*/
 //#define
 
@@ -31,21 +28,15 @@ typedef struct {
     uint32_t linkCount;
 } runInfo_t;
 
-
-
-
-
 /*================== 外部变量声明		=========================================*/
-extern runInfo_t  runInfo;
+extern runInfo_t runInfo;
 
 /*================== 外部函数声明		=========================================*/
-void print_build_info(void) ;
+void printBuildInfo(void) ;
 __int64 GetCurrentTimeMillis(void);
 char *getCurrentTime(void) ;
 void updataConsoleTitle(char *threadName, DWORD theradID);
 char *getSendRecvDirectionStr(char *direct, uint8_t index);
-
-void formatSpeedString(uint64_t bytesPerSec, char* output);
 
 #ifdef __cplusplus
 }

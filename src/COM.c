@@ -41,8 +41,7 @@ typedef struct {
     HANDLE hDataEvent;        // 数据可用事件
     HANDLE hSpaceEvent;       // 空间可用事件
     HANDLE hThread;           // 发送线程句柄
-    volatile BOOL running;    // 线程运行标志
-    BOOL isUse;
+    volatile BOOL running;    // 线程运行标志 
 } AsyncSendQueue_t;
 
 /*================== 本地宏定义     =========================================*/
@@ -55,6 +54,7 @@ ComPortInfo_t comPort = { INVALID_HANDLE_VALUE, FALSE, "", {0}, NULL, 0 };
 /*================== 本地函数声明    ========================================*/
 static DWORD WINAPI ComRecvDataThread(LPVOID lpParam);
 static DWORD WINAPI AsyncSendThreadProc(LPVOID lpParam);
+static BOOL AddDataToAsyncQueue(const char *data, uint32_t size);
 
 /*================== 外部函数和变量声明    ==================================*/
 
@@ -228,38 +228,38 @@ int8_t OpenComPort(const char* portName, uint32_t baudRate,
     return 0;
 }
 
-
-static DWORD WINAPI ComRecvDataThread(LPVOID lpParam) {
-    if(lpParam){}
-    char comRecvBuffer[RECV_BUFFER_SIZE];
+// 处理串口收到的数据并发给客户端
+static DWORD WINAPI ComRecvDataThread(LPVOID lpParam) 
+{
+    (void)lpParam;
+    static char comRecvBuffer[RECV_BUFFER_SIZE];
     DWORD bytesRead;
     OVERLAPPED overlapped = {0};
     overlapped.hEvent = CreateEvent(NULL, TRUE, FALSE, NULL);
     WINBOOL readRet;
     DWORD lastUpdateTime = 0, currentTime = 0;
     const DWORD updateInterval = 1500; // 1.5秒更新一次
-
+    uint64_t sendCount = 0;
     while ( comPort.isOpen ) {
         // 重置重叠结构
         memset(&overlapped, 0, sizeof(OVERLAPPED));
         overlapped.hEvent = CreateEvent(NULL, TRUE, FALSE, NULL);
         
         // 发起异步读取
-        readRet = ReadFile(comPort.hCom, comRecvBuffer, (sizeof comRecvBuffer) - 1, &bytesRead, &overlapped);
+        readRet = ReadFile(comPort.hCom, comRecvBuffer, 
+          (sizeof comRecvBuffer) - 1, &bytesRead, &overlapped);
         
         if (!readRet) {
             DWORD error = GetLastError();
-            if (error == ERROR_IO_PENDING) {
-                // 等待读取完成或超时
+            if (error == ERROR_IO_PENDING) {  // 等待读取完成或超时 
                 DWORD waitResult = WaitForSingleObject(overlapped.hEvent, 1000);
                 if (waitResult == WAIT_TIMEOUT) {
                     // 超时处理 - 按间隔更新状态
-                    updataConsoleTitle("COM: Waiting", GetCurrentThreadId());
+                    updataConsoleTitle("COM: Timeout", GetCurrentThreadId());
                     CloseHandle(overlapped.hEvent);
                     continue;
                 }
-                else if (waitResult == WAIT_OBJECT_0) {
-                    // 读取完成
+                else if (waitResult == WAIT_OBJECT_0) { // 读取完成 
                     if (!GetOverlappedResult(comPort.hCom, &overlapped, &bytesRead, FALSE)) {
                         error = GetLastError();
                         if (error != ERROR_OPERATION_ABORTED) {
@@ -277,38 +277,36 @@ static DWORD WINAPI ComRecvDataThread(LPVOID lpParam) {
             }
         }
 
-        // 处理接收到的数据或空读取
+        // 处理接收到的数据如果是空读取就重新读
         if (bytesRead == 0) {
             CloseHandle(overlapped.hEvent);
             
-            // 按间隔更新状态
+            // 按间隔更新线程状态
             currentTime = GetTickCount();
             if (currentTime - lastUpdateTime >= updateInterval) {
-                updataConsoleTitle("COM", GetCurrentThreadId());
+                updataConsoleTitle( comPort.portName, GetCurrentThreadId());
                 lastUpdateTime = currentTime;
             }
-            Sleep(1); // 1msCPU占用也能很低
+            Sleep(1); // 1ms也能使CPU占用很低
             continue;
         }
- 
-        // 处理接收到的数据
-        int sendRet = SendDataToClients(runInfo.monopolizeSoclet, comRecvBuffer, bytesRead);
-        trafficStats.comTraffic.totalBytesReceived += bytesRead;
-        // 指定客户端发送失败后，再发给其他所有客户端，并将指定的客户端设置为空，下次就是直接发给所有客户端
-        if (sendRet <= 0) {
-          trafficStats.comTraffic.totalBytesSent += sendRet;
 
+        trafficStats.com.totalBytesReceived += bytesRead; 
+ 
+        // 从这里开始就是读到有效数据，处理接收到的数据
+        int sendRet = SendDataToClients(runInfo.monopolizeSoclet, comRecvBuffer, bytesRead);
+        // 指定客户端发送失败后，再发给其他所有客户端，并将指定的客户端设置为空，下次就是直接发给所有客户端
+        if (sendRet <= 0) { 
           runInfo.monopolizeSoclet = NULL;
           SafePrintf("send monopolize clients failed ! code: %d\n", sendRet);
           sendRet = SendDataToClients(NULL, comRecvBuffer, bytesRead); 
         }
-
+        
         // 打印日志
         char *Direct = getSendRecvDirectionStr("[COM --> TCP]", 0);
         char *timeStr = getCurrentTime();
-        timeStr[strlen(timeStr)] = ' ';
-        static uint64_t sendCount = 0;
-
+        timeStr[ strlen(timeStr) ] = ' '; 
+        
         SafePrintf("%s%6I64d [%s]  %-6d/%-6ld Byte (%s : %ld)%s\n", 
             timeStr, ++sendCount, Direct, sendRet, bytesRead, 
             sendRet == (int)bytesRead ? "OK":"Fail", bytesRead - sendRet,
@@ -330,67 +328,33 @@ static DWORD WINAPI ComRecvDataThread(LPVOID lpParam) {
 
 
 
-
-
-
-
-#if 0
-DWORD ComPortSendData(char const *tcpRecvBuffer, int bytesReceived, DWORD *retError)
+static DWORD ComPortSendDataWait(char const *tcpRecvBuffer, int bytesReceived, DWORD *retError)
 {
-  DWORD bytesWritten = 0, error = 0;
+  DWORD bytesWritten = 0;
   OVERLAPPED writeOverlapped = {0};
   
   EnterCriticalSection(&csComPort);
   writeOverlapped.hEvent = CreateEvent(NULL, TRUE, FALSE, NULL); 
-  WINBOOL WriteRet = WriteFile(comPort.hCom, tcpRecvBuffer, bytesReceived, &bytesWritten, &writeOverlapped);
+  WINBOOL WriteRet = WriteFile(comPort.hCom, tcpRecvBuffer, 
+    bytesReceived, &bytesWritten, &writeOverlapped);
 
-  // 写失败的情况下，如果是IO重叠，可以等待写入完成，如果完不成就是真正的错误 
-  if (!WriteRet &&  (error = GetLastError()) == ERROR_IO_PENDING) 
-    error = GetOverlappedResult(comPort.hCom, &writeOverlapped, &bytesWritten, TRUE)? 0:GetLastError() ;
+  // 处理异步写入
+  DWORD error = 0;
+  if (!WriteRet && (error = GetLastError()) == ERROR_IO_PENDING)  
+      error = GetOverlappedResult(comPort.hCom, &writeOverlapped, 
+        &bytesWritten, TRUE)? 0:GetLastError();
 
   CloseHandle(writeOverlapped.hEvent); 
   LeaveCriticalSection(&csComPort);
   
-  if( error == 22 ) // 设备可能已经拔出
-    CloseComPort();
-  if( retError != NULL) 
-    *retError  = error;
+  // 错误处理，当串口拔掉后，错误值是22
+  if (error == ERROR_BAD_COMMAND || error == ERROR_OPERATION_ABORTED || error == ERROR_INVALID_HANDLE) {
+      SafePrintf("Serial port error: %lu, closing port\n", error);
+      CloseComPort();
+  }
+  
+  if (retError) *retError = error;
   return bytesWritten;
-}
-#endif
-
-
-DWORD ComPortSendDataAsyncQueue(char const *tcpRecvBuffer, int bytesReceived, DWORD *retError)
-{
-    // 队列添加失败，直接发送（回退到同步模式）
-    DWORD bytesWritten = 0;
-    OVERLAPPED writeOverlapped = {0};
-    
-    EnterCriticalSection(&csComPort);
-    writeOverlapped.hEvent = CreateEvent(NULL, TRUE, FALSE, NULL); 
-    WINBOOL WriteRet = WriteFile(comPort.hCom, tcpRecvBuffer, bytesReceived, &bytesWritten, &writeOverlapped);
-
-    // 处理异步写入
-    DWORD error = 0;
-    if (!WriteRet && (error = GetLastError()) == ERROR_IO_PENDING) {
-        if (GetOverlappedResult(comPort.hCom, &writeOverlapped, &bytesWritten, TRUE)) {
-            error = 0; // 成功完成
-        } else {
-            error = GetLastError();
-        }
-    }
-    
-    CloseHandle(writeOverlapped.hEvent); 
-    LeaveCriticalSection(&csComPort);
-    
-    // 错误处理
-    if (error == ERROR_OPERATION_ABORTED || error == ERROR_INVALID_HANDLE) {
-        SafePrintf("Serial port error: %lu, closing port\n", error);
-        CloseComPort();
-    }
-    
-    if (retError) *retError = error;
-    return bytesWritten;
 }
 
 // 修改后的串口发送函数
@@ -403,33 +367,28 @@ DWORD ComPortSendData(char const *tcpRecvBuffer, int bytesReceived, DWORD *retEr
 
     // 使用异步队列发送数据
     if ( AddDataToAsyncQueue(tcpRecvBuffer, bytesReceived) ) {
-        // 返回成功添加，实际发送由线程处理
-        if (retError) 
+        if (retError) // 返回成功添加，实际发送由线程处理
           *retError = 0;
         return bytesReceived;
     }
     
-    return ComPortSendDataAsyncQueue(tcpRecvBuffer, bytesReceived, retError);
+    return ComPortSendDataWait(tcpRecvBuffer, bytesReceived, retError);
 }
 
 
- 
-
-
-
-
-
-
-
-// 在COM.c中实现
 static AsyncSendQueue_t asyncSendQueue = {0};
 
 // 初始化队列和启动线程
 BOOL InitAsyncSendThread(int queueSize) {
-    if (queueSize <= 0) {
+
+
+    if (queueSize <= 10 || queueSize >= 200) {
         SafePrintf("Invalid queue size: %d\n", queueSize);
         return FALSE;
     }
+
+    if( asyncSendQueue.running )
+      FreeAsyncSendQueue();
 
     // 分配队列内存
     asyncSendQueue.queue = (sendCom_t*)malloc(queueSize * sizeof(sendCom_t));
@@ -458,15 +417,14 @@ BOOL InitAsyncSendThread(int queueSize) {
     }
     
     SafePrintf("Async send thread started with queue size: %d\n", queueSize);
-     asyncSendQueue.isUse = TRUE;
+ 
     return TRUE;
 }
 
 // 释放队列资源
 void FreeAsyncSendQueue(void) {
     // 设置停止标志
-    asyncSendQueue.running = FALSE;
-    asyncSendQueue.isUse = FALSE;
+    asyncSendQueue.running = FALSE; 
 
     // 唤醒线程以便退出
     SetEvent(asyncSendQueue.hDataEvent);
@@ -506,65 +464,67 @@ void FreeAsyncSendQueue(void) {
 
 // 异步发送线程主函数
 static DWORD WINAPI AsyncSendThreadProc(LPVOID lpParam) {
-    (void)lpParam; // 未使用参数
+  (void)lpParam; // 未使用参数
+
+  SafePrintf("Async send thread started\n");
+  
+  while (asyncSendQueue.running) {
+    // 等待数据可用或退出信号
+    DWORD waitResult = WaitForSingleObject(asyncSendQueue.hDataEvent, INFINITE);
     
-    SafePrintf("Async send thread started\n");
+    // 检查是否退出
+    if (!asyncSendQueue.running) 
+      break;
     
+    // 处理数据
+    if (waitResult != WAIT_OBJECT_0) 
+      continue;
+
+    // 循环处理所有可用数据
     while (asyncSendQueue.running) {
-        // 等待数据可用或退出信号
-        DWORD waitResult = WaitForSingleObject(asyncSendQueue.hDataEvent, INFINITE);
-        
-        // 检查是否退出
-        if (!asyncSendQueue.running) break;
-        
-        // 处理数据
-        if (waitResult == WAIT_OBJECT_0) {
-            // 循环处理所有可用数据
-            while (asyncSendQueue.running) {
-                // 获取队列互斥锁
-                WaitForSingleObject(asyncSendQueue.hMutex, INFINITE);
-                
-                // 检查队列是否为空
-                if (asyncSendQueue.front == asyncSendQueue.rear) {
-                    ResetEvent(asyncSendQueue.hDataEvent);
-                    ReleaseMutex(asyncSendQueue.hMutex);
-                    break;
-                }
-                
-                // 取出队列头的数据
-                sendCom_t data = asyncSendQueue.queue[asyncSendQueue.front];
-                asyncSendQueue.front = (asyncSendQueue.front + 1) % asyncSendQueue.capacity;
-                
-                // 如果有空间可用，设置空间事件
-                if ((asyncSendQueue.rear + 1) % asyncSendQueue.capacity != asyncSendQueue.front) {
-                    SetEvent(asyncSendQueue.hSpaceEvent);
-                }
-                
-                ReleaseMutex(asyncSendQueue.hMutex);
-                updataConsoleTitle("COM Async Send", GetCurrentThreadId());
-                // 发送数据到串口
-                if (comPort.isOpen) {
-                    DWORD error = 0;
-                    DWORD bytesWritten = ComPortSendDataAsyncQueue(data.buff, data.size, &error);
-                    
-                    if (bytesWritten != data.size) {
-                        SafePrintf("Async send error: written %lu/%u bytes, error: %lu\n", 
-                                  bytesWritten, data.size, error);
-                    }
-                }
-            }
-        }
+      // 获取队列互斥锁
+      WaitForSingleObject(asyncSendQueue.hMutex, INFINITE);
+      
+      // 检查队列是否为空
+      if (asyncSendQueue.front == asyncSendQueue.rear) {
+          ResetEvent(asyncSendQueue.hDataEvent);
+          ReleaseMutex(asyncSendQueue.hMutex);
+          break;
+      }
+      
+      // 取出队列头的数据
+      sendCom_t sendData = asyncSendQueue.queue[asyncSendQueue.front];
+      asyncSendQueue.front = (asyncSendQueue.front + 1) % asyncSendQueue.capacity;
+      
+      // 如果有空间可用，设置空间事件
+      if ((asyncSendQueue.rear + 1) % asyncSendQueue.capacity != asyncSendQueue.front)
+          SetEvent(asyncSendQueue.hSpaceEvent);
+
+      ReleaseMutex(asyncSendQueue.hMutex);
+      updataConsoleTitle("COM Async Send", GetCurrentThreadId());
+
+      // 发送数据到串口
+      if (comPort.isOpen == FALSE) 
+        continue;
+
+      DWORD error = 0;
+      DWORD bytesWritten = ComPortSendDataWait(sendData.buff, sendData.size, &error);
+      
+      if (bytesWritten != sendData.size) 
+          SafePrintf("COM Async send error: written %lu/%u bytes, error: %lu\n", 
+                    bytesWritten, sendData.size, error);
     }
-    
-    SafePrintf("Async send thread exiting\n");
-    return 0;
+  }
+  
+  SafePrintf("Async send thread exiting\n");
+  return 0;
 }
 
 
 // 添加数据到发送队列
-BOOL AddDataToAsyncQueue(const char *data, uint32_t size) {
+static BOOL AddDataToAsyncQueue(const char *data, uint32_t size) {
 
-    if( asyncSendQueue.isUse == FALSE )
+    if( asyncSendQueue.running == FALSE )
       return FALSE;
  
     // 检查数据大小
@@ -607,3 +567,4 @@ BOOL AddDataToAsyncQueue(const char *data, uint32_t size) {
     ReleaseMutex(asyncSendQueue.hMutex);
     return TRUE;
 }
+
