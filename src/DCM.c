@@ -66,8 +66,8 @@ static DWORD WINAPI DeviceChangeMonitorThread(LPVOID lpParam)
       
       // 以下参数是设备插拔或最明显的变化
       if( msg.wParam == 0 && msg.lParam == 0 ){ 
-        printfSend(NULL, "%sDevice change detected (%I64d:%I64d)\n", 
-          CTRL_HEADER, msg.wParam, msg.message);
+        printfSend(NULL, "Device change detected (%I64d:%d)\n", 
+          msg.wParam, msg.message);
         sendComPortsListToClient( NULL ); 
       }
 

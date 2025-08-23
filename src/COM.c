@@ -63,8 +63,7 @@ void ComPortResourceInit(bool start)
   if( start )
     InitializeCriticalSection(&csComPort);
   else{
-    if( comPort.isOpen )
-      CloseComPort();
+    CloseComPort();
     DeleteCriticalSection(&csComPort);
   }
 }
@@ -90,7 +89,7 @@ void CloseComPort(void)
       comPort.hCom = INVALID_HANDLE_VALUE;
   }
 
-  printfSend(NULL, "%sclosed %s %s, thread exit %s.\n", CTRL_HEADER, comPort.portName, 
+  printfSend(NULL, "closed %s %s, thread exit %s.\n", comPort.portName, 
      closeComRet == FALSE? "failed":"success", closeThreadRet == FALSE? "failed":"success");
   memset(comPort.portName, 0, sizeof comPort.portName);
   
@@ -149,9 +148,7 @@ int8_t OpenComPort(const char* portName, uint32_t baudRate,
     sprintf(fullPortName, "\\\\.\\%s", portName);
 
     EnterCriticalSection(&csComPort);
-    if ( comPort.isOpen )
-        CloseComPort();
-
+    
     comPort.hCom = CreateFileA(fullPortName, 
                               GENERIC_READ | GENERIC_WRITE,
                               0,
@@ -209,7 +206,6 @@ int8_t OpenComPort(const char* portName, uint32_t baudRate,
     timeouts.WriteTotalTimeoutConstant = 1000;
     SetCommTimeouts(comPort.hCom, &timeouts);
 
-    //strcpy(comPort.portName, portName, sizeof(comPort.portName) - 1);
     memset(comPort.portName, 0, sizeof comPort.portName);
     strcpy(comPort.portName, portName);
     comPort.isOpen = TRUE;
@@ -263,7 +259,7 @@ static DWORD WINAPI ComRecvDataThread(LPVOID lpParam)
                     if (!GetOverlappedResult(comPort.hCom, &overlapped, &bytesRead, FALSE)) {
                         error = GetLastError();
                         if (error != ERROR_OPERATION_ABORTED) {
-                            printfSend(NULL, "%s%s error %ld\n", CTRL_HEADER, comPort.portName, error);
+                            printfSend(NULL, "%s error %ld\n", comPort.portName, error);
                             CloseComPort();
                             break;
                         }
@@ -271,7 +267,7 @@ static DWORD WINAPI ComRecvDataThread(LPVOID lpParam)
                 }
             }
             else if (error != ERROR_OPERATION_ABORTED) { 
-              printfSend(NULL, "%s%s error %ld\n", CTRL_HEADER, comPort.portName, error);
+              printfSend(NULL, "%s error %ld\n", comPort.portName, error);
               CloseComPort();
               break;
             }
@@ -347,7 +343,7 @@ static DWORD ComPortSendDataWait(char const *tcpRecvBuffer, int bytesReceived, D
   CloseHandle(writeOverlapped.hEvent); 
   LeaveCriticalSection(&csComPort);
   
-  // 错误处理，当串口拔掉后，错误值是22
+  // 错误处理，当串口拔掉后错误值是22
   if (error == ERROR_BAD_COMMAND || error == ERROR_OPERATION_ABORTED || error == ERROR_INVALID_HANDLE) {
       SafePrintf("Serial port error: %lu, closing port\n", error);
       CloseComPort();
@@ -382,7 +378,7 @@ static AsyncSendQueue_t asyncSendQueue = {0};
 BOOL InitAsyncSendThread(int queueSize) {
 
 
-    if (queueSize <= 10 || queueSize >= 200) {
+    if (queueSize <= 10 || queueSize >= MAX_QUEUE_SIZE) {
         SafePrintf("Invalid queue size: %d\n", queueSize);
         return FALSE;
     }

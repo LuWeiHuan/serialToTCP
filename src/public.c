@@ -134,7 +134,7 @@ void printBuildInfo(void)
 char *getSendRecvDirectionStr(char *direct, uint8_t index)
 {
   char *endptr;  // 用于检测未转换的字符 
-  uint8_t comNum = strtol(&comPort.portName[3], &endptr, 10);
+  uint8_t comNum = strtol(comPort.portName + 3, &endptr, 10);
 
   static char retStr[20];
   memset(retStr, 0, sizeof retStr);

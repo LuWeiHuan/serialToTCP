@@ -17,21 +17,31 @@
 #include "public.h"
 #include "logPrint.h"
 #include "COM.h"
-#include "client.h"
 #include "traffic.h"
 
 #include <stdio.h>
 
+/*================== 本地数据类型   =========================================*/
+typedef struct {
+    SOCKET socket;
+    HANDLE hThread;
+    DWORD threadId;
+    uint8_t index;
+    __int64 connectTime;    // 连接时间（毫秒级时间戳）
+    char ipAddress[16];     // 存储IPv4地址（如"192.168.1.1"）
+} ClientInfo_t;
+
 /*================== 本地宏定义     =========================================*/
 /*================== 全局共享变量    ========================================*/
+
 /*================== 本地常量声明    ========================================*/
 /*================== 本地变量声明    ========================================*/
 /*================== 本地函数声明    ========================================*/
 static CRITICAL_SECTION csClient;
-ClientInfo_t clients[MAX_CLIENTS];
+static ClientInfo_t clients[MAX_CLIENTS];
 
 /*================== 外部函数和变量声明    ==================================*/
-void HandleClientCommand( SOCKET clientSocket, uint8_t clientIndex, const char* command);
+void HandleClientCommand( SOCKET *clientSocket, uint8_t clientIndex, const char* command);
 
 void ClientResourceInit(bool start) 
 {
@@ -81,7 +91,7 @@ DWORD WINAPI ClientRecvDataThread(LPVOID lpParam)
     }
 
     // 发送连接成功消息  
-    printfSend(&clientInfo->socket, "%sOK! your index %d\n", CTRL_HEADER, clientInfo->index);
+    printfSend(&clientInfo->socket, "OK! your index %d\n", clientInfo->index);
     sendComPortsListToClient( &clientInfo->socket );  // 像该客户端发送可用端口号
 
     while ( tcpRecvBuffer != NULL ) {
@@ -136,14 +146,14 @@ DWORD WINAPI ClientRecvDataThread(LPVOID lpParam)
         if (strncmp(tcpRecvBuffer, CTRL_HEADER, strlen(CTRL_HEADER)) == 0) {
             if (runInfo.serverPrintData == 3) 
               SafePrintf("%s\n", tcpRecvBuffer);
-            HandleClientCommand(clientInfo->socket, clientInfo->index, 
+            HandleClientCommand(&clientInfo->socket, clientInfo->index, 
                               tcpRecvBuffer + strlen(CTRL_HEADER));
             continue;
         }
         
         // 判断串口是否已经打开
         if (comPort.isOpen == FALSE) {
-          printfSend(&clientInfo->socket, "%sCOM not open !\n", CTRL_HEADER);
+          printfSend(&clientInfo->socket, "COM not open !\n");
           continue;
         }
 
@@ -151,7 +161,7 @@ DWORD WINAPI ClientRecvDataThread(LPVOID lpParam)
         DWORD getError = 0;
         DWORD bytesWritten = ComPortSendData(tcpRecvBuffer, bytesReceived, &getError);
         if( bytesWritten != (DWORD)bytesReceived )
-          printfSend(&clientInfo->socket, "%sCOM write error: %d\n", CTRL_HEADER, getError);
+          printfSend(&clientInfo->socket, "COM write error: %ld\n", getError);
 
         char *Direct = getSendRecvDirectionStr("[TCP --> COM]", clientInfo->index);
         char *timeStr = getCurrentTime();
@@ -206,6 +216,23 @@ void addNewClient(uint8_t index, SOCKET socket, char *ip)
 }
 
 
+void getAllclientIPandIndexInfo(char *retCahr, uint16_t len)
+{
+  uint16_t strLen = 0;
+  memset(retCahr, 0, len);
+  char clientInfo[40];
+  for (uint8_t i = 0; i < MAX_CLIENTS; i++)
+    if (clients[i].socket != INVALID_SOCKET) {
+      memset(clientInfo, 0, sizeof clientInfo);
+      sprintf(clientInfo, "client index %d, IP:%s\n", i, clients[i].ipAddress );
+      strLen += strlen(clientInfo);
+      if( strLen > len  )
+        break;
+      strcat(retCahr, clientInfo);
+    }
+}
+
+
 void CloseClient(uint8_t index, char *reason) 
 {
     if (index >= MAX_CLIENTS || clients[index].socket == INVALID_SOCKET) {
@@ -257,15 +284,14 @@ int SendDataToClients(SOCKET *socket, const char* buff, int len)
   return sendRet;
 }
 
-void sendComPortsListToClient( SOCKET *socket)
+void sendComPortsListToClient(SOCKET *socket)
 {
   char *ComList = getComPortList();
-  printfSend(socket, "%s%s\n", CTRL_HEADER, 
-    ComList == NULL? "Failed to get COM port list":ComList);
+  printfSend(socket, "%s\n", ComList == NULL? "Failed to get COM port list":ComList);
   
   if( comPort.isOpen && strstr(ComList, comPort.portName) == NULL ){
     SafePrintf("%s disconnection!\n", comPort.portName);
-    printfSend(socket, "%s%s disconnection!\n", CTRL_HEADER, comPort.portName);
+    printfSend(socket, "%s disconnection!\n", comPort.portName);
     CloseComPort();
   }
 }
@@ -283,24 +309,27 @@ int printfSend(SOCKET *Socket, const char *fmt, ...)
 
 	static char char_buff[1024]; // 字符串缓冲区
 	memset(char_buff, 0, sizeof char_buff);
- 
+  strcpy(char_buff, CTRL_HEADER);
+  uint8_t ctrlHeaderLen = strlen( CTRL_HEADER);
+
   // args为定义的一个指向可变参数的变量，va_list以及下边要用到的
   // va_start,va_end都是是在定义可变参数函数中必须要用到宏，在stdarg.h头文件中定义
 	va_list args; 
   va_start(args, fmt);
-  int retLen = vsnprintf(char_buff, sizeof char_buff, fmt, args);
+  int retLen = vsnprintf(char_buff + ctrlHeaderLen, 
+    sizeof char_buff - ctrlHeaderLen, fmt, args);
   va_end(args); // 初始化args的函数，使其指向可变参数的第一个参数，fmt是可变参数的前一个参数
 
   //LeaveCriticalSection(&g_log_cs);
- 
-  return SendDataToClients(Socket, char_buff, retLen); 
+
+  return SendDataToClients(Socket, char_buff, retLen + ctrlHeaderLen); 
 }
 
 // 查找可用的客户端槽位
 int8_t findClientSlot(void)
 {
     // 寻找新空位
-    for (int i = 0; i < MAX_CLIENTS; i++) 
+    for (uint8_t i = 0; i < MAX_CLIENTS; i++) 
         if (clients[i].socket == INVALID_SOCKET) 
             return i;
 
@@ -312,10 +341,11 @@ int8_t findClientSlot(void)
 
     // 通知告诉最早客户端下线
     printfSend(&clients[oldestIndex].socket, 
-        "%sYou are kicked due to server full! Your index %d\n", 
-        CTRL_HEADER, oldestIndex);
+        "You are kicked due to server full! Your index %d\n", 
+         oldestIndex);
     
-    SafePrintf("Kicked oldest client index %d\n", oldestIndex);
+    SafePrintf("Kicked oldest client index %d, IP:%s\n", 
+      oldestIndex, clients[oldestIndex].ipAddress);
 
     // 踢出最早的客户端
     CloseClient(oldestIndex, "Server full");

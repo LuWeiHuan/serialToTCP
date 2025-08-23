@@ -14,16 +14,11 @@
 /*================== 头文件包含     =========================================*/
 #include "logPrint.h"
 
-
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
-#include <winsock2.h>
 #include <windows.h>
-#include <setupapi.h>
-#include <devguid.h>
-
 
 /*================== 本地宏定义     =========================================*/
 /*================== 全局共享变量    ========================================*/
@@ -38,16 +33,13 @@ static void DisableQuickEditMode(void);
 
 
 
-
 void logPrintResourceInit(bool start)
 {
   if( start ){
     InitializeCriticalSection(&g_log_cs);
     DisableQuickEditMode();
   }
-    
-  else{
-
+  else{ 
      DeleteCriticalSection(&g_log_cs);
   }
    

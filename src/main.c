@@ -33,7 +33,7 @@
 14. 串口异步发送能力。使用独立线程使用队列，主要任务是异步发送数据到串口。
   ******************************************************************************
   * @attention 注意
-  *
+  * 可能要要打开设备管理器才能实现插入拔出串口检测功能
   *
   *******************************************************************************
 */
@@ -45,8 +45,8 @@
 #include "main.h"
 #include "logPrint.h"
 #include "public.h"
-#include "client.h"
 #include "server.h"
+#include "client.h"
 #include "COM.h"
 #include "DCM.h"
 #include "traffic.h"
@@ -79,6 +79,7 @@ int main(int argc, char const *argv[])
   ComPortResourceInit(true);
 
   StartTrafficMonitor(); //流量统计
+
   // 解析来自程序传递的端口号
   int port = ParsePortParameter(argc, argv);
   if( port <= 0 )
@@ -95,7 +96,6 @@ int main(int argc, char const *argv[])
   SafePrintf("Server started on port %d\n", port);
    
   DeviceChangeMonitor( true ); // 启动设备插拔变化监听
-  //StartTrafficMonitor();
 
   SOCKET newClientSocket;
   int8_t listenStartRet, getClientIndex;
@@ -126,7 +126,7 @@ int main(int argc, char const *argv[])
 }
 
 // 处理客户端发过来的指令
-void HandleClientCommand( SOCKET clientSocket, uint8_t clientIndex, const char* command) 
+void HandleClientCommand(SOCKET *clientSocket, uint8_t clientIndex, const char* command) 
 {
     char *token;
     static char handleString[256];
@@ -134,20 +134,13 @@ void HandleClientCommand( SOCKET clientSocket, uint8_t clientIndex, const char* 
     strcpy(handleString, command);
 
     if (strnicmp(command, "comlist", strlen("comlist")) == 0) { 
-      sendComPortsListToClient( &clientSocket );
+      sendComPortsListToClient( clientSocket );
     }
 
     else if ( strnicmp(command, "PrintAllclientIP", strlen("PrintAllclientIP")) == 0) {
-      memset(handleString, 0, sizeof handleString);
-      char clientInfo[40];
-      for (uint8_t i = 0; i < MAX_CLIENTS; i++) 
-        if (clients[i].socket != INVALID_SOCKET) {
-          memset(clientInfo, 0, sizeof clientInfo);
-          sprintf(clientInfo, "client index %d, IP:%s\n", i, clients[i].ipAddress );
-          strcat(handleString, clientInfo);
-        }
+      getAllclientIPandIndexInfo(handleString, sizeof handleString);
       SafePrintf("All Client IP:\n%s\n", handleString);
-      printfSend(&clientSocket, "%sAll Client IP:\n%s\n", CTRL_HEADER, handleString);
+      printfSend(clientSocket, "All Client IP:\n%s\n", handleString);
     }
 
     else if (strnicmp(command, "setCOMsednWiat", strlen("setCOMsednWiat")) == 0) {
@@ -156,13 +149,13 @@ void HandleClientCommand( SOCKET clientSocket, uint8_t clientIndex, const char* 
       uint8_t num = atoi(token);
       if( num == 0 ){
         FreeAsyncSendQueue();
-        printfSend(NULL, "%sset COM sedn NO Wiat\n", CTRL_HEADER);
+        printfSend(NULL, "set COM sedn NO Wiat\n");
         return;
       }
 
       BOOL ret = InitAsyncSendThread(num);
-      printfSend(NULL, "%sset COM sedn Wiat %s set Queue num %d\n", 
-        CTRL_HEADER, ret? "OK!":"Fail! scope 10~200 !", num);
+      printfSend(NULL, "set COM sedn Wiat %s set Queue num %d\n", 
+        ret? "OK!":"Fail! scope 10~200 !", num);
     }
 
     else if (strnicmp(command, "setRecvCOMdataTo", strlen("setRecvCOMdataTo")) == 0) {
@@ -172,7 +165,7 @@ void HandleClientCommand( SOCKET clientSocket, uint8_t clientIndex, const char* 
       char clientStr[5];
       memset(clientStr, 0, sizeof clientStr);
       if( strnicmp(token, "my", strlen("my") ) == 0 ){
-        runInfo.monopolizeSoclet = &clients[ clientIndex ].socket;
+        runInfo.monopolizeSoclet = clientSocket;
         runInfo.monopolizeIndex = clientIndex;
         sprintf(clientStr, "%d", clientIndex);
       }
@@ -180,11 +173,11 @@ void HandleClientCommand( SOCKET clientSocket, uint8_t clientIndex, const char* 
         strcpy(clientStr, "All");
         runInfo.monopolizeSoclet = NULL;
       }
-      printfSend(NULL, "%sset COM --> TCP %s client\n", CTRL_HEADER, clientStr); 
+      printfSend(NULL, "set COM --> TCP %s client\n", clientStr); 
     }
 
     else if (strnicmp(command, "exit", strlen("exit")) == 0) {
-      printfSend(NULL, "%sserver ready exit\n", CTRL_HEADER );
+      printfSend(NULL, "server ready exit\n" );
       exit(0);
     }
 
@@ -200,16 +193,16 @@ void HandleClientCommand( SOCKET clientSocket, uint8_t clientIndex, const char* 
           runInfo.serverPrintData = 2;
         if( strnicmp(token, "CMD", strlen("CMD")) == 0 )
           runInfo.serverPrintData = 3;
-        printfSend(NULL, "%sserver Print Data: %d %s \n", 
-          CTRL_HEADER, runInfo.serverPrintData, token);
+        printfSend(NULL, "server Print Data: %d %s \n", 
+            runInfo.serverPrintData, token);
     }
 
     else if (strnicmp(command, "system", strlen("system") ) == 0) {
         token = strtok(handleString, DECOLLATOR);
         token = strtok(NULL, DECOLLATOR); // 指令 
         int ret = system(token);
-        printfSend(&clientSocket, "%sexecute system %s :%d\n", 
-            CTRL_HEADER, ret == 0? "success": "failed", ret);
+        printfSend(clientSocket, "execute system %s :%d\n", 
+            ret == 0? "success": "failed", ret);
     }
 
     else if (strnicmp(command, "open", strlen("open")) == 0) {
@@ -217,7 +210,7 @@ void HandleClientCommand( SOCKET clientSocket, uint8_t clientIndex, const char* 
         token = strtok(NULL, DECOLLATOR); // 串口号
 
         if( token == NULL || strnicmp(token, "COM", strlen("COM") ) != 0 ) {
-          printfSend(&clientSocket, "%sThe input is not COM\n", CTRL_HEADER);
+          printfSend(clientSocket, "The input is not :%s\n", token == NULL? "NULL":token);
           return;
         }
 
@@ -226,7 +219,7 @@ void HandleClientCommand( SOCKET clientSocket, uint8_t clientIndex, const char* 
         sprintf(portName, "COM%d", (int)strtol(token + strlen("COM"), &endptr, 10) );
 
         if( strcmp(portName, comPort.portName) == 0 ){ // 防止重复打开同一个串口浪费资源
-          printfSend(&clientSocket, "%sthe %s has been turned on\n", CTRL_HEADER, portName);
+          printfSend(clientSocket, "the %s has been turned on\n", portName);
           return;
         }
         
@@ -245,19 +238,22 @@ void HandleClientCommand( SOCKET clientSocket, uint8_t clientIndex, const char* 
         token = strtok(NULL, DECOLLATOR); // 校验位
         if (token) parity = atoi(token);
 
-        CloseComPort();
+        if ( comPort.isOpen )
+          CloseComPort();
 
-        printfSend(&clientSocket, "%sopening COM...\n", CTRL_HEADER); 
+        printfSend(clientSocket, "opening %s...\n", portName); 
         int8_t ret = OpenComPort(portName, baudRate, dataBits, stopBits, parity); 
         DWORD error = (ret != 0)? GetLastError(): 0;
 
         memset(handleString, 0, sizeof handleString);
-        sprintf(handleString, "%sopen [%s,%d,%d,%d,%d] %s %d %ld\n", CTRL_HEADER, 
+        sprintf(handleString, "open [%s,%d,%d,%d,%d] %s! (%d:%ld)\n", 
           portName,baudRate,dataBits,stopBits,parity,
           ret == 0 ? "success":"failed", ret, error);
-        printfSend(NULL, "%s%s", CTRL_HEADER, handleString);
+        printfSend(NULL, "%s", handleString);
         SafePrintf("%s", handleString);
     }
+    else
+      printfSend(clientSocket, "Not Command:%s\n", command);
 }
 
 
