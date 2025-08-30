@@ -43,7 +43,6 @@ runInfo_t  runInfo = {
 
 /*================== 外部函数和变量声明    ==================================*/
 
-
 // 获取当前时间戳（毫秒）
 __int64 GetCurrentTimeMillis(void) 
 {
@@ -56,7 +55,6 @@ __int64 GetCurrentTimeMillis(void)
   }
 
   struct _timeb timebuffer;
-  
   _ftime_s(&timebuffer);
   __int64 atPresent = timebuffer.time * 1000 + timebuffer.millitm;
 
@@ -77,8 +75,7 @@ void updataConsoleTitle(char *threadName, DWORD theradID)
   uint8_t min = currentTime / 60 % 60;
   uint8_t hour = currentTime / 360 % 24;
   uint32_t day = currentTime / 360 / 24;
-  
-  
+
   if( sec % 3 == 0 || sec % 4 == 0 )
     snprintf(title, sizeof title, "串口转TCP     串口:↑ %s  ↓ %s   网络：↑ %s  ↓ %s    线程%ld：%s",
       trafficStats.com.recvRateStr,
@@ -91,9 +88,7 @@ void updataConsoleTitle(char *threadName, DWORD theradID)
       "已运行%d天：%02d:%02d:%02d  客户端：%d/%d  线程%ld：%s",
         runInfo.port, day, hour, min,sec, runInfo.clientCount, MAX_CLIENTS, 
         theradID, threadName =! NULL? threadName:" ");
-
-
-
+  
   SetConsoleTitleA( title );
 }
 

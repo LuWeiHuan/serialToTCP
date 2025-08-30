@@ -18,6 +18,7 @@
 #include "logPrint.h"
 #include "COM.h"
 #include "traffic.h"
+#include "discovery.h"
 
 #include <stdio.h>
 
@@ -61,8 +62,6 @@ void ClientResourceInit(bool start)
   }
     
 }
-
-
 
 DWORD WINAPI ClientRecvDataThread(LPVOID lpParam) 
 {
@@ -213,6 +212,8 @@ void addNewClient(uint8_t index, SOCKET socket, char *ip)
       clients[index].ipAddress, runInfo.clientCount, clients[index].index, clients[index].connectTime, runInfo.linkCount);
   }
   LeaveCriticalSection(&csClient);
+ 
+  UpdateDiscoveryInfo(runInfo.port, runInfo.clientCount);
 }
 
 
@@ -259,6 +260,8 @@ void CloseClient(uint8_t index, char *reason)
     SafePrintf("Closed client %d, reason: %s\n", index, reason);
     memset(clients[index].ipAddress, 0, sizeof clients[index].ipAddress);
     LeaveCriticalSection(&csClient);
+
+    UpdateDiscoveryInfo(runInfo.port, runInfo.clientCount);// 更新发现信息 
 }
 
 

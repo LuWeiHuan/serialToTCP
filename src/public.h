@@ -19,13 +19,13 @@ extern "C" {
 /*================== 数据类型声明		=========================================*/
 //typedef struct enum union
 typedef struct {
-    uint8_t serverPrintData; // 0，不显示，1为字符串显示，2为Hex显示
-    uint8_t clientCount;
-    SOCKET *monopolizeSoclet; // 独占串口收到的数据
-    int8_t  monopolizeIndex;
-    uint16_t port;
-    time_t startTime;
-    uint32_t linkCount;
+    uint8_t   serverPrintData; // 0，不显示，1为字符串显示，2为Hex显示
+    uint8_t   clientCount;
+    SOCKET    *monopolizeSoclet; // 独占串口收到的数据
+    int8_t    monopolizeIndex;
+    uint16_t  port;
+    time_t    startTime;
+    uint32_t  linkCount;
 } runInfo_t;
 
 /*================== 外部变量声明		=========================================*/

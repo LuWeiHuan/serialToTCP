@@ -35,7 +35,7 @@ static volatile BOOL g_bDeviceChangeThreadRunning = FALSE;
 // 设备变化通知线程
 static DWORD WINAPI DeviceChangeMonitorThread(LPVOID lpParam)
 {
-    if( lpParam == NULL ){}
+    (void)lpParam;
 
     // 创建隐藏窗口接收消息
     HWND hWnd = CreateWindowEx(0, "STATIC", "DeviceMonitor", 0, 0, 0, 0, 0, NULL, NULL, NULL, NULL);

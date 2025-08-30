@@ -31,6 +31,7 @@
 13. USB设备插入或拔出通知所有客户端
 最后给出使用MakeFile管理编译。
 14. 串口异步发送能力。使用独立线程使用队列，主要任务是异步发送数据到串口。
+15. 请让服务端实现被发现的能力，这个功能在子线程用UDP实现，使用19000端口
   ******************************************************************************
   * @attention 注意
   * 可能要要打开设备管理器才能实现插入拔出串口检测功能
@@ -50,9 +51,11 @@
 #include "COM.h"
 #include "DCM.h"
 #include "traffic.h"
+#include "discovery.h"
 
 /*================== 本地宏定义     =========================================*/
 #define DECOLLATOR    ",\n"
+
 
 /*================== 全局共享变量    ========================================*/
 /*================== 本地常量声明    ========================================*/
@@ -80,6 +83,8 @@ int main(int argc, char const *argv[])
 
   StartTrafficMonitor(); //流量统计
 
+
+  
   // 解析来自程序传递的端口号
   int port = ParsePortParameter(argc, argv);
   if( port <= 0 )
@@ -96,6 +101,9 @@ int main(int argc, char const *argv[])
   SafePrintf("Server started on port %d\n", port);
    
   DeviceChangeMonitor( true ); // 启动设备插拔变化监听
+
+  DiscoveryServiceStart();      // 启动发现服务
+  UpdateDiscoveryInfo(port, 0); // 初始客户端数量为0
 
   SOCKET newClientSocket;
   int8_t listenStartRet, getClientIndex;
@@ -116,11 +124,12 @@ int main(int argc, char const *argv[])
     addNewClient(getClientIndex, newClientSocket, clientIP); // 添加新客户端 
   }
 
-  closesocket(serverSocket);
+  closesocket(serverSocket); 
+  DiscoveryServiceStop();  // 在退出前停止发现服务 
   ClientResourceInit(false);
   ComPortResourceInit(false);
   logPrintResourceInit(false);
-  DeviceChangeMonitor(false);  
+  DeviceChangeMonitor(false);
   WSACleanup();
   return 0;
 }
