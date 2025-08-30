@@ -15,7 +15,7 @@
 #include "public.h"
 #include "main.h"
 #include "COM.h"
-#include "traffic.h"
+#include "TrafficStats.h"
 #include "logPrint.h"
 
 #include <stdio.h>
@@ -33,7 +33,7 @@ runInfo_t  runInfo = {
   .monopolizeIndex = 0,
   .port = 0,
   .startTime = 0,
-  .linkCount = 0,
+  .connectCount = 0,
 };
 
 /*================== 本地常量声明    ========================================*/
@@ -74,20 +74,22 @@ void updataConsoleTitle(char *threadName, DWORD theradID)
   uint8_t sec = currentTime % 60;
   uint8_t min = currentTime / 60 % 60;
   uint8_t hour = currentTime / 360 % 24;
-  uint32_t day = currentTime / 360 / 24;
+  uint32_t day = currentTime / 86400;
 
+  #ifdef __TRAFFIC_STATS_H_
   if( sec % 3 == 0 || sec % 4 == 0 )
     snprintf(title, sizeof title, "串口转TCP     串口:↑ %s  ↓ %s   网络：↑ %s  ↓ %s    线程%ld：%s",
-      trafficStats.com.recvRateStr,
-      trafficStats.com.sendRateStr,
-      trafficStats.net.sendRateStr,
-      trafficStats.net.recvRateStr,
-      theradID, threadName =! NULL? threadName:"NULL");
+      trafficStats.com.recvRate,
+      trafficStats.com.sendRate,
+      trafficStats.net.sendRate,
+      trafficStats.net.recvRate,
+      theradID, threadName =! NULL? threadName:"No thread Name");
   else
+  #endif
     snprintf(title, sizeof title, "串口转TCP     服务端口号：%d   "
       "已运行%d天：%02d:%02d:%02d  客户端：%d/%d  线程%ld：%s",
         runInfo.port, day, hour, min,sec, runInfo.clientCount, MAX_CLIENTS, 
-        theradID, threadName =! NULL? threadName:" ");
+        theradID, threadName =! NULL? threadName:"No thread Name");
   
   SetConsoleTitleA( title );
 }
@@ -101,7 +103,7 @@ char *getCurrentTime(void)
   GetLocalTime(&st);  // 获取本地时间
 
   // 格式化为 "YYYY-MM-DD HH:MM:SS"
-  sprintf(timeStr, "%04d-%02d-%02d %02d:%02d:%02d",
+  snprintf(timeStr, sizeof timeStr, "%04d-%02d-%02d %02d:%02d:%02d",
           st.wYear, st.wMonth, st.wDay,
           st.wHour, st.wMinute, st.wSecond);
   return timeStr;
@@ -111,7 +113,7 @@ void printBuildInfo(void)
 {
   printf("========================================\n");
   printf("  Program    : %s\n", "串口转TCP服务端");
-  printf("  Version    : %s\n", "1.0.0");
+  printf("  Version    : %s\n", VERSIONS);
   printf("  Build Date : %s %s\n", __DATE__, __TIME__);
   printf("  Compiler   : GCC %d.%d.%d\n", __GNUC__, __GNUC_MINOR__, __GNUC_PATCHLEVEL__);
   printf("========================================\n\n");
@@ -133,21 +135,50 @@ char *getSendRecvDirectionStr(char *direct, uint8_t index)
 
   static char retStr[20];
   memset(retStr, 0, sizeof retStr);
-  strcpy(retStr, "[    -->    ]");
+  strcpy(retStr, "    -->    ");
 
   if( strcmp(direct, "[TCP --> COM]") == 0 ){
     memset(retStr, 0, sizeof retStr);
-    sprintf(retStr, "TCP%-3d--> COM%-3d" , index, comNum);
+    snprintf(retStr, sizeof retStr, "TCP%-3d--> COM%-3d" , index, comNum);
   }
 
   if( strcmp(direct, "[COM --> TCP]") == 0 ){
     memset(retStr, 0, sizeof retStr);
 
     if( runInfo.monopolizeSoclet != NULL ) // 独占串口数据
-      sprintf(retStr, "COM%-3d--> TCP%-3d" , comNum, runInfo.monopolizeIndex);
+      snprintf(retStr, sizeof retStr, "COM%-3d--> TCP%-3d", 
+        comNum, runInfo.monopolizeIndex);
     else
-      sprintf(retStr, "COM%-3d--> TCP%3d" , comNum, runInfo.clientCount);
+      snprintf(retStr, sizeof retStr, "COM%-3d--> TCP%3d",
+        comNum, runInfo.clientCount);
   }
 
   return retStr;
+}
+
+/**
+ * 获取计算机全名（DNS全名）
+ * 返回值：计算机名字符串
+ */
+char *GetComputerFullName(void) 
+{
+    DWORD nameLen = 0;
+    static char computerName[20]; // Win提示计算机名最大15个字符
+    memset(computerName, 0, sizeof computerName);
+
+    // 第一次调用获取所需缓冲区大小
+    BOOL result = GetComputerNameEx(ComputerNameDnsFullyQualified, NULL, &nameLen);
+    if (result == FALSE && GetLastError() != ERROR_MORE_DATA){ 
+      snprintf(computerName, sizeof computerName, "A not name:%ld", GetLastError());
+      return computerName;
+    }
+    
+    // 第二次调用获取实际名称
+    result = GetComputerNameEx(ComputerNameDnsFullyQualified, computerName, &nameLen);
+    if (result == FALSE) { 
+      snprintf(computerName, sizeof computerName, "B not name:%ld", GetLastError());
+      return computerName;
+    }
+
+    return computerName; // 成功
 }

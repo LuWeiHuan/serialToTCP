@@ -9,13 +9,9 @@ extern "C" {
 /*================== 头文件包含			=========================================*/
 #include <stdint.h>
 #include <stdbool.h>
-
 #include <winsock2.h>
 
-
 /*================== 宏定义声明			=========================================*/
-#define MAX_QUEUE_SIZE  200   // 最大队列长度
-
 /*================== 数据类型声明		=========================================*/
 //typedef struct enum union
 typedef struct {
@@ -25,6 +21,7 @@ typedef struct {
     DCB dcb;
     HANDLE hThread;
     DWORD threadId;
+    uint64_t sendCount;
 } ComPortInfo_t;
 
 /*================== 外部变量声明		=========================================*/
@@ -37,8 +34,8 @@ int8_t OpenComPort(const char* portName, uint32_t baudRate, uint8_t dataBits, ui
 DWORD ComPortSendData(char const *tcpRecvBuffer, int bytesReceived, DWORD *retError);
 void CloseComPort();
 
-BOOL InitAsyncSendThread(int queueSize);
-void FreeAsyncSendQueue(void);
+BOOL COMInitAsyncSendThread(uint8_t num);
+void COMFreeAsyncSendQueue(void);
 
 #ifdef __cplusplus
 }

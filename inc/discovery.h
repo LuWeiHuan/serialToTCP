@@ -12,7 +12,7 @@ extern "C" {
 /*================== 宏定义声明			=========================================*/
 #define DISCOVERY_PORT              19000       // UDP发现端口
 //#define DISCOVERY_RESPONSE_PORT   19001       // UDP响应端口
-#define DISCOVERY_MAGIC             "COMTCP_SERVER_V1.0"  // 魔术字标识
+#define DISCOVERY_MAGIC             "COM2TCP_SERVER"  // 魔术字标识
 
 /*================== 数据类型声明		=========================================*/
 /*================== 外部变量声明		=========================================*/

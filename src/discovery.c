@@ -27,7 +27,8 @@
 /*================== 本地数据类型   =========================================*/
 typedef struct {
     uint16_t serverPort;      // 服务器TCP端口
-    char serverName[32];      // 服务器名称
+    char *serverName;         // 服务器名称
+    char serverIP[20];        // 服务器名称
     uint32_t clientCount;     // 当前客户端数量
     uint32_t maxClients;      // 最大客户端数量
 } DiscoveryInfo_t;
@@ -40,14 +41,15 @@ typedef struct {
 /*================== 本地常量声明    ========================================*/
 /*================== 本地变量声明    ========================================*/
 static bool getIPmethod = true;              // 获取IP的方法
-static SOCKET discoverySocket = INVALID_SOCKET;
-static HANDLE hDiscoveryThread = NULL;
 static volatile BOOL discoveryRunning = FALSE;
+static HANDLE hDiscoveryThread = NULL;
+static SOCKET discoverySocket = INVALID_SOCKET;
 static CRITICAL_SECTION csDiscovery;
 
 static DiscoveryInfo_t discoveryInfo = {
     .serverPort = 0,
-    .serverName = "COM2TCP_Server",
+    .serverName = DISCOVERY_MAGIC,
+    .serverIP = "NULL",
     .clientCount = 0,
     .maxClients = MAX_CLIENTS
 };
@@ -81,9 +83,10 @@ void DiscoveryServiceStart(void)
         discoverySocket = INVALID_SOCKET;
         discoveryRunning = FALSE;
         SafePrintf("Failed to create discovery thread\n");
-    } else {
-        SafePrintf("Discovery service started on UDP port %d\n", DISCOVERY_PORT);
     }
+    else 
+        SafePrintf("Discovery service started on UDP port %d\n", DISCOVERY_PORT);
+    
 }
 
 // 停止发现服务
@@ -178,12 +181,12 @@ static DWORD WINAPI DiscoveryThread(LPVOID lpParam)
 {
     (void)lpParam;
     struct sockaddr_in clientAddr;
-    int clientAddrLen = sizeof(clientAddr);
+    int clientAddrLen = sizeof clientAddr;
     char recvBuffer[256];
     int bytesReceived, selectResult;
     fd_set readSet;
     struct timeval timeout; 
-
+    
     char DiscoveryServerString[50];
     memset(DiscoveryServerString, 0, sizeof DiscoveryServerString);
     snprintf(DiscoveryServerString, sizeof DiscoveryServerString, 
@@ -208,7 +211,7 @@ static DWORD WINAPI DiscoveryThread(LPVOID lpParam)
             continue;
         }
 
-        if (selectResult == 0 || FD_ISSET(discoverySocket, &readSet) == 0)  
+        if (selectResult == 0 || FD_ISSET(discoverySocket, &readSet) == 0)
           continue;
 
         // 接收发现请求
@@ -217,7 +220,6 @@ static DWORD WINAPI DiscoveryThread(LPVOID lpParam)
         
         if (bytesReceived == 0) 
           continue;
-
         recvBuffer[bytesReceived] = '\0';
         
         // 检查是否是有效的发现请求
@@ -237,55 +239,56 @@ static DWORD WINAPI DiscoveryThread(LPVOID lpParam)
 static void SendDiscoveryResponse(struct sockaddr_in* clientAddr)
 {
     char responseBuffer[RESPONSE_BUFFER_SIZE];
-    char serverIP[20] = {0};
-    memset(serverIP, 0, sizeof serverIP);
+    static uint16_t count = 0;
+    memset(discoveryInfo.serverIP, 0, sizeof discoveryInfo.serverIP);
 
     EnterCriticalSection(&csDiscovery);
+    char *ComputerFullName = GetComputerFullName();
 
     if( getIPmethod == true )   // 方法1：使用socket连接方式获取正确IP（更可靠）
-      GetMatchingSubnetIP(clientAddr, serverIP);
-
-    if( getIPmethod == false )  // 方法2：或者使用网段匹配算法
-      SelectMatchingSubnetIP(clientAddr, serverIP);
+      GetMatchingSubnetIP(clientAddr, discoveryInfo.serverIP);
+    else                        // 方法2：或者使用网段匹配算法
+      SelectMatchingSubnetIP(clientAddr, discoveryInfo.serverIP);
     
     // 构建响应消息
     snprintf(responseBuffer, sizeof responseBuffer,
-             "%s|%s|%d|%s|%u|%u",
-             DISCOVERY_MAGIC,
-             serverIP,
-             discoveryInfo.serverPort,
-             discoveryInfo.serverName,
-             discoveryInfo.clientCount,
-             discoveryInfo.maxClients);
+            "%s|%-15s|%-15s|%d|%u|%u\n",
+            discoveryInfo.serverName != NULL ? 
+              discoveryInfo.serverName:"not server name",
+            ComputerFullName != NULL ? ComputerFullName:"not host name",
+            discoveryInfo.serverIP,
+            discoveryInfo.serverPort,
+            discoveryInfo.clientCount,
+            discoveryInfo.maxClients);
     
     LeaveCriticalSection(&csDiscovery);
 
     // 发送响应到客户端
-    int sendResult = sendto(discoverySocket, responseBuffer, strlen(responseBuffer), 0,
-                          (struct sockaddr*)clientAddr, sizeof(*clientAddr));
+    int sendResult = sendto(discoverySocket, responseBuffer, strlen(responseBuffer), 
+                  0, (struct sockaddr*)clientAddr, sizeof(*clientAddr));
 
-    SafePrintf("Discovery response Sent to %s:%d -> Server IP: %s:%d  %s:%d\n",
+    SafePrintf("\rDiscovery response Sent to %s:%d -> Server IP: %s:%d  %s:%d  count:%-5d",
               inet_ntoa(clientAddr->sin_addr), ntohs(clientAddr->sin_port),
-              serverIP, discoveryInfo.serverPort, 
-              sendResult == SOCKET_ERROR? "failed":"succeed", WSAGetLastError());
+              discoveryInfo.serverIP, discoveryInfo.serverPort, 
+              sendResult == SOCKET_ERROR? "failed":"succeed", WSAGetLastError(), ++count);
 }
 
 // 获取与客户端相同网段的IP地址
 static void GetMatchingSubnetIP(struct sockaddr_in* clientAddr, char* ipBuffer)
 {
-    SOCKET tempSocket = INVALID_SOCKET;
     struct sockaddr_in tempAddr;
-    int tempAddrLen = sizeof(tempAddr);
+    int tempAddrLen = sizeof tempAddr;
     
     // 创建一个临时socket来获取本地接口信息
-    tempSocket = socket(AF_INET, SOCK_DGRAM, 0);
+    SOCKET tempSocket = socket(AF_INET, SOCK_DGRAM, 0);
     if (tempSocket == INVALID_SOCKET) {
         strcpy(ipBuffer, "127.0.0.1");
         return;
     }
     
     // 连接到客户端地址，系统会自动选择正确的本地接口
-    if (connect(tempSocket, (struct sockaddr*)clientAddr, sizeof(*clientAddr)) == SOCKET_ERROR) {
+    if (connect(tempSocket, (struct sockaddr*)clientAddr, 
+              sizeof(*clientAddr)) == SOCKET_ERROR) {
         closesocket(tempSocket);
         strcpy(ipBuffer, "127.0.0.1");
         return;
@@ -297,6 +300,11 @@ static void GetMatchingSubnetIP(struct sockaddr_in* clientAddr, char* ipBuffer)
 
     closesocket(tempSocket);
 }
+
+
+
+
+
 
 // 获取所有本地IP地址
 static void GetAllLocalIPs(char ips[][20], int *count)
@@ -316,10 +324,10 @@ static void GetAllLocalIPs(char ips[][20], int *count)
      struct in_addr addr;
     for (int i = 0; hostinfo->h_addr_list[i] != NULL && *count < 10; i++) {
         memcpy(&addr, hostinfo->h_addr_list[i], sizeof(struct in_addr));
-        if (strcmp(inet_ntoa(addr), "127.0.0.1") != 0) {
-            strncpy(ips[*count], inet_ntoa(addr), 16);
-            (*count)++;
-        }
+        if (strcmp(inet_ntoa(addr), "127.0.0.1") == 0) 
+          continue;
+        strncpy(ips[*count], inet_ntoa(addr), 16);
+        (*count)++;
     }
 }
 
@@ -369,3 +377,4 @@ static void SelectMatchingSubnetIP(struct sockaddr_in* clientAddr, char* selecte
     // 如果没有找到匹配网段的IP，使用第一个非回环IP
     strcpy(selectedIP, localIPs[0]);
 }
+

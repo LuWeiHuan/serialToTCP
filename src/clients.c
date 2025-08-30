@@ -17,7 +17,7 @@
 #include "public.h"
 #include "logPrint.h"
 #include "COM.h"
-#include "traffic.h"
+#include "TrafficStats.h"
 #include "discovery.h"
 
 #include <stdio.h>
@@ -207,9 +207,9 @@ void addNewClient(uint8_t index, SOCKET socket, char *ip)
   
   if( clients[index].hThread != NULL ){
     runInfo.clientCount++;
-    runInfo.linkCount++;
+    runInfo.connectCount++;
     SafePrintf("Client connected IP:%s, Count:%d, index %d, connectTime %I64d ms, Total clients: %d\n", 
-      clients[index].ipAddress, runInfo.clientCount, clients[index].index, clients[index].connectTime, runInfo.linkCount);
+      clients[index].ipAddress, runInfo.clientCount, clients[index].index, clients[index].connectTime, runInfo.connectCount);
   }
   LeaveCriticalSection(&csClient);
  
@@ -279,7 +279,6 @@ int SendDataToClients(SOCKET *socket, const char* buff, int len)
   else for (uint8_t i = 0; i < MAX_CLIENTS; i++)
     if (clients[i].socket != INVALID_SOCKET) {
       sendRet = send(clients[i].socket, buff, len, 0); 
-      
       trafficStats.net.totalBytesSent += sendRet; // 发送数据到客户端时 
     }
 

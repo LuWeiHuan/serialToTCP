@@ -1,6 +1,6 @@
 
-#ifndef __HEAK_FILE_NAME_H_
-#define __HEAK_FILE_NAME_H_
+#ifndef __TRAFFIC_STATS_H_
+#define __TRAFFIC_STATS_H_
 
 #ifdef __cplusplus  
 extern "C" {
@@ -18,8 +18,8 @@ extern "C" {
 typedef struct {
   uint64_t totalBytesSent;      // 总发送字节数
   uint64_t totalBytesReceived;  // 总接收字节数
-  char sendRateStr[15];        // 格式化后的发送速率字符串（如"1.23 MB/s"）
-  char recvRateStr[15];        // 格式化后的接收速率字符串
+  char sendRate[15];        // 格式化后的发送速率字符串（如"1.23 MB/s"）
+  char recvRate[15];        // 格式化后的接收速率字符串
 } TrafficStats_t;
 
 // 全局流量统计
@@ -38,7 +38,7 @@ void StartTrafficMonitor(void);
 }
 #endif
 
-#endif /*__HEAK_FILE_NAME_H_*/
+#endif /*__TRAFFIC_STATS_H_*/
 
 
 

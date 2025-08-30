@@ -12,7 +12,7 @@
 */
 
 /*================== 头文件包含     =========================================*/
-#include "traffic.h"
+#include "TrafficStats.h"
 #include "public.h"
 
 #include <windows.h>
@@ -45,16 +45,16 @@ static DWORD WINAPI TrafficMonitorThread(LPVOID lpParam)
   while ( true ) {
  
     formatSpeedString(trafficStats.com.totalBytesSent, 
-      trafficStats.com.sendRateStr, sizeof trafficStats.com.sendRateStr);
+      trafficStats.com.sendRate, sizeof trafficStats.com.sendRate);
 
     formatSpeedString(trafficStats.com.totalBytesReceived, 
-      trafficStats.com.recvRateStr, sizeof trafficStats.com.recvRateStr);
+      trafficStats.com.recvRate, sizeof trafficStats.com.recvRate);
  
     formatSpeedString(trafficStats.net.totalBytesSent,
-      trafficStats.net.sendRateStr, sizeof trafficStats.net.sendRateStr);
+      trafficStats.net.sendRate, sizeof trafficStats.net.sendRate);
 
     formatSpeedString(trafficStats.net.totalBytesReceived,
-      trafficStats.net.recvRateStr, sizeof trafficStats.net.recvRateStr);
+      trafficStats.net.recvRate, sizeof trafficStats.net.recvRate);
 
     trafficStats.com.totalBytesSent = 0;
     trafficStats.com.totalBytesReceived = 0;

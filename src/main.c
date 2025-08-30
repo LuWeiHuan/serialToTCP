@@ -50,7 +50,7 @@
 #include "client.h"
 #include "COM.h"
 #include "DCM.h"
-#include "traffic.h"
+#include "TrafficStats.h"
 #include "discovery.h"
 
 /*================== 本地宏定义     =========================================*/
@@ -80,11 +80,8 @@ int main(int argc, char const *argv[])
   logPrintResourceInit(true); 
   ClientResourceInit(true);
   ComPortResourceInit(true);
-
   StartTrafficMonitor(); //流量统计
 
-
-  
   // 解析来自程序传递的端口号
   int port = ParsePortParameter(argc, argv);
   if( port <= 0 )
@@ -156,13 +153,14 @@ void HandleClientCommand(SOCKET *clientSocket, uint8_t clientIndex, const char* 
       token = strtok(handleString, DECOLLATOR);
       token = strtok(NULL, DECOLLATOR);
       uint8_t num = atoi(token);
+      
       if( num == 0 ){
-        FreeAsyncSendQueue();
+        COMFreeAsyncSendQueue();
         printfSend(NULL, "set COM sedn NO Wiat\n");
         return;
       }
 
-      BOOL ret = InitAsyncSendThread(num);
+      BOOL ret = COMInitAsyncSendThread(num);
       printfSend(NULL, "set COM sedn Wiat %s set Queue num %d\n", 
         ret? "OK!":"Fail! scope 10~200 !", num);
     }

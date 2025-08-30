@@ -8,6 +8,7 @@ TARGET = com2tcp_server
 BUILD_DIR = build
 BIN_DIR = bin
 SRC_DIR = ./src
+INC_DIR = ./inc  # 自定义头文件目录
 INSTALL_DIR = ./  # 自定义安装目录
 EXE = $(BIN_DIR)/$(TARGET).exe
 
@@ -21,6 +22,9 @@ SRCS = $(wildcard $(SRC_DIR)/*.c)
 OBJS = $(patsubst $(SRC_DIR)/%.c,$(BUILD_DIR)/%.o,$(SRCS))
 DEPS = $(OBJS:.o=.d)
 
+# 添加头文件搜索路径
+CFLAGS += -I$(INC_DIR)
+
 # PowerShell 命令定义
 PS_FIND_PROC = powershell -Command "if (Get-Process '$(TARGET)' -ErrorAction SilentlyContinue) { exit 1 } else { exit 0 }"
 PS_KILL_PROC = powershell -Command "Stop-Process -Name '$(TARGET)' -Force -ErrorAction SilentlyContinue"
@@ -29,19 +33,27 @@ PS_MKDIR = powershell -Command "if (-not (Test-Path '$(1)')) { New-Item -ItemTyp
 PS_COPY = powershell -Command "if (Test-Path '$(1)') { Copy-Item -Path '$(1)' -Destination '$(2)' -Force }"
 PS_REMOVE_FILE = powershell -Command "if (Test-Path '$(1)') { Remove-Item -Force '$(1)' }"
 PS_MAKE_SHORTCUT = powershell -Command "$$WshShell = New-Object -ComObject WScript.Shell; $$Shortcut = $$WshShell.CreateShortcut('$(1)'); $$Shortcut.TargetPath = '$(2)'; $$Shortcut.Save()"
-PS_CLEAR_SCREEN = powershell -Command "Clear-Host"  # 新增清屏命令
+PS_CLEAR_SCREEN = powershell -Command "Clear-Host"
+PS_GET_TIME = powershell -Command "Get-Date -Format 'HH:mm:ss.fff'"
+PS_MEASURE_TIME = powershell -Command "$$Start=Get-Date; $$End=Get-Date; $$Duration=$$End-$$Start; Write-Host 'Build time: ' -NoNewline; if ($$Duration.TotalSeconds -ge 60) { Write-Host (\"{0:F0}m {1:F2}s\" -f [math]::Floor($$Duration.TotalMinutes), ($$Duration.TotalSeconds % 60)) } elseif ($$Duration.TotalSeconds -ge 1) { Write-Host (\"{0:F2}s\" -f $$Duration.TotalSeconds) } else { Write-Host (\"{0:F0}ms\" -f $$Duration.TotalMilliseconds) }"
 
 .PHONY: all clean kill check install uninstall shortcut copy-to-root
 
-all: clear-screen check $(EXE) copy-to-root  # 添加清屏依赖
+all: clear-screen check build-timer  # 添加构建计时器
+
+build-timer: $(EXE) copy-to-root
+	@echo Build completed at: $$($(PS_GET_TIME))
+	@$(PS_MEASURE_TIME)
 
 $(EXE): $(OBJS) 
 	@$(call PS_MKDIR,$(BIN_DIR))
+	@echo Linking $@...
 	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS)
 
 # 编译规则（包含头文件依赖）
 $(BUILD_DIR)/%.o: $(SRC_DIR)/%.c
 	@$(call PS_MKDIR,$(BUILD_DIR))
+#	@echo Compiling $<...
 	$(CC) $(CFLAGS) -c $< -o $@
 
 # 包含自动生成的依赖关系
@@ -50,6 +62,7 @@ $(BUILD_DIR)/%.o: $(SRC_DIR)/%.c
 # 清屏目标
 clear-screen:
 	@$(PS_CLEAR_SCREEN)
+	@echo Build started at: $$($(PS_GET_TIME))
 
 # 检查并终止正在运行的进程
 check:
@@ -73,6 +86,7 @@ kill:
 
 # 清理所有生成的文件（包括顶层目录的复制）
 clean:
+	@echo Cleaning build artifacts...
 # 清理构建目录
 	@if exist $(BUILD_DIR) rmdir /S /Q $(BUILD_DIR) 2>NUL || echo.
 	
