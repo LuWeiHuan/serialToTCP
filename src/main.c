@@ -32,6 +32,7 @@
 最后给出使用MakeFile管理编译。
 14. 串口异步发送能力。使用独立线程使用队列，主要任务是异步发送数据到串口。
 15. 请让服务端实现被发现的能力，这个功能在子线程用UDP实现，使用19000端口
+16. 获取串口列表增加PID和VID功能，可以用于识别产品
   ******************************************************************************
   * @attention 注意
   * 可能要要打开设备管理器才能实现插入拔出串口检测功能
@@ -46,22 +47,22 @@
 #include "main.h"
 #include "logPrint.h"
 #include "public.h"
-#include "server.h"
+#include "serverListen.h"
 #include "client.h"
 #include "COM.h"
 #include "DCM.h"
 #include "TrafficStats.h"
 #include "discovery.h"
+#include "ServerConnect.h"
 
 /*================== 本地宏定义     =========================================*/
-#define DECOLLATOR    ",\n"
-
-
 /*================== 全局共享变量    ========================================*/
+
 /*================== 本地常量声明    ========================================*/
 /*================== 本地变量声明    ========================================*/
 /*================== 本地函数声明    ========================================*/
 static void microFuncCodeTest(void);
+static bool startServer(int argc, char const *argv[]);
 /*================== 外部函数和变量声明    ==================================*/
 
 /*=============================================================================
@@ -76,195 +77,65 @@ int main(int argc, char const *argv[])
   GetCurrentTimeMillis();
   printBuildInfo();
   microFuncCodeTest();
-  
-  logPrintResourceInit(true); 
+
+  logPrintResourceInit(true);
+
+  if( startServer(argc, argv) == false )
+    return 1;
+  DiscoveryService(true);       // 启动发现服务
+  StartTrafficMonitor();        //流量统计
   ClientResourceInit(true);
   ComPortResourceInit(true);
-  StartTrafficMonitor(); //流量统计
-
-  // 解析来自程序传递的端口号
-  int port = ParsePortParameter(argc, argv);
-  if( port <= 0 )
-    return 1;
-  
-  // 初始化服务器资源
-  static SOCKET serverSocket = INVALID_SOCKET;
-  port = serverInit(port, &serverSocket);
-  if( port == 0 ){
-    SafePrintf("Server init fail %d\n", port);
-    return 1;
-  }
-
-  SafePrintf("Server started on port %d\n", port);
-   
-  DeviceChangeMonitor( true ); // 启动设备插拔变化监听
-
-  DiscoveryServiceStart();      // 启动发现服务
-  UpdateDiscoveryInfo(port, 0); // 初始客户端数量为0
-
-  SOCKET newClientSocket;
-  int8_t listenStartRet, getClientIndex;
-  char clientIP[100];
+  DeviceChangeMonitor(true);    // 启动设备插拔变化监听 
+  UpdateDiscoveryInfo(g_server.port, 0); // 初始客户端数量为0
+  // ConnectToServer("127.0.0.1", 8080); // 连接服务器测试
+ 
+  int8_t listenStartRet;
   while( true ) {
-    memset(clientIP, 0, sizeof clientIP);
-
+    
     // 看看是否有新的客户端连接
-    listenStartRet = listenNewClientLink(&serverSocket, &newClientSocket, clientIP);
+    listenStartRet = listenNewClientConnect(&g_server);
     if( listenStartRet == -1 ) 
       break;
     if( listenStartRet && listenStartRet != 0 ){
       updataConsoleTitle("Main", GetCurrentThreadId());
       continue;
     }
-      
-    getClientIndex = findClientSlot();  // 获取新的客户端索引空位
-    addNewClient(getClientIndex, newClientSocket, clientIP); // 添加新客户端 
+
+    // 添加新客户端
+    addNewClient(findClientSlot(), g_server.newSocket, g_server.newIP);  
   }
 
-  closesocket(serverSocket); 
-  DiscoveryServiceStop();  // 在退出前停止发现服务 
+  closesocket(g_server.socket); 
+  DiscoveryService(false);    // 在退出前停止发现服务 
   ClientResourceInit(false);
   ComPortResourceInit(false);
-  logPrintResourceInit(false);
   DeviceChangeMonitor(false);
+  CleanupServerConnect();
+
+  logPrintResourceInit(false);
   WSACleanup();
   return 0;
 }
 
-// 处理客户端发过来的指令
-void HandleClientCommand(SOCKET *clientSocket, uint8_t clientIndex, const char* command) 
+// 启动服务器
+static bool startServer(int argc, char const *argv[])
 {
-    char *token;
-    static char handleString[256];
-    memset(handleString, 0, sizeof handleString);
-    strcpy(handleString, command);
-
-    if (strnicmp(command, "comlist", strlen("comlist")) == 0) { 
-      sendComPortsListToClient( clientSocket );
-    }
-
-    else if ( strnicmp(command, "PrintAllclientIP", strlen("PrintAllclientIP")) == 0) {
-      getAllclientIPandIndexInfo(handleString, sizeof handleString);
-      SafePrintf("All Client IP:\n%s\n", handleString);
-      printfSend(clientSocket, "All Client IP:\n%s\n", handleString);
-    }
-
-    else if (strnicmp(command, "setCOMsednWiat", strlen("setCOMsednWiat")) == 0) {
-      token = strtok(handleString, DECOLLATOR);
-      token = strtok(NULL, DECOLLATOR);
-      uint8_t num = atoi(token);
-      
-      if( num == 0 ){
-        COMFreeAsyncSendQueue();
-        printfSend(NULL, "set COM sedn NO Wiat\n");
-        return;
-      }
-
-      BOOL ret = COMInitAsyncSendThread(num);
-      printfSend(NULL, "set COM sedn Wiat %s set Queue num %d\n", 
-        ret? "OK!":"Fail! scope 10~200 !", num);
-    }
-
-    else if (strnicmp(command, "setRecvCOMdataTo", strlen("setRecvCOMdataTo")) == 0) {
-      token = strtok(handleString, DECOLLATOR);
-      token = strtok(NULL, DECOLLATOR);
-      
-      char clientStr[5];
-      memset(clientStr, 0, sizeof clientStr);
-      if( strnicmp(token, "my", strlen("my") ) == 0 ){
-        runInfo.monopolizeSoclet = clientSocket;
-        runInfo.monopolizeIndex = clientIndex;
-        sprintf(clientStr, "%d", clientIndex);
-      }
-      else{
-        strcpy(clientStr, "All");
-        runInfo.monopolizeSoclet = NULL;
-      }
-      printfSend(NULL, "set COM --> TCP %s client\n", clientStr); 
-    }
-
-    else if (strnicmp(command, "exit", strlen("exit")) == 0) {
-      printfSend(NULL, "server ready exit\n" );
-      exit(0);
-    }
-
-    else if (strnicmp(command, "serverPrintData", strlen("serverPrintData") ) == 0) {
-        token = strtok(handleString, DECOLLATOR);
-        token = strtok(NULL, DECOLLATOR); // 显示模式
-        runInfo.serverPrintData = 0;
-        if( strnicmp(token, "NULL", strlen("NULL") ) == 0 )
-          runInfo.serverPrintData = 0;
-        if( strnicmp(token, "ASCII", strlen("ASCII")) == 0 )
-          runInfo.serverPrintData = 1;
-        if( strnicmp(token, "HEX", strlen("HEX")) == 0 )
-          runInfo.serverPrintData = 2;
-        if( strnicmp(token, "CMD", strlen("CMD")) == 0 )
-          runInfo.serverPrintData = 3;
-        printfSend(NULL, "server Print Data: %d %s \n", 
-            runInfo.serverPrintData, token);
-    }
-
-    else if (strnicmp(command, "system", strlen("system") ) == 0) {
-        token = strtok(handleString, DECOLLATOR);
-        token = strtok(NULL, DECOLLATOR); // 指令 
-        int ret = system(token);
-        printfSend(clientSocket, "execute system %s :%d\n", 
-            ret == 0? "success": "failed", ret);
-    }
-
-    else if (strnicmp(command, "open", strlen("open")) == 0) {
-        token = strtok(handleString, DECOLLATOR);
-        token = strtok(NULL, DECOLLATOR); // 串口号
-
-        if( token == NULL || strnicmp(token, "COM", strlen("COM") ) != 0 ) {
-          printfSend(clientSocket, "The input is not :%s\n", token == NULL? "NULL":token);
-          return;
-        }
-
-        char portName[10], *endptr;
-        memset(portName, 0, sizeof portName);
-        sprintf(portName, "COM%d", (int)strtol(token + strlen("COM"), &endptr, 10) );
-
-        if( strcmp(portName, comPort.portName) == 0 ){ // 防止重复打开同一个串口浪费资源
-          printfSend(clientSocket, "the %s has been turned on\n", portName);
-          return;
-        }
-        
-        /* 解析串口设置的参数 */
-        uint32_t baudRate = 921600;
-        uint8_t dataBits = 8, stopBits = 1, parity = 0;
-        token = strtok(NULL, DECOLLATOR); // 波特率
-        if (token) baudRate = atoi(token);
-        
-        token = strtok(NULL, DECOLLATOR); // 数据位
-        if (token) dataBits = atoi(token);
-        
-        token = strtok(NULL, DECOLLATOR); // 停止位
-        if (token) stopBits = atoi(token);
-        
-        token = strtok(NULL, DECOLLATOR); // 校验位
-        if (token) parity = atoi(token);
-
-        if ( comPort.isOpen )
-          CloseComPort();
-
-        printfSend(clientSocket, "opening %s...\n", portName); 
-        int8_t ret = OpenComPort(portName, baudRate, dataBits, stopBits, parity); 
-        DWORD error = (ret != 0)? GetLastError(): 0;
-
-        memset(handleString, 0, sizeof handleString);
-        sprintf(handleString, "open [%s,%d,%d,%d,%d] %s! (%d:%ld)\n", 
-          portName,baudRate,dataBits,stopBits,parity,
-          ret == 0 ? "success":"failed", ret, error);
-        printfSend(NULL, "%s", handleString);
-        SafePrintf("%s", handleString);
-    }
-    else
-      printfSend(clientSocket, "Not Command:%s\n", command);
+  // 解析来自程序传递的端口号
+  uint16_t retPort = ParsePortParameter(argc, argv);
+  g_server.port = retPort == 0? DEFAULT_PORT:retPort;
+  g_server.socket = INVALID_SOCKET; 
+  g_server.newSocket = INVALID_SOCKET; 
+  strcpy(g_server.newIP, "NULL"); 
+  
+  // 初始化服务器资源
+  bool serRet = serverInit(&g_server); 
+  SafePrintf("Server started %s! port: %d\n", 
+    serRet? "succeed":"fail", g_server.port);
+  return serRet;
 }
-
 
 static void microFuncCodeTest(void)
 {
- 
+
 }

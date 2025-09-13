@@ -1,5 +1,6 @@
-#ifndef __SERVER_H_
-#define __SERVER_H_
+
+#ifndef __COMMAND_H_
+#define __COMMAND_H_
 
 #ifdef __cplusplus  
 extern "C" {
@@ -11,20 +12,19 @@ extern "C" {
 #include <winsock2.h>
 
 /*================== 宏定义声明			=========================================*/
+#define CTRL_HEADER         "ctrlInfo:"
 
 /*================== 数据类型声明		=========================================*/
-//typedef struct enum union
+//struct enum union
 
 /*================== 外部变量声明		=========================================*/
 //extern
 
 /*================== 外部函数声明		=========================================*/
-int ParsePortParameter(int argc, char const* argv[]); 
-int serverInit(int port, SOCKET *ServerSocket);
-int8_t listenNewClientLink(SOCKET *ServerSocket, SOCKET * retSocket, char *retIP);
+void HandleClientCommand(SOCKET *clientSocket, uint8_t clientIndex, const char* command);
 
 #ifdef __cplusplus
 }
 #endif
 
-#endif /*__HEAK_FILE_NAME_H_*/
+#endif /*__COMMAND_H_*/

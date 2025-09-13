@@ -13,11 +13,11 @@ extern "C" {
 #define MAX_CLIENTS         5
 #define DEFAULT_PORT        9000
 #define RECV_BUFFER_SIZE    1024*10
-#define CTRL_HEADER         "ctrlInfo:"
+
 #define VERSIONS            "V0.5"
 
 /*================== 数据类型声明		=========================================*/
-//typedef struct enum union
+//struct enum union
 
 /*================== 外部变量声明		=========================================*/
 //extern

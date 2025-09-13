@@ -17,8 +17,8 @@ extern "C" {
 /*================== 数据类型声明		=========================================*/
 /*================== 外部变量声明		=========================================*/
 /*================== 外部函数声明		=========================================*/
-void DiscoveryServiceStart(void);
-void DiscoveryServiceStop(void);
+
+void DiscoveryService(bool start);
 void UpdateDiscoveryInfo(uint16_t port, uint32_t clientCount);
 
 #ifdef __cplusplus

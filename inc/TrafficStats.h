@@ -11,10 +11,9 @@ extern "C" {
 #include <stdbool.h>
 
 /*================== 宏定义声明			=========================================*/
-//#define
 
 /*================== 数据类型声明		=========================================*/
-//typedef struct enum union
+//struct enum union
 typedef struct {
   uint64_t totalBytesSent;      // 总发送字节数
   uint64_t totalBytesReceived;  // 总接收字节数

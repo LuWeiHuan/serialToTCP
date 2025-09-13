@@ -3,7 +3,7 @@
   * @author  作者 
   * @version 版本 V1.0
   * @date    日期 2025-08-17
-  * @brief   简介 
+  * @brief   简介 连接的客户端
   ******************************************************************************
   * @attention 注意
   *
@@ -19,6 +19,9 @@
 #include "COM.h"
 #include "TrafficStats.h"
 #include "discovery.h"
+#include "Command.h"
+
+#include "serverListen.h"
 
 #include <stdio.h>
 
@@ -28,13 +31,12 @@ typedef struct {
     HANDLE hThread;
     DWORD threadId;
     uint8_t index;
-    __int64 connectTime;    // 连接时间（毫秒级时间戳）
-    char ipAddress[16];     // 存储IPv4地址（如"192.168.1.1"）
+    uint64_t connectTime;
+    char ipAddress[16];
 } ClientInfo_t;
 
 /*================== 本地宏定义     =========================================*/
 /*================== 全局共享变量    ========================================*/
-
 /*================== 本地常量声明    ========================================*/
 /*================== 本地变量声明    ========================================*/
 /*================== 本地函数声明    ========================================*/
@@ -42,20 +44,22 @@ static CRITICAL_SECTION csClient;
 static ClientInfo_t clients[MAX_CLIENTS];
 
 /*================== 外部函数和变量声明    ==================================*/
-void HandleClientCommand( SOCKET *clientSocket, uint8_t clientIndex, const char* command);
+
+const char *getClientIP(uint8_t index)
+{
+  return index < MAX_CLIENTS? clients[index].ipAddress:"NULL";
+}
 
 void ClientResourceInit(bool start) 
 {
-  if( start ){
-    // 初始化客户端数组
+  if( start ){ // 初始化客户端数组
     for (uint8_t i = 0; i < MAX_CLIENTS; i++) {
         clients[i].socket = INVALID_SOCKET;
         clients[i].hThread = NULL;
     }
     InitializeCriticalSection(&csClient);
   }
-  else{
-    // 清理
+  else{ // 清理
     for (uint8_t i = 0; i < MAX_CLIENTS; i++)
       CloseClient( i, "清理");
     DeleteCriticalSection(&csClient);
@@ -69,9 +73,9 @@ DWORD WINAPI ClientRecvDataThread(LPVOID lpParam)
         SafePrintf("client thread not Client info introduction\n");
         return -1;
     }
-
+    
     ClientInfo_t *clientInfo = (ClientInfo_t*)lpParam;
-    char *tcpRecvBuffer = malloc( RECV_BUFFER_SIZE );
+    char *const tcpRecvBuffer = malloc( RECV_BUFFER_SIZE );
     int bytesReceived = 0, retSelect;
     fd_set readSet;
     struct timeval timeout;
@@ -91,7 +95,7 @@ DWORD WINAPI ClientRecvDataThread(LPVOID lpParam)
 
     // 发送连接成功消息  
     printfSend(&clientInfo->socket, "OK! your index %d\n", clientInfo->index);
-    sendComPortsListToClient( &clientInfo->socket );  // 像该客户端发送可用端口号
+    sendComPortsListToClient( &clientInfo->socket, true );  // 像该客户端发送可用端口号
 
     while ( tcpRecvBuffer != NULL ) {
         // 检查客户端socket是否仍然有效
@@ -194,7 +198,7 @@ DWORD WINAPI ClientRecvDataThread(LPVOID lpParam)
     return 0;
 }
 
-void addNewClient(uint8_t index, SOCKET socket, char *ip)
+void addNewClient(uint8_t index, SOCKET socket, const char *ip)
 {       
   EnterCriticalSection(&csClient); 
   // 添加新客户端并记录精确连接时间
@@ -213,14 +217,14 @@ void addNewClient(uint8_t index, SOCKET socket, char *ip)
   }
   LeaveCriticalSection(&csClient);
  
-  UpdateDiscoveryInfo(runInfo.port, runInfo.clientCount);
+  UpdateDiscoveryInfo(g_server.port, runInfo.clientCount);
 }
 
 
-void getAllclientIPandIndexInfo(char *retCahr, uint16_t len)
+void getAllclientIPandIndexInfo(char *retStr, uint16_t len)
 {
   uint16_t strLen = 0;
-  memset(retCahr, 0, len);
+  memset(retStr, 0, len);
   char clientInfo[40];
   for (uint8_t i = 0; i < MAX_CLIENTS; i++)
     if (clients[i].socket != INVALID_SOCKET) {
@@ -229,12 +233,12 @@ void getAllclientIPandIndexInfo(char *retCahr, uint16_t len)
       strLen += strlen(clientInfo);
       if( strLen > len  )
         break;
-      strcat(retCahr, clientInfo);
+      strcat(retStr, clientInfo);
     }
 }
 
 
-void CloseClient(uint8_t index, char *reason) 
+void CloseClient(uint8_t index, const char *reason) 
 {
     if (index >= MAX_CLIENTS || clients[index].socket == INVALID_SOCKET) {
         SafePrintf("Invalid client index %d or socket already closed\n", index);
@@ -257,11 +261,11 @@ void CloseClient(uint8_t index, char *reason)
     if (runInfo.clientCount > 0)
         runInfo.clientCount--;
     
-    SafePrintf("Closed client %d, reason: %s\n", index, reason);
+    SafePrintf("Closed client %d, reason: %s\n", index, reason? reason:"NULL");
     memset(clients[index].ipAddress, 0, sizeof clients[index].ipAddress);
     LeaveCriticalSection(&csClient);
 
-    UpdateDiscoveryInfo(runInfo.port, runInfo.clientCount);// 更新发现信息 
+    UpdateDiscoveryInfo(g_server.port, runInfo.clientCount);// 更新发现信息 
 }
 
 
@@ -286,12 +290,12 @@ int SendDataToClients(SOCKET *socket, const char* buff, int len)
   return sendRet;
 }
 
-void sendComPortsListToClient(SOCKET *socket)
+void sendComPortsListToClient(SOCKET *socket, bool VPID)
 {
-  char *ComList = getComPortList();
-  printfSend(socket, "%s\n", ComList == NULL? "Failed to get COM port list":ComList);
+  const char *comList = getComPortList(VPID);
+  printfSend(socket, "%s\n", comList? comList: "Failed to get COM port list");
   
-  if( comPort.isOpen && strstr(ComList, comPort.portName) == NULL ){
+  if( comPort.isOpen && strstr(comList, comPort.portName) == NULL ){
     SafePrintf("%s disconnection!\n", comPort.portName);
     printfSend(socket, "%s disconnection!\n", comPort.portName);
     CloseComPort();
@@ -328,30 +332,31 @@ int printfSend(SOCKET *Socket, const char *fmt, ...)
 }
 
 // 查找可用的客户端槽位
-int8_t findClientSlot(void)
+uint8_t findClientSlot(void)
 {
+  uint8_t oldestIndex = 0;
+  for (uint8_t i = 0; i < MAX_CLIENTS; i++) {
+
     // 寻找新空位
-    for (uint8_t i = 0; i < MAX_CLIENTS; i++) 
-        if (clients[i].socket == INVALID_SOCKET) 
-            return i;
-
+    if (clients[i].socket == INVALID_SOCKET)  
+      return i;
+    
     // 没有空位就找到最早连接的客户端
-    uint8_t oldestIndex = 0;
-    for (uint8_t i = 1; i < MAX_CLIENTS; i++) 
-        if (clients[i].connectTime < clients[oldestIndex].connectTime) 
-            oldestIndex = i;
+    if (clients[i].connectTime < clients[oldestIndex].connectTime) 
+      oldestIndex = i;
+  }
 
-    // 通知告诉最早客户端下线
-    printfSend(&clients[oldestIndex].socket, 
-        "You are kicked due to server full! Your index %d\n", 
-         oldestIndex);
-    
-    SafePrintf("Kicked oldest client index %d, IP:%s\n", 
-      oldestIndex, clients[oldestIndex].ipAddress);
+  // 通知告诉最早客户端下线
+  printfSend(&clients[oldestIndex].socket, 
+      "You are kicked due to server full! Your index %d\n", 
+        oldestIndex);
+  
+  SafePrintf("Kicked oldest client index %d, IP:%s\n", 
+    oldestIndex, clients[oldestIndex].ipAddress);
 
-    // 踢出最早的客户端
-    CloseClient(oldestIndex, "Server full");
-    
-    return oldestIndex;
+  // 踢出最早的客户端
+  CloseClient(oldestIndex, "Server full");
+  
+  return oldestIndex;
 }
 

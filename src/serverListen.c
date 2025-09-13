@@ -3,7 +3,7 @@
   * @author  作者 
   * @version 版本 V1.0
   * @date    日期 2025-08-17
-  * @brief   简介 服务器相关准备
+  * @brief   简介 服务器监听，接收其他客户端连接
   ******************************************************************************
   * @attention 注意
   *
@@ -22,51 +22,48 @@
 #include "logPrint.h"
 #include "public.h"
 #include "client.h"
-#include "server.h"
+#include "serverListen.h"
 
 /*================== 本地宏定义     =========================================*/
-
-
 /*================== 全局共享变量    ========================================*/
+server_t g_server;
 /*================== 本地常量声明    ========================================*/
 /*================== 本地变量声明    ========================================*/
 /*================== 本地函数声明    ========================================*/
-static int FindAvailablePort(int startPort);
+static uint16_t FindAvailablePort(uint16_t startPort);
 
 /*================== 外部函数和变量声明    ==================================*/
 
-
-
-int serverInit(int port, SOCKET *ServerSocket)
+bool serverInit(server_t *server)
 {
-  if( ServerSocket == NULL )
+  if( server == NULL )
     return 0;
   WSADATA wsaData;
   int iResult = WSAStartup(MAKEWORD(2, 2), &wsaData);
   if (iResult != 0) {
       SafePrintf("WSAStartup failed: %d\n", iResult);
-      return 0;
+      return false;
   }
 
   // 查找可用端口
-  port = FindAvailablePort(port);
-  if (port == -1) {
-      SafePrintf("No available port found\n");
-      WSACleanup();
-      return 0;
+  server->port = FindAvailablePort(server->port);
+  if (server->port == 0) {
+    SafePrintf("No available port found\n");
+    WSACleanup();
+    return false;
   }
 
   // 创建服务器套接字
-  *ServerSocket = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
-  if (*ServerSocket == INVALID_SOCKET) {
+  server->socket = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
+  if (server->socket == INVALID_SOCKET) {
       SafePrintf("Error at socket(): %d\n", WSAGetLastError());
       WSACleanup();
-      return 0;
+      return false;
   }
 
   // 禁用Nagle算法
   char nagleStatus = 0;
-  int result = setsockopt(*ServerSocket, //socket的文件描述符
+  int result = setsockopt(server->socket, //socket的文件描述符
                           IPPROTO_TCP,
                           TCP_NODELAY,
                           &nagleStatus, 
@@ -78,25 +75,24 @@ int serverInit(int port, SOCKET *ServerSocket)
   struct sockaddr_in service;
   service.sin_family = AF_INET;
   service.sin_addr.s_addr = INADDR_ANY;
-  service.sin_port = htons(port);
-  runInfo.port = port;
+  service.sin_port = htons(server->port);
 
-  if (bind(*ServerSocket, (SOCKADDR*)&service, sizeof(service)) == SOCKET_ERROR) {
+  if (bind(server->socket, (SOCKADDR*)&service, sizeof(service)) == SOCKET_ERROR) {
       SafePrintf("bind failed with error: %d\n", WSAGetLastError());
-      closesocket(*ServerSocket);
+      closesocket(server->socket);
       WSACleanup();
-      return 0;
+      return false;
   }
 
   // 监听
-  if (listen(*ServerSocket, SOMAXCONN) == SOCKET_ERROR) {
+  if (listen(server->socket, SOMAXCONN) == SOCKET_ERROR) {
       SafePrintf("listen failed with error: %d\n", WSAGetLastError());
-      closesocket(*ServerSocket);
+      closesocket(server->socket);
       WSACleanup();
-      return 0;
+      return false;
   }
 
-  return port;
+  return true;
 }
 
 /*=============================================================================
@@ -104,20 +100,20 @@ int serverInit(int port, SOCKET *ServerSocket)
  参   数：ServerSocket  --> 服务端套接字
 					retSocket		  --> 有新的客户端连接这里会返回客户端套接字
 					retIP 	      --> 有新的客户端连接这里会返回客户端IP 
- 返   回：-2  请传递有效的服务端套接字
+ 返   回：-2  请传递有效的服务端结构体
           -1  这个服务端套接字是无效的，建议重新创建服务端套接字
            0  则是有新的客户端连接
       大于 0  的话请重新监听
  描   述：无
 =============================================================================*/
-int8_t listenNewClientLink(SOCKET *ServerSocket, SOCKET *retSocket, char *retIP)
+int8_t listenNewClientConnect(server_t *server)
 {    
-  if( ServerSocket == NULL ) 
+  if( server == NULL ) 
     return -2;
  
   fd_set readSet;
   FD_ZERO(&readSet);
-  FD_SET(*ServerSocket, &readSet);
+  FD_SET(server->socket, &readSet);
 
   struct timeval timeout;
   timeout.tv_sec = 2;
@@ -132,13 +128,13 @@ int8_t listenNewClientLink(SOCKET *ServerSocket, SOCKET *retSocket, char *retIP)
     return -1;
   } 
 
-  if (!FD_ISSET(*ServerSocket, &readSet)) 
+  if (!FD_ISSET(server->socket, &readSet)) 
     return 2;
 
     // 接受客户端连接
   struct sockaddr_in clientAddr;
   int addrLen = sizeof clientAddr;
-  SOCKET clientSocket = accept(*ServerSocket, (struct sockaddr*)&clientAddr, &addrLen);
+  SOCKET clientSocket = accept(server->socket, (struct sockaddr*)&clientAddr, &addrLen);
   if (clientSocket == INVALID_SOCKET) {
       SafePrintf("accept failed, error=%d\n", WSAGetLastError());
       return 3;
@@ -146,11 +142,10 @@ int8_t listenNewClientLink(SOCKET *ServerSocket, SOCKET *retSocket, char *retIP)
 
   // 获取客户端IP地址
   char *clientIP = inet_ntoa( clientAddr.sin_addr );
-  if( retIP != NULL ) 
-    strcpy(retIP, clientIP != NULL ? clientIP:"Unknown");
+  memset(server->newIP, 0, sizeof server->newIP);
+  strcpy(server->newIP, clientIP != NULL ? clientIP:"Unknown");
 
-  if( retSocket != NULL)
-    *retSocket = clientSocket;
+  server->newSocket = clientSocket;
   return 0;
 }
 
@@ -163,8 +158,8 @@ int8_t listenNewClientLink(SOCKET *ServerSocket, SOCKET *retSocket, char *retIP)
 
 // 解析命令行参数获取端口号
 // 参数: argc - 参数个数, argv - 参数数组, defaultPort - 默认端口号
-// 返回值: 解析成功的端口号，如果无效则返回-1
-int ParsePortParameter(int argc, char const* argv[]) 
+// 返回值: 解析成功的端口号，如果无效则返回0
+uint16_t ParsePortParameter(int argc, char const* argv[]) 
 {
   for (int i = 1; i < argc; i++) {
       // 检查参数是否以-p或-P开头
@@ -180,21 +175,21 @@ int ParsePortParameter(int argc, char const* argv[])
           // 验证转换是否成功
           if (*endPtr != '\0') {
               fprintf(stderr, "错误: 端口号 '%s' 包含非数字字符\n", portStr);
-              return -1;
+              return 0;
           }
           
           // 检查端口范围
           if (port <= MIN_USER_PORT) {
               fprintf(stderr, "错误: 端口号必须大于 %d (当前: %ld)\n", MIN_USER_PORT, port);
-              return -1;
+              return 0;
           }
           
           if (port > MAX_PORT) {
               fprintf(stderr, "错误: 端口号不能超过 %d (当前: %ld)\n", MAX_PORT, port);
-              return -1;
+              return 0;
           }
           
-          return (int)port;
+          return (uint16_t)port;
       }
       // 支持格式: -p 5000 (带空格)
       else if ((argv[i][0] == '-' || argv[i][0] == '/') && 
@@ -208,20 +203,20 @@ int ParsePortParameter(int argc, char const* argv[])
           
           if (*endPtr != '\0') {
               fprintf(stderr, "错误: 端口号 '%s' 包含非数字字符\n", portStr);
-              return -1;
+              return 0;
           }
           
           if (port <= MIN_USER_PORT) {
               fprintf(stderr, "错误: 端口号必须大于 %d (当前: %ld)\n", MIN_USER_PORT, port);
-              return -1;
+              return 0;
           }
           
           if (port > MAX_PORT) {
               fprintf(stderr, "错误: 端口号不能超过 %d (当前: %ld)\n", MAX_PORT, port);
-              return -1;
+              return 0;
           }
           
-          return (int)port;
+          return (uint16_t)port;
       }
   }
   
@@ -229,36 +224,32 @@ int ParsePortParameter(int argc, char const* argv[])
   return DEFAULT_PORT;
 }
 
+// 查找可用端口，返回0是无效端口
+static uint16_t FindAvailablePort(uint16_t startPort) {
+  WSADATA wsaData;
+  if (WSAStartup(MAKEWORD(2, 2), &wsaData) != 0)
+    return 0;
 
-static int FindAvailablePort(int startPort) {
-    WSADATA wsaData;
-    if (WSAStartup(MAKEWORD(2, 2), &wsaData) != 0) {
-        return -1;
+  int bindRet;
+  struct sockaddr_in service;
+  uint16_t port = startPort;
+  for (port = startPort; port < startPort + 100; port++) {
+    SOCKET testSocket = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
+    if (testSocket == INVALID_SOCKET)
+      break;
+
+    service.sin_family = AF_INET;
+    service.sin_addr.s_addr = INADDR_ANY;
+    service.sin_port = htons(port);
+
+    bindRet = bind(testSocket, (SOCKADDR*)&service, sizeof(service));
+    closesocket(testSocket);
+    if( bindRet != SOCKET_ERROR) {
+      WSACleanup();
+      return port;
     }
+  }
 
-    int port = startPort;
-    while (port < startPort + 100) {
-        SOCKET testSocket = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
-        if (testSocket == INVALID_SOCKET) {
-            WSACleanup();
-            return -1;
-        }
-
-        struct sockaddr_in service;
-        service.sin_family = AF_INET;
-        service.sin_addr.s_addr = INADDR_ANY;
-        service.sin_port = htons(port);
-
-        if (bind(testSocket, (SOCKADDR*)&service, sizeof(service)) == SOCKET_ERROR) {
-            closesocket(testSocket);
-            port++;
-        } else {
-            closesocket(testSocket);
-            WSACleanup();
-            return port;
-        }
-    }
-
-    WSACleanup();
-    return -1;
+  WSACleanup();
+  return 0;
 }

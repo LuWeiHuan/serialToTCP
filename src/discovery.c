@@ -54,6 +54,9 @@ static DiscoveryInfo_t discoveryInfo = {
     .maxClients = MAX_CLIENTS
 };
 /*================== 本地函数声明    ========================================*/
+static void DiscoveryServiceStart(void);
+static void DiscoveryServiceStop(void);
+
 static DWORD WINAPI DiscoveryThread(LPVOID lpParam);
 static BOOL InitializeDiscoverySocket(void);
 static void SendDiscoveryResponse(struct sockaddr_in* clientAddr);
@@ -62,8 +65,16 @@ static void SelectMatchingSubnetIP(struct sockaddr_in* clientAddr, char* selecte
 
 /*================== 外部函数和变量声明    ==================================*/
 
+void DiscoveryService(bool start)
+{
+  if( start )
+    DiscoveryServiceStart( );
+  else
+    DiscoveryServiceStop( );
+}
+
 // 启动发现服务
-void DiscoveryServiceStart(void)
+static void DiscoveryServiceStart(void)
 {
     if (discoveryRunning) 
         return;
@@ -84,13 +95,10 @@ void DiscoveryServiceStart(void)
         discoveryRunning = FALSE;
         SafePrintf("Failed to create discovery thread\n");
     }
-    else 
-        SafePrintf("Discovery service started on UDP port %d\n", DISCOVERY_PORT);
-    
 }
 
 // 停止发现服务
-void DiscoveryServiceStop(void)
+static void DiscoveryServiceStop(void)
 {
     if (!discoveryRunning)
         return;
@@ -192,8 +200,8 @@ static DWORD WINAPI DiscoveryThread(LPVOID lpParam)
     snprintf(DiscoveryServerString, sizeof DiscoveryServerString, 
       "Discovery PROT:%d", DISCOVERY_PORT);
 
-    SafePrintf("Discovery thread started\n");
-
+    SafePrintf("Discovery service thread started on UDP port %d\n", DISCOVERY_PORT);
+    
     while (discoveryRunning) {
         // 更新控制台标题显示发现服务状态
         updataConsoleTitle(DiscoveryServerString, GetCurrentThreadId());

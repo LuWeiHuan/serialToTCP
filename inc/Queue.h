@@ -1,6 +1,6 @@
 
-#ifndef __ASYNC_QUEUE_H_
-#define __ASYNC_QUEUE_H_
+#ifndef __QUEUE_H_
+#define __QUEUE_H_
 
 #ifdef __cplusplus  
 extern "C" {
@@ -10,17 +10,14 @@ extern "C" {
 #include <stdint.h>
 #include <stdbool.h>
 
-#include <stdio.h>
-#include <string.h>
-#include <winsock2.h>
 #include <ws2tcpip.h>
 #include <windows.h>
 
 #include "main.h"
 
-
 /*================== 宏定义声明			=========================================*/
-#define MAX_QUEUE_SIZE  200   // 最大队列长度
+#define MIN_QUEUE_SIZE  10    // 最少队列长度
+#define MAX_QUEUE_SIZE  512   // 最大队列长度
 
 /*================== 数据类型声明		=========================================*/
 // struct enum union
@@ -31,7 +28,7 @@ typedef struct {
 } queueData_t;
 
 typedef struct {
-    queueData_t *queue;         // 队列数组
+    queueData_t *queue;       // 队列数组
     int capacity;             // 队列容量
     int front;                // 队列头指针
     int rear;                 // 队列尾指针
@@ -39,7 +36,8 @@ typedef struct {
     HANDLE hDataEvent;        // 数据可用事件
     HANDLE hSpaceEvent;       // 空间可用事件
     HANDLE hThread;           // 发送线程句柄
-    volatile BOOL running;    // 线程运行标志 
+    volatile BOOL running;    // 线程运行标志
+    void(*callBack)(queueData_t *); // 如果有数据就待用该回调
 }AsyncSendQueue_t;
 
 /*================== 外部变量声明		=========================================*/
@@ -47,15 +45,18 @@ typedef struct {
 
 /*================== 外部函数声明		=========================================*/
 
-BOOL InitAsyncSendThread(AsyncSendQueue_t *queue, LPTHREAD_START_ROUTINE lpStartAddress, int queueSize);
+BOOL startAsyncDataHandleThread(AsyncSendQueue_t *queue, void(*callBack)(queueData_t *), int queueSize);
 BOOL AddDataToAsyncQueue(AsyncSendQueue_t *queue, const char *data, uint32_t size);
 void FreeAsyncSendQueue(AsyncSendQueue_t *queue);
+
+int GetAsyncQueueRemainingSpace(AsyncSendQueue_t *queue);
+int GetAsyncQueueCurrentSize(AsyncSendQueue_t *queue);
 
 #ifdef __cplusplus
 }
 #endif
 
-#endif /*__ASYNC_QUEUE_H_*/
+#endif /*__QUEUE_H_*/
 
 
 

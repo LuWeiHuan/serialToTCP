@@ -17,6 +17,8 @@
 #include "COM.h"
 #include "TrafficStats.h"
 #include "logPrint.h"
+#include "serverListen.h"
+#include "client.h"
 
 #include <stdio.h>
 #include <time.h>
@@ -29,9 +31,8 @@
 runInfo_t  runInfo = {
   .serverPrintData = 0,
   .clientCount = 0,
-  .monopolizeSoclet = NULL,
+  .monopolizeSocket = NULL,
   .monopolizeIndex = 0,
-  .port = 0,
   .startTime = 0,
   .connectCount = 0,
 };
@@ -43,22 +44,20 @@ runInfo_t  runInfo = {
 
 /*================== 外部函数和变量声明    ==================================*/
 
-// 获取当前时间戳（毫秒）
-__int64 GetCurrentTimeMillis(void) 
+// 获取从运行到现在的间戳（毫秒）程序运行要调用一次
+uint64_t GetCurrentTimeMillis(void) 
 {
-  static __int64 initAt = 0;
-  if( initAt == 0 ){ 
-    time(&runInfo.startTime);  // 获取当前时间（从 1970-01-01 00:00:00 开始的秒数）
-    static struct _timeb timebufferInit; 
-    _ftime_s(&timebufferInit);
-    initAt = timebufferInit.time * 1000 + timebufferInit.millitm;
-  }
-
-  struct _timeb timebuffer;
+  struct _timeb timebuffer; 
   _ftime_s(&timebuffer);
-  __int64 atPresent = timebuffer.time * 1000 + timebuffer.millitm;
 
-  return atPresent - initAt;
+  static uint64_t initialTimeMs = 0;
+  if( initialTimeMs == 0 ){
+    initialTimeMs = timebuffer.time * 1000 + timebuffer.millitm;
+    time(&runInfo.startTime);  // 获取当前时间（从 1970-01-01 00:00:00 开始的秒数） 
+  }
+  
+  uint64_t atPresent = timebuffer.time * 1000 + timebuffer.millitm;
+  return atPresent - initialTimeMs;
 }
 
 
@@ -88,7 +87,7 @@ void updataConsoleTitle(char *threadName, DWORD theradID)
   #endif
     snprintf(title, sizeof title, "串口转TCP     服务端口号：%d   "
       "已运行%d天：%02d:%02d:%02d  客户端：%d/%d  线程%ld：%s",
-        runInfo.port, day, hour, min,sec, runInfo.clientCount, MAX_CLIENTS, 
+        g_server.port, day, hour, min,sec, runInfo.clientCount, MAX_CLIENTS, 
         theradID, threadName =! NULL? threadName:"No thread Name");
   
   SetConsoleTitleA( title );
@@ -133,10 +132,10 @@ char *getSendRecvDirectionStr(char *direct, uint8_t index)
   char *endptr;  // 用于检测未转换的字符 
   uint8_t comNum = strtol(comPort.portName + 3, &endptr, 10);
 
-  static char retStr[20];
+  static char retStr[30];
   memset(retStr, 0, sizeof retStr);
   strcpy(retStr, "    -->    ");
-
+#if 0
   if( strcmp(direct, "[TCP --> COM]") == 0 ){
     memset(retStr, 0, sizeof retStr);
     snprintf(retStr, sizeof retStr, "TCP%-3d--> COM%-3d" , index, comNum);
@@ -145,14 +144,33 @@ char *getSendRecvDirectionStr(char *direct, uint8_t index)
   if( strcmp(direct, "[COM --> TCP]") == 0 ){
     memset(retStr, 0, sizeof retStr);
 
-    if( runInfo.monopolizeSoclet != NULL ) // 独占串口数据
+    if( runInfo.monopolizeSocket != NULL ) // 独占串口数据
       snprintf(retStr, sizeof retStr, "COM%-3d--> TCP%-3d", 
         comNum, runInfo.monopolizeIndex);
     else
       snprintf(retStr, sizeof retStr, "COM%-3d--> TCP%3d",
         comNum, runInfo.clientCount);
   }
+#else
+  if( strcmp(direct, "[TCP --> COM]") == 0 ){
+    memset(retStr, 0, sizeof retStr);
+    snprintf(retStr, sizeof retStr, "%-16s--> COM%-3d" , getClientIP(index), comNum);
+  }
 
+  if( strcmp(direct, "[COM --> TCP]") == 0 ){
+    memset(retStr, 0, sizeof retStr);
+    static char clientString[32] = {0};
+    memset(clientString, 0, sizeof clientString);
+    if (runInfo.monopolizeSocket != NULL) 
+      snprintf(clientString, sizeof clientString, "%s", getClientIP(runInfo.monopolizeIndex));
+    else if (runInfo.clientCount == 0) 
+      snprintf(clientString, sizeof clientString, "No client");
+    else 
+      snprintf(clientString, sizeof clientString, "All client %d", runInfo.clientCount);
+
+    snprintf(retStr, sizeof(retStr), "COM%-3d--> %-16s", comNum, clientString);
+  }
+#endif
   return retStr;
 }
 

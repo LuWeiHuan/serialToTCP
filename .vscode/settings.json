@@ -30,6 +30,13 @@
     "findserver.h": "c",
     "discovery.h": "c",
     "trafficstats.h": "c",
-    "asyncqueue.h": "c"
+    "asyncqueue.h": "c",
+    "tchar.h": "c",
+    "command.h": "c",
+    "queue.h": "c",
+    "connectserver.h": "c",
+    "serverlisten.h": "c",
+    "serverconnect.h": "c",
+    "_timeval.h": "c"
   }
 }

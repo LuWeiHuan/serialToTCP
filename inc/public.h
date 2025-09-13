@@ -14,15 +14,13 @@ extern "C" {
 #include <windows.h>
 
 /*================== 宏定义声明			=========================================*/
-//#define
 
 /*================== 数据类型声明		=========================================*/
-//typedef struct enum union
+//struct enum union
 typedef struct {
-    uint8_t   serverPrintData; // 0，不显示，1为字符串显示，2为Hex显示 
-    SOCKET   *monopolizeSoclet; // 独占串口收到的数据
+    uint8_t   serverPrintData;  // 0，不显示，1为字符串显示，2为Hex显示 
+    SOCKET   *monopolizeSocket; // 独占串口收到的数据
     int8_t    monopolizeIndex;
-    uint16_t  port;
     time_t    startTime;
     uint8_t   clientCount;
     uint8_t   connectCount;
@@ -32,9 +30,9 @@ typedef struct {
 extern runInfo_t runInfo;
 
 /*================== 外部函数声明		=========================================*/
-void printBuildInfo(void) ;
-__int64 GetCurrentTimeMillis(void);
-char *getCurrentTime(void) ;
+void printBuildInfo(void);
+uint64_t GetCurrentTimeMillis(void);
+char *getCurrentTime(void);
 void updataConsoleTitle(char *threadName, DWORD theradID);
 char *getSendRecvDirectionStr(char *direct, uint8_t index);
 char *GetComputerFullName(void);
