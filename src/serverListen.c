@@ -1,5 +1,5 @@
  /******************************************************************************
-  * @file    文件 server.c 
+  * @file    文件 serverListen.c 
   * @author  作者 
   * @version 版本 V1.0
   * @date    日期 2025-08-17
@@ -26,7 +26,6 @@
 
 /*================== 本地宏定义     =========================================*/
 /*================== 全局共享变量    ========================================*/
-server_t g_server;
 /*================== 本地常量声明    ========================================*/
 /*================== 本地变量声明    ========================================*/
 /*================== 本地函数声明    ========================================*/
@@ -34,22 +33,16 @@ static uint16_t FindAvailablePort(uint16_t startPort);
 
 /*================== 外部函数和变量声明    ==================================*/
 
-bool serverInit(server_t *server)
+bool serverInit(serverInfo_t *server)
 {
   if( server == NULL )
     return 0;
-  WSADATA wsaData;
-  int iResult = WSAStartup(MAKEWORD(2, 2), &wsaData);
-  if (iResult != 0) {
-      SafePrintf("WSAStartup failed: %d\n", iResult);
-      return false;
-  }
+
 
   // 查找可用端口
   server->port = FindAvailablePort(server->port);
   if (server->port == 0) {
     SafePrintf("No available port found\n");
-    WSACleanup();
     return false;
   }
 
@@ -57,7 +50,6 @@ bool serverInit(server_t *server)
   server->socket = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
   if (server->socket == INVALID_SOCKET) {
       SafePrintf("Error at socket(): %d\n", WSAGetLastError());
-      WSACleanup();
       return false;
   }
 
@@ -80,7 +72,6 @@ bool serverInit(server_t *server)
   if (bind(server->socket, (SOCKADDR*)&service, sizeof(service)) == SOCKET_ERROR) {
       SafePrintf("bind failed with error: %d\n", WSAGetLastError());
       closesocket(server->socket);
-      WSACleanup();
       return false;
   }
 
@@ -88,7 +79,6 @@ bool serverInit(server_t *server)
   if (listen(server->socket, SOMAXCONN) == SOCKET_ERROR) {
       SafePrintf("listen failed with error: %d\n", WSAGetLastError());
       closesocket(server->socket);
-      WSACleanup();
       return false;
   }
 
@@ -106,7 +96,7 @@ bool serverInit(server_t *server)
       大于 0  的话请重新监听
  描   述：无
 =============================================================================*/
-int8_t listenNewClientConnect(server_t *server)
+int8_t listenNewClientConnect(serverInfo_t *server)
 {    
   if( server == NULL ) 
     return -2;
@@ -120,33 +110,31 @@ int8_t listenNewClientConnect(server_t *server)
   timeout.tv_usec = 0;
 
   int selRet = select(0, &readSet, NULL, NULL, &timeout);
-  if (selRet == 0) {
-      return 1;
-  }
+  if (selRet == 0) 
+      return 1; // 继续监听
   else if (selRet == SOCKET_ERROR) {
     SafePrintf("select failed, error=%d\n", WSAGetLastError());
-    return -1;
-  } 
+    return -1;  // 无效的服务器套接字
+  }
 
   if (!FD_ISSET(server->socket, &readSet)) 
-    return 2;
+    return 2; // 继续监听
 
-    // 接受客户端连接
+  // 接受客户端连接
   struct sockaddr_in clientAddr;
   int addrLen = sizeof clientAddr;
   SOCKET clientSocket = accept(server->socket, (struct sockaddr*)&clientAddr, &addrLen);
   if (clientSocket == INVALID_SOCKET) {
       SafePrintf("accept failed, error=%d\n", WSAGetLastError());
-      return 3;
+      return 3; // 继续监听
   }
 
   // 获取客户端IP地址
   char *clientIP = inet_ntoa( clientAddr.sin_addr );
   memset(server->newIP, 0, sizeof server->newIP);
   strcpy(server->newIP, clientIP != NULL ? clientIP:"Unknown");
-
   server->newSocket = clientSocket;
-  return 0;
+  return 0; // 有新的客户端连接
 }
 
 
@@ -224,12 +212,9 @@ uint16_t ParsePortParameter(int argc, char const* argv[])
   return DEFAULT_PORT;
 }
 
-// 查找可用端口，返回0是无效端口
-static uint16_t FindAvailablePort(uint16_t startPort) {
-  WSADATA wsaData;
-  if (WSAStartup(MAKEWORD(2, 2), &wsaData) != 0)
-    return 0;
-
+// 从指定端口开始查找100个可用端口，返回0是无效端口
+static uint16_t FindAvailablePort(uint16_t startPort) 
+{
   int bindRet;
   struct sockaddr_in service;
   uint16_t port = startPort;
@@ -244,12 +229,10 @@ static uint16_t FindAvailablePort(uint16_t startPort) {
 
     bindRet = bind(testSocket, (SOCKADDR*)&service, sizeof(service));
     closesocket(testSocket);
-    if( bindRet != SOCKET_ERROR) {
-      WSACleanup();
+    if( bindRet != SOCKET_ERROR)
       return port;
-    }
+    
   }
 
-  WSACleanup();
   return 0;
 }

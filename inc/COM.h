@@ -32,9 +32,12 @@ void ComPortResourceInit(bool start);
 const char *getComPortList(bool VPID);
 int8_t OpenComPort(const char* portName, uint32_t baudRate, uint8_t dataBits, uint8_t stopBits, uint8_t parity);
 DWORD ComPortSendData(char const *tcpRecvBuffer, int bytesReceived, DWORD *retError);
-void CloseComPort();
+void CloseComPort(const char * reason);
 
-BOOL COM_UseAsyncSend(uint8_t num);
+BOOL COM_UseAsyncRecv(uint16_t num);
+BOOL COM_UseAsyncSend(uint16_t num);
+
+void sendComPortsListToClient(SOCKET *socket, bool VPID);
 
 #ifdef __cplusplus
 }

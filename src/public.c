@@ -17,7 +17,6 @@
 #include "COM.h"
 #include "TrafficStats.h"
 #include "logPrint.h"
-#include "serverListen.h"
 #include "client.h"
 
 #include <stdio.h>
@@ -30,11 +29,9 @@
 /*================== 全局共享变量    ========================================*/
 runInfo_t  runInfo = {
   .serverPrintData = 0,
-  .clientCount = 0,
   .monopolizeSocket = NULL,
   .monopolizeIndex = 0,
   .startTime = 0,
-  .connectCount = 0,
 };
 
 /*================== 本地常量声明    ========================================*/
@@ -76,7 +73,7 @@ void updataConsoleTitle(char *threadName, DWORD theradID)
   uint32_t day = currentTime / 86400;
 
   #ifdef __TRAFFIC_STATS_H_
-  if( sec % 3 == 0 || sec % 4 == 0 )
+  if( trafficStats.run && currentTime % 6 < 3 )
     snprintf(title, sizeof title, "串口转TCP     串口:↑ %s  ↓ %s   网络：↑ %s  ↓ %s    线程%ld：%s",
       trafficStats.com.recvRate,
       trafficStats.com.sendRate,
@@ -87,7 +84,7 @@ void updataConsoleTitle(char *threadName, DWORD theradID)
   #endif
     snprintf(title, sizeof title, "串口转TCP     服务端口号：%d   "
       "已运行%d天：%02d:%02d:%02d  客户端：%d/%d  线程%ld：%s",
-        g_server.port, day, hour, min,sec, runInfo.clientCount, MAX_CLIENTS, 
+        getMainServerPort(), day, hour, min,sec, getClientNum(), getMaxClient(), 
         theradID, threadName =! NULL? threadName:"No thread Name");
   
   SetConsoleTitleA( title );
@@ -110,6 +107,7 @@ char *getCurrentTime(void)
 
 void printBuildInfo(void) 
 {
+  system("cls");
   printf("========================================\n");
   printf("  Program    : %s\n", "串口转TCP服务端");
   printf("  Version    : %s\n", VERSIONS);
@@ -149,7 +147,7 @@ char *getSendRecvDirectionStr(char *direct, uint8_t index)
         comNum, runInfo.monopolizeIndex);
     else
       snprintf(retStr, sizeof retStr, "COM%-3d--> TCP%3d",
-        comNum, runInfo.clientCount);
+        comNum, getClientNum() );
   }
 #else
   if( strcmp(direct, "[TCP --> COM]") == 0 ){
@@ -163,10 +161,10 @@ char *getSendRecvDirectionStr(char *direct, uint8_t index)
     memset(clientString, 0, sizeof clientString);
     if (runInfo.monopolizeSocket != NULL) 
       snprintf(clientString, sizeof clientString, "%s", getClientIP(runInfo.monopolizeIndex));
-    else if (runInfo.clientCount == 0) 
+    else if (getClientNum() == 0) 
       snprintf(clientString, sizeof clientString, "No client");
     else 
-      snprintf(clientString, sizeof clientString, "All client %d", runInfo.clientCount);
+      snprintf(clientString, sizeof clientString, "All client %d", getClientNum());
 
     snprintf(retStr, sizeof(retStr), "COM%-3d--> %-16s", comNum, clientString);
   }
@@ -199,4 +197,15 @@ char *GetComputerFullName(void)
     }
 
     return computerName; // 成功
+}
+
+
+// 初始化Winsock，Win系统特性要求创建第一个socket之前要确定要使用哪个版本的socket库
+bool InitializeWinSocket(void)
+{
+  WSADATA wsaData;
+  int result = WSAStartup(MAKEWORD(2, 2), &wsaData);
+  if (result != 0)  
+      SafePrintf("WSAStartup failed: %d\n", result);
+  return result == 0? true:false;
 }

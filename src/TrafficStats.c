@@ -34,6 +34,7 @@ static DWORD WINAPI TrafficMonitorThread(LPVOID lpParam);
 void StartTrafficMonitor(void) 
 {
   memset(&trafficStats, 0, sizeof trafficStats);
+  trafficStats.run = true;
   CreateThread(NULL, 0, TrafficMonitorThread, NULL, 0, NULL);
 }
 
@@ -42,7 +43,7 @@ static DWORD WINAPI TrafficMonitorThread(LPVOID lpParam)
   (void)( lpParam );
   uint8_t updataConsoConut = 0;
  
-  while ( true ) {
+  while ( trafficStats.run ) {
  
     formatSpeedString(trafficStats.com.totalBytesSent, 
       trafficStats.com.sendRate, sizeof trafficStats.com.sendRate);

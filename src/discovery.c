@@ -30,7 +30,6 @@ typedef struct {
     char *serverName;         // 服务器名称
     char serverIP[20];        // 服务器名称
     uint32_t clientCount;     // 当前客户端数量
-    uint32_t maxClients;      // 最大客户端数量
 } DiscoveryInfo_t;
 
 /*================== 本地宏定义     =========================================*/
@@ -51,7 +50,6 @@ static DiscoveryInfo_t discoveryInfo = {
     .serverName = DISCOVERY_MAGIC,
     .serverIP = "NULL",
     .clientCount = 0,
-    .maxClients = MAX_CLIENTS
 };
 /*================== 本地函数声明    ========================================*/
 static void DiscoveryServiceStart(void);
@@ -130,12 +128,7 @@ void UpdateDiscoveryInfo(uint16_t port, uint32_t clientCount)
 
 // 初始化发现Socket
 static BOOL InitializeDiscoverySocket(void)
-{
-    WSADATA wsaData;
-    if (WSAStartup(MAKEWORD(2, 2), &wsaData) != 0) {
-        return FALSE;
-    }
-
+{ 
     discoverySocket = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
     if (discoverySocket == INVALID_SOCKET) {
         SafePrintf("Discovery socket creation failed: %d\n", WSAGetLastError());
@@ -266,8 +259,8 @@ static void SendDiscoveryResponse(struct sockaddr_in* clientAddr)
             ComputerFullName != NULL ? ComputerFullName:"not host name",
             discoveryInfo.serverIP,
             discoveryInfo.serverPort,
-            discoveryInfo.clientCount,
-            discoveryInfo.maxClients);
+            getClientNum(),
+            getMaxClient());
     
     LeaveCriticalSection(&csDiscovery);
 

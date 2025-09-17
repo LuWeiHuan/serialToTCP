@@ -16,21 +16,20 @@ extern "C" {
 /*================== 数据类型声明		=========================================*/
 //struct enum union
 /*================== 外部变量声明		=========================================*/
-//extern
 /*================== 外部函数声明		=========================================*/
 void ClientResourceInit(bool start);
-
-uint8_t findClientSlot(void);
-void addNewClient(uint8_t index, SOCKET socket, const char *ip);
+void addNewClient(SOCKET socket, const char *ip);
 
 int SendDataToClients(SOCKET *Socket, const char* buff, int len);
 int printfSend(SOCKET *Socket, const char *fmt, ...) __attribute__ ((__format__ (__printf__, 2, 3)));
 
-void CloseClient(uint8_t index, const char *func);
+void examineMonopolizeClient(void);
 
+uint16_t getMaxClient(void);
+uint16_t getClientNum(void);
 const char *getClientIP(uint8_t index);
-void sendComPortsListToClient(SOCKET *socket, bool VPID);
 void getAllclientIPandIndexInfo(char *retStr, uint16_t len);
+
 #ifdef __cplusplus
 }
 #endif

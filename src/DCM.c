@@ -20,7 +20,7 @@
 
 #include "logPrint.h"
 #include "public.h"
-#include "client.h"
+#include "COM.h"
 
 /*================== 本地宏定义     =========================================*/
 // #define WM_USER_DEVICE_CHANGE (WM_USER + 100)  // 自定义设备变更消息

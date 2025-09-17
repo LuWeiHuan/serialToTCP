@@ -25,6 +25,7 @@ typedef struct {
 typedef struct {
   TrafficStats_t com;   // 串口流量
   TrafficStats_t net;   // 网络流量
+  bool run;
 } GlobalTrafficStats_t;
 
 /*================== 外部变量声明		=========================================*/

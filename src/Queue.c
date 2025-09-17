@@ -38,7 +38,7 @@ BOOL startAsyncDataHandleThread(AsyncSendQueue_t *queue, void(*callBack)(queueDa
     if( queue == NULL || callBack == NULL )
       return FALSE;
 
-    if (queueSize < MIN_QUEUE_SIZE || queueSize > MAX_QUEUE_SIZE) {
+    if (queueSize < MIN_QUEUE_SIZE || MAX_QUEUE_SIZE < queueSize) {
         SafePrintf("Invalid queue size: %d/%d ~ %d\n", queueSize, MIN_QUEUE_SIZE, MAX_QUEUE_SIZE);
         return FALSE;
     }
@@ -73,19 +73,21 @@ BOOL startAsyncDataHandleThread(AsyncSendQueue_t *queue, void(*callBack)(queueDa
         return FALSE;
     }
     
-    SafePrintf("Async queue thread started with queue size: %d\n", queueSize);
- 
+    
+
     return TRUE;
 }
 
 // 异步发送线程主函数
 static DWORD WINAPI AsyncSendThreadProc(LPVOID lpParam) {
-  SafePrintf("Async queue thread %s :0x%p\n", 
-    lpParam == NULL? "Fail! no in Queue":"started", lpParam);
-  if( lpParam == NULL) 
-    return -1; 
-  
   AsyncSendQueue_t *queue = (AsyncSendQueue_t*)lpParam;
+  
+  SafePrintf("Async queue thread %s! queue size %d, addr:0x%p\n", 
+    lpParam == NULL? "Fail":"started",
+    lpParam == NULL? 0:queue->capacity, lpParam);
+  
+  if( lpParam == NULL)
+    return -1; 
   
   while (queue->running) {
     // 等待数据可用或退出信号

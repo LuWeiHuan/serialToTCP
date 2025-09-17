@@ -83,19 +83,35 @@ void HandleClientCommand(SOCKET *clientSocket, uint8_t clientIndex, const char* 
       printfSend(clientSocket, "All Client IP:\n%s\n", handleString);
     }
 
-    else if (strnicmp(command, "setCOMsednWiat", strlen("setCOMsednWiat")) == 0) {
+    else if (strnicmp(command, "setCOMasyncSend", strlen("setCOMasyncSend")) == 0) {
       token = strtok(handleString, DECOLLATOR);
       token = strtok(NULL, DECOLLATOR);
-      uint16_t num = atoi(token);
+      uint16_t num = token==NULL? 0:atoi(token);
       
       if( num == 0 ){
         COM_UseAsyncSend(0);
-        printfSend(NULL, "set COM send NO Wiat\n");
+        printfSend(NULL, "set COM send sync\n");
         return;
       }
 
       BOOL ret = COM_UseAsyncSend(num);
-      printfSend(NULL, "set COM send Wiat %s set Queue num %d/%d ~ %d\n", 
+      printfSend(NULL, "set COM send Async %s set Queue num %d/%d ~ %d\n", 
+        ret? "OK!":"Fail! scope !", num, MIN_QUEUE_SIZE, MAX_QUEUE_SIZE);
+    }
+
+    else if (strnicmp(command, "setCOMasyncRecv", strlen("setCOMasyncRecv")) == 0) {
+      token = strtok(handleString, DECOLLATOR);
+      token = strtok(NULL, DECOLLATOR);
+      uint16_t num = token==NULL? 0:atoi(token);
+      
+      if( num == 0 ){
+        COM_UseAsyncRecv(0);
+        printfSend(NULL, "set COM Recv sync\n");
+        return;
+      }
+
+      BOOL ret = COM_UseAsyncRecv(num);
+      printfSend(NULL, "set COM Recv Async %s set Queue num %d/%d ~ %d\n", 
         ret? "OK!":"Fail! scope !", num, MIN_QUEUE_SIZE, MAX_QUEUE_SIZE);
     }
 
@@ -180,9 +196,13 @@ void HandleClientCommand(SOCKET *clientSocket, uint8_t clientIndex, const char* 
         token = strtok(NULL, DECOLLATOR); // 校验位
         if (token) parity = atoi(token);
 
-        if ( comPort.isOpen )
-          CloseComPort();
-
+        if ( comPort.isOpen ){
+          char reason[50];
+          memset(reason, 0, sizeof reason);
+          snprintf(reason, sizeof reason, "Open New %s", comPort.portName);
+          CloseComPort(reason);
+        }
+        
         printfSend(clientSocket, "opening %s...\n", portName); 
         int8_t ret = OpenComPort(portName, baudRate, dataBits, stopBits, parity); 
         DWORD error = (ret != 0)? GetLastError(): 0;

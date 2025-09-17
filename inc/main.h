@@ -10,7 +10,7 @@ extern "C" {
 #include <stdbool.h>
 
 /*================== 宏定义声明			=========================================*/
-#define MAX_CLIENTS         5
+#define MAX_CLIENTS         100
 #define DEFAULT_PORT        9000
 #define RECV_BUFFER_SIZE    1024*10
 
@@ -20,10 +20,14 @@ extern "C" {
 //struct enum union
 
 /*================== 外部变量声明		=========================================*/
-//extern
+
 
 /*================== 外部函数声明		=========================================*/
-
+static inline uint16_t getMainServerPort(void)
+{
+  extern const uint16_t * const mainServerPort;
+  return *mainServerPort;
+}
 #ifdef __cplusplus
 }
 #endif

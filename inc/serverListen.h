@@ -1,5 +1,5 @@
-#ifndef __SERVER_H_
-#define __SERVER_H_
+#ifndef __SERVER_LISTEN_H_
+#define __SERVER_LISTEN_H_
 
 #ifdef __cplusplus  
 extern "C" {
@@ -19,14 +19,13 @@ typedef struct {
   SOCKET    socket;
   SOCKET    newSocket;
   char      newIP[20];
-}server_t;
+}serverInfo_t;
 /*================== 外部变量声明		=========================================*/
-extern server_t g_server;
 
 /*================== 外部函数声明		=========================================*/
 uint16_t ParsePortParameter(int argc, char const* argv[]); 
-bool serverInit(server_t*);
-int8_t listenNewClientConnect(server_t*);
+bool serverInit(serverInfo_t*);
+int8_t listenNewClientConnect(serverInfo_t*);
 
 #ifdef __cplusplus
 }
