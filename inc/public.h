@@ -18,10 +18,10 @@ extern "C" {
 /*================== 数据类型声明		=========================================*/
 //struct enum union
 typedef struct {
-  uint8_t   serverPrintData;  // 0，不显示，1为字符串显示，2为Hex显示，3只显示命令
-  SOCKET   *monopolizeSocket; // 独占串口收到的数据的客户端套接字
-  uint8_t   monopolizeIndex;
   time_t    startTime;
+  uint8_t   serverPrintData;  // 0，不显示，1为字符串显示，2为Hex显示，3只显示命令 
+  uint16_t *monopolizeComRecvIndex;  // 独享 串口收到的数据
+  uint16_t *monopolizeComSendIndex;  // 独享 数据发给串口
 } runInfo_t;
 
 /*================== 外部变量声明		=========================================*/
@@ -31,7 +31,7 @@ extern runInfo_t runInfo;
 void printBuildInfo(void);
 uint64_t GetCurrentTimeMillis(void);
 char *getCurrentTime(void);
-void updataConsoleTitle(char *threadName, DWORD theradID);
+void updataConsoleTitle(const char *threadName, DWORD theradID);
 char *getSendRecvDirectionStr(char *direct, uint8_t index);
 char *GetComputerFullName(void);
 bool InitializeWinSocket(void);

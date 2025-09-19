@@ -25,8 +25,8 @@ GlobalTrafficStats_t trafficStats;
 /*================== 本地常量声明    ========================================*/
 /*================== 本地变量声明    ========================================*/
 /*================== 本地函数声明    ========================================*/
-static void formatSpeedString(uint64_t bytesPerSec, char* output, uint16_t retMax) ;
 static DWORD WINAPI TrafficMonitorThread(LPVOID lpParam);
+static void formatSpeedString(uint64_t bytesPerSec, char* output, uint16_t retMax) ;
 
 /*================== 外部函数和变量声明    ==================================*/
 
@@ -91,5 +91,4 @@ static void formatSpeedString(uint64_t bytesPerSec, char* output, uint16_t retMa
   #else
   snprintf(output, retMax, "%0.1f %s", speed, units[unitIndex]);
   #endif
-  
 }

@@ -58,10 +58,11 @@ static LRESULT CALLBACK DeviceMonitorWndProc(HWND hWnd, UINT message, WPARAM wPa
 // 处理设备变更事件
 static void HandleDeviceChange(WPARAM wParam, LPARAM lParam)
 {
-    PDEV_BROADCAST_HDR pHdr = (PDEV_BROADCAST_HDR)lParam;
+    PDEV_BROADCAST_HDR pHdr = (PDEV_BROADCAST_HDR)lParam; (void)pHdr;
     updataConsoleTitle("DCM changed",  GetCurrentThreadId());
     switch (wParam)
     {
+        #if 0
         case DBT_DEVICEARRIVAL:         // 设备插入
             if (pHdr && pHdr->dbch_devicetype == DBT_DEVTYP_DEVICEINTERFACE) {
                 PDEV_BROADCAST_DEVICEINTERFACE pDevInf = (PDEV_BROADCAST_DEVICEINTERFACE)pHdr; 
@@ -79,11 +80,12 @@ static void HandleDeviceChange(WPARAM wParam, LPARAM lParam)
                   pDevInf->dbcc_name);
             }
         break;
-            
-        case DBT_DEVNODES_CHANGED:      // 设备节点变化
-            SafePrintf("Device nodes changed\n");
+        #endif
+        case DBT_DEVNODES_CHANGED:{ // 设备节点变化 
+            static uint32_t count = 0;
+            SafePrintf("Device nodes changed %-5d\r", ++count);
             sendComPortsListToClient(NULL, true);
-            break;
+        } break;
             
         default: // 其他设备变更事件
         break;

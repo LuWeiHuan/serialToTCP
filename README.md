@@ -1,5 +1,5 @@
 快速使用方法：
-1. 选择一条电脑运行 com2tcp_server.exe
+1. 选择一台电脑运行 com2tcp_server.exe
 2. 进入到 测试工具 文件夹运行 NetAssist.exe 网络调试助手，点击 快捷指令
 3. 快捷指令里的 获取串口列表和打开串口是常用功能，其他的可以慢慢摸索
 
@@ -37,58 +37,57 @@ AI 平台：DeepSeek
 16. 获取串口列表增加PID和VID功能，可以用于识别产品
 
 
+控制服务器动作指令介绍：
+=================================================================
+获取系统内可用的串口列表
+ctrlInfo:comlist      只有COM口号
+ctrlInfo:comlistID    有COM口号的同时增加PID、VID和REV等信息，可用于识别是不是之家的产品
+ctrlInfo:comlistVPID  和 comlistID 命令一样
+
+打开串口并使用默认参数。默认波特率921600，数据位8位，停止位1位，无校验位
+ctrlInfo:open,COM4              打开串口其他参数默认
+ctrlInfo:open,COM4,115200       打开串口并设置波特率，其他默认
+ctrlInfo:open,COM1,9600,8,1,0   打开串口并设置全部参数
 
 
-
-
-指令介绍：
-ctrlInfo:exit
+剩下的是一些扩展命令：可根据自己情况需要去去使用
+==================================================================
 让服务端退出仅此而已
+ctrlInfo:exit
 
+让服务端运行再运行一个新的服务端并不指定端口号，端口号被占用会递增加1
 ctrlInfo:runNewServer                不指定端口号
 ctrlInfo:runNewServer,-p 10000       指定端口号
-让服务端运行再运行一个新的服务端并不指定端口号，端口号被占用会递增加1
 
-ctrlInfo:system,cls
-单纯的让客户端执行一条操作系统cmd命令，“cls”是执行内容
 
-ctrlInfo:setRecvCOMdataTo,my    独占串口，任何客户端都能设置
-串口发上来的数据只给当前发送的客户端，也就是独占串口数据
+单纯的让客户端执行一条操作系统 CMD 命令
+ctrlInfo:SystemCommands,cls           “cls”是执行内容
+ctrlInfo:ExecuteSystemCommands,cls    “cls”是执行内容
 
-ctrlInfo:setRecvCOMdataTo,all   共享串口，任何客户端都能设置
-串口发上来的数据发给所有客户端
 
-ctrlInfo:setCOMasyncSend,0
-ctrlInfo:setCOMasyncSend,100
+发给串口的数据或接收到的串口数据，指定指定给哪个客户端
+ctrlInfo:setCOMdata,Send,my    给自己
+ctrlInfo:setCOMdata,Send,all   所有客户端
+ctrlInfo:setCOMdata,Recv,my    给自己
+ctrlInfo:setCOMdata,Recv,all   所有客户端
+
+
 设置客户端发给串口的数据，是否用异步队列缓存起来后，再发给串口
+ctrlInfo:setCOMasyncSend,0
+ctrlInfo:setCOMasyncSend,100    其中 "100" 是队列数量，10~512条
 
-ctrlInfo:setCOMasyncRecv,0
-ctrlInfo:setCOMasyncRecv,100
 设置接受到串口的数据，是否用异步队列缓存起来后，逐一发给所有客户端
+ctrlInfo:setCOMasyncRecv,0
+ctrlInfo:setCOMasyncRecv,100    其中 "100" 是队列数量，10~512条
 
-ctrlInfo:PrintAllclientIP
+
 获取服务端上的所有已经连接的客户端IP和索引
+ctrlInfo:PrintAllclientIP
 
+
+设置服务端控制台打印客户端发过来的数据和串口收到的数据，
+打印方式里面 打印16进制，没有很认真开发这个功能，如果数据量很大会比较慢，所有要酌情使用！
 ctrlInfo:serverPrintData,NILL       关闭数据打印
 ctrlInfo:serverPrintData,CMD        只打印命令其它不打印
 ctrlInfo:serverPrintData,HEX        打印16进制
 ctrlInfo:serverPrintData,ASCII      打印字符串
-设置服务端控制台打印客户端发过来的数据和串口收到的数据，
-打印方式里面 打印16进制，没有很认真开发这个功能，如果数据量很大会比较慢，所有要谨慎使用！
-
-ctrlInfo:comlist
-获取系统内可用的串口列表
-
-ctrlInfo:comlistVPID
-ctrlInfo:comlistID
-获取系统内可用的串口列表包括串口的PID、VID和REV等信息，
-可用于识别是不是之家的产品
-
-ctrlInfo:open,COM4
-打开串口并使用默认参数。默认波特率921600，数据位8位，停止位1位，无校验位
-
-ctrlInfo:open,COM4,115200
-打开串口并设置波特率，其他默认
-
-ctrlInfo:open,COM1,9600,8,1,0
-打开串口并设置全部参数

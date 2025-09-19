@@ -1,15 +1,14 @@
 # 编译器设置
 CC = gcc
 CFLAGS = -Wall -Wextra -O2 -MMD -MP
-LDFLAGS = -lws2_32 -lsetupapi -luuid
+LDFLAGS = -lws2_32 -lsetupapi -luuid -static -lDbghelp
 TARGET = com2tcp_server
 
 # 目录设置
 BUILD_DIR = build
 BIN_DIR = bin
 SRC_DIR = ./src
-INC_DIR = ./inc  # 自定义头文件目录
-INSTALL_DIR = ./  # 自定义安装目录
+INSTALL_DIR = ./
 EXE = $(BIN_DIR)/$(TARGET).exe
 
 # =================================================
@@ -22,10 +21,10 @@ SRCS = $(wildcard $(SRC_DIR)/*.c)
 OBJS = $(patsubst $(SRC_DIR)/%.c,$(BUILD_DIR)/%.o,$(SRCS))
 DEPS = $(OBJS:.o=.d)
 
-# 添加头文件搜索路径
-CFLAGS += -I$(INC_DIR)
+# 添加头文件搜索路径（分别指定每个路径）
+CFLAGS += -I./inc -I./inc/uthash/src
 
-# PowerShell 命令定义
+# PowerShell 命令定义（保持不变）
 PS_FIND_PROC = powershell -Command "if (Get-Process '$(TARGET)' -ErrorAction SilentlyContinue) { exit 1 } else { exit 0 }"
 PS_KILL_PROC = powershell -Command "Stop-Process -Name '$(TARGET)' -Force -ErrorAction SilentlyContinue"
 PS_SLEEP = powershell -Command "Start-Sleep -Milliseconds 500"
@@ -39,7 +38,7 @@ PS_MEASURE_TIME = powershell -Command "$$Start=Get-Date; $$End=Get-Date; $$Durat
 
 .PHONY: all clean kill check install uninstall shortcut copy-to-root
 
-all: clear-screen check build-timer  # 添加构建计时器
+all: clear-screen check build-timer
 
 build-timer: $(EXE) copy-to-root
 	@echo Build completed at: $$($(PS_GET_TIME))

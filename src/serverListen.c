@@ -21,7 +21,7 @@
 #include "main.h"
 #include "logPrint.h"
 #include "public.h"
-#include "client.h"
+#include "clients.h"
 #include "serverListen.h"
 
 /*================== 本地宏定义     =========================================*/
@@ -132,7 +132,7 @@ int8_t listenNewClientConnect(serverInfo_t *server)
   // 获取客户端IP地址
   char *clientIP = inet_ntoa( clientAddr.sin_addr );
   memset(server->newIP, 0, sizeof server->newIP);
-  strcpy(server->newIP, clientIP != NULL ? clientIP:"Unknown");
+  strcpy(server->newIP, clientIP? clientIP:"Unknown");
   server->newSocket = clientSocket;
   return 0; // 有新的客户端连接
 }

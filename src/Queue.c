@@ -14,7 +14,6 @@
 /*================== 头文件包含     =========================================*/
 #include "Queue.h"
 #include "logPrint.h"
-#include "main.h"
 
 #include <winsock2.h>
 #include <windows.h>
@@ -32,38 +31,67 @@
 static DWORD WINAPI AsyncSendThreadProc(LPVOID lpParam);
 /*================== 外部函数和变量声明    ==================================*/
 
-// 初始化队列和启动线程
-BOOL startAsyncDataHandleThread(AsyncSendQueue_t *queue, void(*callBack)(queueData_t *), int queueSize) {
 
-    if( queue == NULL || callBack == NULL )
+/*=============================================================================
+ 功   能：初始化队列和启动线程
+ 参   数：queue             队列结构体指针（必须有）
+          outDataCallBack   出数据回调函数（必须有）
+          queueNum          队列数量，范围选择要在 MIN_QUEUE_SIZE 和 MAX_QUEUE_SIZE 之间
+          elementSize       数据最大长度，小于 10 会使用默认大小 DEFAULT_ELEMENT_SIZE 
+ 返   回：成功返回真，失败返回假
+ 描   述：无
+=============================================================================*/
+BOOL startAsyncDataHandleThread(AsyncSendQueue_t *queue, 
+    void(*outDataCallBack)(queueData_t *), uint16_t queueNum, uint32_t elementSize) 
+{
+    if( queue == NULL || outDataCallBack == NULL )
       return FALSE;
 
-    if (queueSize < MIN_QUEUE_SIZE || MAX_QUEUE_SIZE < queueSize) {
-        SafePrintf("Invalid queue size: %d/%d ~ %d\n", queueSize, MIN_QUEUE_SIZE, MAX_QUEUE_SIZE);
+    if (queueNum < MIN_QUEUE_SIZE || MAX_QUEUE_SIZE < queueNum) {
+        SafePrintf("Invalid queue size: %d/%d ~ %d\n", 
+            queueNum, MIN_QUEUE_SIZE, MAX_QUEUE_SIZE);
         return FALSE;
     }
+
+    if (elementSize < 10) 
+        elementSize = DEFAULT_ELEMENT_SIZE;
 
     if( queue->running )
       FreeAsyncSendQueue(queue);
 
-    // 分配队列内存
-    queue->queue = (queueData_t*)malloc(queueSize * sizeof(queueData_t));
-    if (!queue->queue) {
+    // 一次性分配队列结构数组内存
+    queue->index = (queueData_t*)malloc(queueNum * sizeof(queueData_t));
+    if (!queue->index) {
         SafePrintf("Failed to allocate queue memory\n");
         return FALSE;
     }
 
+    // 一次性分配数据缓冲区内存（所有元素的数据连续存储）
+    queue->dataBuffer = (char*)malloc(queueNum * elementSize);
+    if (!queue->dataBuffer) {
+        SafePrintf("Failed to allocate data buffer memory\n");
+        free(queue->index);
+        queue->index = NULL;
+        return FALSE;
+    }
+
+    // 初始化队列元素指针
+    for (uint16_t i = 0; i < queueNum; i++) {
+      queue->index[i].data = queue->dataBuffer + (i * elementSize);
+      queue->index[i].len = 0;
+    }
+
     // 初始化队列属性
-    queue->capacity = queueSize;
-    queue->front = 0;
-    queue->rear = 0;
+    queue->capacity = queueNum;
+    queue->elementSize = elementSize;
+    queue->front = queue->rear = 0;
     queue->running = TRUE;
 
     // 创建同步对象
     queue->hMutex = CreateMutex(NULL, FALSE, NULL);
     queue->hDataEvent = CreateEvent(NULL, TRUE, FALSE, NULL); // 初始无数据
     queue->hSpaceEvent = CreateEvent(NULL, TRUE, TRUE, NULL); // 初始有空间
-    queue->callBack = callBack;
+    queue->outDataCallBack = outDataCallBack;
     
     // 创建发送线程
     queue->hThread = CreateThread(NULL, 0, AsyncSendThreadProc, queue, 0, NULL);
@@ -72,8 +100,6 @@ BOOL startAsyncDataHandleThread(AsyncSendQueue_t *queue, void(*callBack)(queueDa
         FreeAsyncSendQueue(queue);
         return FALSE;
     }
-    
-    
 
     return TRUE;
 }
@@ -81,10 +107,12 @@ BOOL startAsyncDataHandleThread(AsyncSendQueue_t *queue, void(*callBack)(queueDa
 // 异步发送线程主函数
 static DWORD WINAPI AsyncSendThreadProc(LPVOID lpParam) {
   AsyncSendQueue_t *queue = (AsyncSendQueue_t*)lpParam;
-  
-  SafePrintf("Async queue thread %s! queue size %d, addr:0x%p\n", 
+      // SafePrintf("Queue initialized: queueNum=%d, elementSize=%d, totalMemory=%I64d KB\n",
+    //      queueNum, elementSize, (queueNum * sizeof(queueData_t)) + totalDataSize);
+  SafePrintf("Async queue thread %s! queue num %d, element size: %d\n", 
     lpParam == NULL? "Fail":"started",
-    lpParam == NULL? 0:queue->capacity, lpParam);
+    lpParam == NULL? 0:queue->capacity, 
+    lpParam == NULL? 0:queue->elementSize);
   
   if( lpParam == NULL)
     return -1; 
@@ -114,7 +142,7 @@ static DWORD WINAPI AsyncSendThreadProc(LPVOID lpParam) {
       }
       
       // 取出队列头的数据
-      queueData_t indexData = queue->queue[queue->front];
+      queueData_t indexData = queue->index[queue->front];
       queue->front = (queue->front + 1) % queue->capacity;
       
       // 如果有空间可用，设置空间事件
@@ -124,14 +152,13 @@ static DWORD WINAPI AsyncSendThreadProc(LPVOID lpParam) {
       ReleaseMutex(queue->hMutex);
       
       // 调用用户提供的回调
-      queue->callBack(&indexData);
+      queue->outDataCallBack(&indexData);
     }
   }
   
   SafePrintf("Async queue thread exiting :0x%p\n", lpParam);
   return 0;
 }
-
 
 // 释放队列资源
 void FreeAsyncSendQueue(AsyncSendQueue_t *queue) {
@@ -162,25 +189,31 @@ void FreeAsyncSendQueue(AsyncSendQueue_t *queue) {
         queue->hSpaceEvent = NULL;
     }
     
-    // 释放队列内存
-    if (queue->queue) {
-        free(queue->queue);
-        queue->queue = NULL;
+    // 释放内存（只需要两次free调用）
+    if (queue->dataBuffer) {
+        free(queue->dataBuffer);
+        queue->dataBuffer = NULL;
+    }
+    
+    if (queue->index) {
+        free(queue->index);
+        queue->index = NULL;
     }
     
     queue->capacity = 0;
+    queue->elementSize = 0;
     SafePrintf("Async queue freed\n");
 }
 
 // 添加数据到发送队列
-BOOL AddDataToAsyncQueue(AsyncSendQueue_t *queue, const char *data, uint32_t size) {
+BOOL AddDataToAsyncQueue(AsyncSendQueue_t *queue, const char *data, uint32_t len) {
 
     if( queue->running == FALSE )
       return FALSE;
  
     // 检查数据大小
-    if (size > RECV_BUFFER_SIZE) {
-        SafePrintf("Data too large (%u > %d), discarding\n", size, RECV_BUFFER_SIZE);
+    if (len > queue->elementSize) {
+        SafePrintf("Data too large (%d > %d), discarding\n", len, queue->elementSize);
         return FALSE;
     }
     
@@ -203,8 +236,8 @@ BOOL AddDataToAsyncQueue(AsyncSendQueue_t *queue, const char *data, uint32_t siz
     }
     
     // 添加数据到队列
-    queue->queue[queue->rear].size = size;
-    memcpy(queue->queue[queue->rear].buff, data, size);
+    queue->index[queue->rear].len = len;
+    memcpy(queue->index[queue->rear].data, data, len);
     queue->rear = nextRear;
     
     // 设置数据可用事件
@@ -218,36 +251,31 @@ BOOL AddDataToAsyncQueue(AsyncSendQueue_t *queue, const char *data, uint32_t siz
     return TRUE;
 }
 
-
-
-
-
 // 获取队列当前元素数量
 int GetAsyncQueueCurrentSize(AsyncSendQueue_t *queue) 
 {
-    if (!queue || !queue->running || !queue->hMutex) {
-        return -1;
-    }
-    
-    WaitForSingleObject(queue->hMutex, INFINITE);
-    
-    int currentSize;
-    if (queue->rear >= queue->front) {
-        currentSize = queue->rear - queue->front;
-    } else {
-        currentSize = queue->capacity - queue->front + queue->rear;
-    }
-    
-    ReleaseMutex(queue->hMutex);
-    return currentSize;
+  if (!queue || !queue->running || !queue->hMutex) 
+      return -1;
+
+  WaitForSingleObject(queue->hMutex, INFINITE);
+  
+  int currentSize;
+  if (queue->rear >= queue->front) {
+      currentSize = queue->rear - queue->front;
+  } else {
+      currentSize = queue->capacity - queue->front + queue->rear;
+  }
+  
+  ReleaseMutex(queue->hMutex);
+  return currentSize;
 }
 
 // 获取队列剩余可用数量
 int GetAsyncQueueRemainingSpace(AsyncSendQueue_t *queue) 
 {
-    int currentSize = GetAsyncQueueCurrentSize(queue);
-    if (currentSize < 0)
-        return -1;
-    
-    return queue->capacity - currentSize - 1;
+  int currentSize = GetAsyncQueueCurrentSize(queue);
+  if (currentSize < 0)
+      return -1;
+  
+  return queue->capacity - currentSize - 1;
 }

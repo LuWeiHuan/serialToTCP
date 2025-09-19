@@ -37,6 +37,22 @@
     "connectserver.h": "c",
     "serverlisten.h": "c",
     "serverconnect.h": "c",
-    "_timeval.h": "c"
+    "_timeval.h": "c",
+    "stdatomic.h": "c",
+    "limits": "c",
+    "initguid.h": "c",
+    "array": "c",
+    "string_view": "c",
+    "initializer_list": "c",
+    "utility": "c",
+    "*.c1": "c",
+    "uthash.h": "c",
+    "process.h": "c",
+    "exitinfo.h": "c",
+    "abnormallyexits.h": "c",
+    "dbghelp.h": "c",
+    "exception.h": "c",
+    "networkconnect.h": "c",
+    "hostconnect.h": "c"
   }
 }

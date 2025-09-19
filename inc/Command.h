@@ -16,12 +16,9 @@ extern "C" {
 
 /*================== 数据类型声明		=========================================*/
 //struct enum union
-
 /*================== 外部变量声明		=========================================*/
-//extern
-
 /*================== 外部函数声明		=========================================*/
-void HandleClientCommand(SOCKET *clientSocket, uint8_t clientIndex, const char* command);
+void HandleClientCommand(SOCKET *clientSocket, char* command);
 
 #ifdef __cplusplus
 }

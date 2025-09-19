@@ -1,6 +1,6 @@
 
-#ifndef __LOG_PRINT_H_
-#define __LOG_PRINT_H_
+#ifndef __EXCEPTION_H_
+#define __EXCEPTION_H_
 
 #ifdef __cplusplus  
 extern "C" {
@@ -11,28 +11,17 @@ extern "C" {
 #include <stdbool.h>
 
 /*================== 宏定义声明			=========================================*/
-
 /*================== 数据类型声明		=========================================*/
 //struct enum union
 
-
 /*================== 外部变量声明		=========================================*/
+//extern
 
 /*================== 外部函数声明		=========================================*/
-void logPrintResourceInit(bool start);
-int SafePrintf(const char* format, ...) __attribute__((format(printf, 1, 2)));
-char *getPrintf(const char *format, ...) __attribute__((format(printf, 1, 2)));
-void printf_hex8(const uint8_t *pdata, uint16_t len, uint8_t numEnter, uint8_t endEnter);
 
+void SetupExceptionHandler();
 #ifdef __cplusplus
 }
 #endif
 
-#endif /*__LOG_PRINT_H_*/
-
-
-
-
-
-
-
+#endif /*__EXCEPTION_H_*/

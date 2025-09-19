@@ -1,6 +1,6 @@
 
-#ifndef __LOG_PRINT_H_
-#define __LOG_PRINT_H_
+#ifndef __HOST_CONNECT_H_
+#define __HOST_CONNECT_H_
 
 #ifdef __cplusplus  
 extern "C" {
@@ -10,29 +10,21 @@ extern "C" {
 #include <stdint.h>
 #include <stdbool.h>
 
+#include <winsock2.h>
 /*================== 宏定义声明			=========================================*/
-
 /*================== 数据类型声明		=========================================*/
 //struct enum union
 
-
 /*================== 外部变量声明		=========================================*/
+//extern
 
 /*================== 外部函数声明		=========================================*/
-void logPrintResourceInit(bool start);
-int SafePrintf(const char* format, ...) __attribute__((format(printf, 1, 2)));
-char *getPrintf(const char *format, ...) __attribute__((format(printf, 1, 2)));
-void printf_hex8(const uint8_t *pdata, uint16_t len, uint8_t numEnter, uint8_t endEnter);
-
+int8_t resolveHostname(const char* hostname, char* ipBuffer, uint8_t bufferSize, int*);
+bool trueConnectToServer(const char* host, uint16_t port, 
+        uint16_t timeoutMs, SOCKET *retSocket, char *retIP);
+        
 #ifdef __cplusplus
 }
 #endif
 
-#endif /*__LOG_PRINT_H_*/
-
-
-
-
-
-
-
+#endif /*__HOST_CONNECT_H_*/

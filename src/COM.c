@@ -16,7 +16,7 @@
 #include "main.h"
 #include "public.h"
 #include "logPrint.h"
-#include "client.h"
+#include "clients.h"
 #include "TrafficStats.h"
 #include "Queue.h"
 
@@ -33,14 +33,15 @@
 #include <tchar.h>
 
 /*================== 本地宏定义     =========================================*/
-/*================== 全局共享变量    ========================================*/
-ComPortInfo_t comPort = { INVALID_HANDLE_VALUE, FALSE, "", {0}, NULL, 0, 0 };
-
 /*================== 本地常量声明    ========================================*/
 /*================== 本地变量声明    ========================================*/
 static  CRITICAL_SECTION csComPort;
 static AsyncSendQueue_t asyncSendQueue = {0};
 static AsyncSendQueue_t asyncRecvQueue = {0};
+static ComPortInfo_t comPort = { INVALID_HANDLE_VALUE, FALSE, "NULL", {0}, NULL, 0, 0 };
+
+/*================== 全局共享变量    ========================================*/
+ComPortInfo_t const * const ComPort = &comPort;
 
 /*================== 本地函数声明    ========================================*/
 static DWORD WINAPI ComRecvDataThread(LPVOID lpParam);
@@ -54,42 +55,62 @@ void ComPortResourceInit(bool start)
 {
   if( start ){ 
     InitializeCriticalSection(&csComPort);
-    // COM_UseAsyncRecv(100);
+    COM_UseAsyncRecv(100);
   }
   else{
     COM_UseAsyncRecv(0);
-    CloseComPort("clear");
+    CloseComPort("clear exit", false);
     DeleteCriticalSection(&csComPort);
   }
 }
 
-void CloseComPort(const char * reason) 
+void CloseComPort(const char * reason, bool isSelfCall) 
 {
-  if (comPort.isOpen == FALSE) 
+  static char portName[10] = {"NULL"};
+  if (comPort.isOpen == FALSE) {
+    SafePrintf("%s is Close， reason:%s\n", comPort.portName, reason? reason:"unknown");
     return;
-
-  comPort.isOpen = FALSE;
-  WINBOOL closeComRet = FALSE, closeThreadRet = FALSE ;
+  }
 
   EnterCriticalSection(&csComPort);
-  if (comPort.hThread) {
-    // 等待线程退出
-    WaitForSingleObject(comPort.hThread, 1000);
-    closeThreadRet = CloseHandle(comPort.hThread);
-    comPort.hThread = NULL;
-  }
-  
+  memset(portName, 0, sizeof portName);
+  strcpy(portName, comPort.portName);
+  WINBOOL closeComRet = FALSE, closeThreadRet = FALSE ;
+  DWORD waitResult = 0;
+  char *hThreadCloseInfo = "External Call";
+  // 促使接收串口数据线程退出 
+  comPort.isOpen = FALSE;
   if (comPort.hCom != INVALID_HANDLE_VALUE) {
       closeComRet = CloseHandle(comPort.hCom);
       comPort.hCom = INVALID_HANDLE_VALUE;
   }
 
-  printfSend(NULL, "closed %s %s, thread exit %s. reason: %s\n", comPort.portName, 
-     closeComRet == FALSE? "failed":"success", 
-     closeThreadRet == FALSE? "failed":"success",
-      reason? reason:"unknown");
+  if (comPort.hThread && isSelfCall == false) { // 其它地方关闭，非线程关闭
+    // 等待线程退出
+    waitResult = WaitForSingleObject(comPort.hThread, 1000);
+    if (waitResult == WAIT_TIMEOUT) {
+        DWORD exitCode;
+        if (GetExitCodeThread(comPort.hThread, &exitCode) && 
+            exitCode == STILL_ACTIVE) {
+            TerminateThread(comPort.hThread, 0); 
+        }
+        
+    }
+    closeThreadRet = CloseHandle(comPort.hThread);
+    comPort.hThread = NULL;
+
+    hThreadCloseInfo = getPrintf("thread exit %s, Wait %ld", 
+        closeThreadRet == FALSE? "failed":"success", waitResult);
+  }
+ 
+  char *closedInfo = getPrintf("closed %s %s, %s. reason: %s\n", 
+      comPort.portName, closeComRet == FALSE? "failed":"success", 
+      hThreadCloseInfo, reason? reason:"unknown");
+
+  printfSend(NULL, closedInfo);
+  SafePrintf(closedInfo);
   memset(comPort.portName, 0, sizeof comPort.portName);
-  
+
   LeaveCriticalSection(&csComPort);
 }
 
@@ -98,15 +119,8 @@ void sendComPortsListToClient(SOCKET *socket, bool VPID)
   const char *comList = getComPortList(VPID);
   printfSend(socket, "%s\n", comList? comList: "Failed to get COM port list");
   
-  if( comPort.isOpen && strstr(comList, comPort.portName) == NULL ){
-    SafePrintf("%s disconnection!\n", comPort.portName);
-
-    char reason[50];
-    memset(reason, 0, sizeof reason);
-    snprintf(reason, sizeof reason, "%s disconnection!", comPort.portName);
-    SafePrintf("%s\n",reason);
-    CloseComPort(reason);
-  }
+  if( comPort.isOpen && strstr(comList, comPort.portName) == NULL )
+    CloseComPort("disconnection inexistence!", false);
 }
 
 // 获取Win系统串口列表。
@@ -191,7 +205,8 @@ int8_t OpenComPort(const char* portName, uint32_t baudRate,
   uint8_t dataBits, uint8_t stopBits, uint8_t parity)
 {
     char fullPortName[20];
-    sprintf(fullPortName, "\\\\.\\%s", portName);
+    memset(fullPortName, 0, sizeof fullPortName);
+    snprintf(fullPortName, sizeof fullPortName, "\\\\.\\%s", portName);
 
     EnterCriticalSection(&csComPort);
     
@@ -282,7 +297,8 @@ static DWORD WINAPI ComRecvDataThread(LPVOID lpParam)
   DWORD lastUpdateTime = 0, currentTime = 0;
   const DWORD updateInterval = 1500; // 1.5秒更新一次线程状态
   comPort.sendCount = 0;
-  
+  char *exitReason = "线程退出，未知";
+
   while ( comPort.isOpen ) {
     if( bytesRead == 0 )
       Sleep(1); // 1ms也能使CPU占用降低
@@ -297,34 +313,27 @@ static DWORD WINAPI ComRecvDataThread(LPVOID lpParam)
       (sizeof comRecvBuffer) - 1, &bytesRead, &overlapped);
     
     if (!readRet) {
-        DWORD error = GetLastError();
-        if (error == ERROR_IO_PENDING) {  // 等待读取完成或超时 
-            DWORD waitResult = WaitForSingleObject(overlapped.hEvent, 1000);
-            if (waitResult == WAIT_TIMEOUT) { 
-                updataConsoleTitle("COM: Timeout", GetCurrentThreadId()); 
-                continue;
-            }
-            else if (waitResult == WAIT_OBJECT_0) { // 读取完成 
-                if (!GetOverlappedResult(comPort.hCom, &overlapped, &bytesRead, FALSE)) {
-                    error = GetLastError();
-                    if (error != ERROR_OPERATION_ABORTED) {
-                        char reason[50];
-                        memset(reason, 0, sizeof reason);
-                        snprintf(reason, sizeof reason, "%s read error %ld", 
-                          comPort.portName, error);
-                        CloseComPort(reason);
-                        break;
-                    }
-                }
-            }
-        }
-        else if (error != ERROR_OPERATION_ABORTED) { 
-          char reason[50];
-          memset(reason, 0, sizeof reason);
-          snprintf(reason, sizeof reason, "%s read error %ld", comPort.portName, error);
-          CloseComPort(reason);
-          break;
-        }
+      DWORD error = GetLastError();
+      if (error == ERROR_IO_PENDING) {  // 等待读取完成或超时 
+          DWORD waitResult = WaitForSingleObject(overlapped.hEvent, 1000);
+          if (waitResult == WAIT_TIMEOUT) { 
+              updataConsoleTitle("COM: Timeout", GetCurrentThreadId()); 
+              continue;
+          }
+          else if (waitResult == WAIT_OBJECT_0) { // 读取完成 
+              if (!GetOverlappedResult(comPort.hCom, &overlapped, &bytesRead, FALSE)) {
+                  error = GetLastError();
+                  if (error != ERROR_OPERATION_ABORTED) { 
+                    exitReason = getPrintf("线程退出，%s 读错误 %ld [B]", comPort.portName, error);
+                    break;
+                  }
+              }
+          }
+      }
+      else if (error != ERROR_OPERATION_ABORTED) { 
+        exitReason = getPrintf("线程退出，%s 读错误 %ld [A]", comPort.portName, error); 
+        break;
+      }
     }
 
     if (bytesRead == 0) { // 处理接收到的数据如果是空读取就重新读 
@@ -337,14 +346,13 @@ static DWORD WINAPI ComRecvDataThread(LPVOID lpParam)
     }
 
     // 处理串口接收到的数据
-    if( asyncRecvQueue.running &&   // 使用异步队列处理收到的数据
-        AddDataToAsyncQueue(&asyncRecvQueue, comRecvBuffer, bytesRead)) 
-        continue;
-    
-    ProcessReceivedData(comRecvBuffer, bytesRead); 
+    BOOL AddAsync = AddDataToAsyncQueue(&asyncRecvQueue, comRecvBuffer, bytesRead);
+    if( AddAsync == false )   // 异步添加失败就同步发出
+      ProcessReceivedData(comRecvBuffer, bytesRead); 
   }
 
-  CloseHandle(overlapped.hEvent); 
+  CloseComPort(exitReason, true);
+  CloseHandle(overlapped.hEvent);
   return 0;
 }
 
@@ -356,37 +364,43 @@ static void ProcessReceivedData(char *comRecvBuffer, DWORD len)
   #endif
   
   int sendRet = 0;
-  if( getClientNum() ){  // 没有客户端不发送数据
-    // 发送给指定客户端或所有客户端
-    if (runInfo.monopolizeSocket != NULL) {
-        sendRet = SendDataToClients(runInfo.monopolizeSocket, comRecvBuffer, len);
+  if( getClientNum() ){  // 没有客户端不发送数据 
+    if (runInfo.monopolizeComRecvIndex != NULL) { // 发送给指定客户端或所有客户端
+        const SOCKET *socket = getClientSocket( *runInfo.monopolizeComRecvIndex );
+        if( socket == NULL || ( socket && *socket == INVALID_SOCKET ) )
+          runInfo.monopolizeComRecvIndex = NULL;
+        sendRet = sendDataToClients(socket, comRecvBuffer, len);
         
-        // 如果发送失败，检查是否是独占客户端断开
-        if (sendRet <= 0) {
-          
-            // 检查独占客户端是否还存在
-            examineMonopolizeClient();
-            
-            // 尝试发送给所有客户端
-            sendRet = SendDataToClients(NULL, comRecvBuffer, len);
-        }
-    } else {
-        sendRet = SendDataToClients(NULL, comRecvBuffer, len);
+      // 如果发送失败。检查独占客户端是否还存在。
+      if (sendRet <= 0 && !examineClientIsExist(socket) ) { 
+        runInfo.monopolizeComRecvIndex = NULL;    // 独占客户端已经下线
+        SafePrintf("Monopolize client disconnected, switching to all clients\n");
+        sendRet = sendDataToClients(NULL, comRecvBuffer, len);
+      }
     }
+    else 
+        sendRet = sendDataToClients(NULL, comRecvBuffer, len);
   }
 
   char *Direct = getSendRecvDirectionStr("[COM --> TCP]", 0);
   char *timeStr = getCurrentTime();
-  timeStr[ strlen(timeStr) ] = ' '; 
   
-  SafePrintf("%s%6I64d [%s]  %-6d/%-6ld Byte (%s : %ld)%s\n", 
-      timeStr, ++comPort.sendCount, Direct, sendRet, len, 
-      sendRet == (int)len ? "OK":"Fail", len - sendRet,
-      runInfo.serverPrintData != 0? " data:":" ");
+  int ClientNum = getClientNum();
+  int lenSum = runInfo.monopolizeComRecvIndex? len :len * ClientNum ; 
+  int oneLen = ClientNum==0? 0: sendRet / ClientNum; // 除数为0时，程序会出错误
+  //int oneLen = sendRet / ClientNum; // 除数为0时，程序会出错误，排查了4小时
+  if( runInfo.monopolizeComRecvIndex )
+    oneLen = sendRet;
+
+  SafePrintf( "%-21s%6I64d [%s]  %-6d/%-6ld Byte (%s : %d)%s %s",
+      timeStr, ++comPort.sendCount, Direct, oneLen, len,
+      (sendRet == lenSum)? "OK":"Fail", lenSum - sendRet,
+      runInfo.serverPrintData != 0? " data:":" ", 
+      (runInfo.serverPrintData !=0 || ClientNum)? "\n":"\r");
   
   if (runInfo.serverPrintData == 0) 
     return;
-
+  
   if (runInfo.serverPrintData == 1)
       SafePrintf("%s", comRecvBuffer);
   if (runInfo.serverPrintData == 2)
@@ -395,7 +409,7 @@ static void ProcessReceivedData(char *comRecvBuffer, DWORD len)
 
 
 // 串口阻塞形发数据
-static DWORD ComPortSendDataObstruct(char const *tcpRecvBuffer, int bytesReceived, DWORD *retError)
+static DWORD ComPortTrueSendData(char const *tcpRecvBuffer, int bytesReceived, DWORD *retError)
 {
   DWORD bytesWritten = 0;
   OVERLAPPED writeOverlapped = {0};
@@ -416,9 +430,9 @@ static DWORD ComPortSendDataObstruct(char const *tcpRecvBuffer, int bytesReceive
   
   if (error == ERROR_BAD_COMMAND || // 当串口拔掉后错误值是22
       error == ERROR_OPERATION_ABORTED || 
-      error == ERROR_INVALID_HANDLE) {
-      SafePrintf("Serial port error: %lu, closing port\n", error);
-      CloseComPort("Serial port error");
+      error == ERROR_INVALID_HANDLE) { 
+      char *reason = getPrintf("Serial port write error: %lu, closing port\n", error);
+      CloseComPort(reason, false);
   }
   
   if (retError) *retError = error;
@@ -446,10 +460,10 @@ DWORD ComPortSendData(char const *tcpRecvBuffer, int bytesReceived, DWORD *retEr
       return bytesReceived;
   }
   
-  return ComPortSendDataObstruct(tcpRecvBuffer, bytesReceived, retError);
+  return ComPortTrueSendData(tcpRecvBuffer, bytesReceived, retError);
 }
 
-static void COMAsyncSendQueueCallBack(queueData_t *data)
+static void COMAsyncSendQueueCallBack(queueData_t *queueData)
 {
   updataConsoleTitle("COM Async Send", GetCurrentThreadId());
 
@@ -458,48 +472,42 @@ static void COMAsyncSendQueueCallBack(queueData_t *data)
 
   // 发送数据到串口
   DWORD error = 0;
-  DWORD bytesWritten = ComPortSendDataObstruct(data->buff, data->size, &error);
+  DWORD bytesWritten = ComPortTrueSendData(queueData->data, queueData->len, &error);
   
-  if (bytesWritten != data->size) 
+  if (bytesWritten != queueData->len) 
     SafePrintf("COM Async send error: written %lu/%u bytes, error: %lu\n", 
-              bytesWritten, data->size, error);
+              bytesWritten, queueData->len, error);
 }
 
 // 启用异步发送数据到COM口， 传入0代表关闭异步发送，大于10代表启动异步发送
 BOOL COM_UseAsyncSend(uint16_t num)
 {
-  if( num < 10 ){
+  if( num < MIN_QUEUE_SIZE ){
     FreeAsyncSendQueue(&asyncSendQueue);
     return num == 0? true:false;
   }
     
-  return startAsyncDataHandleThread(&asyncSendQueue, COMAsyncSendQueueCallBack, num);
+  return startAsyncDataHandleThread(&asyncSendQueue, 
+      COMAsyncSendQueueCallBack, num, RECV_BUFFER_SIZE);
 }
 
 
-
-
-
-
-
-
- 
-
-static void COMAsyncRecvQueueCallBack(queueData_t *data)
+static void COMAsyncRecvQueueCallBack(queueData_t *queueData)
 {
   //updataConsoleTitle("COM Async recv", GetCurrentThreadId());
-  ProcessReceivedData(data->buff, data->size); 
+  ProcessReceivedData(queueData->data, queueData->len); 
 }
 
 // 启用异步发送数据到COM口， 传入0代表关闭异步发送，大于10代表启动异步发送
 BOOL COM_UseAsyncRecv(uint16_t num)
 {
-  if( num < 10 ){
+  if( num < MIN_QUEUE_SIZE ){
     FreeAsyncSendQueue(&asyncRecvQueue);
     return num == 0? true:false;
   }
     
-  return startAsyncDataHandleThread(&asyncRecvQueue, COMAsyncRecvQueueCallBack, num);
+  return startAsyncDataHandleThread(&asyncRecvQueue, 
+      COMAsyncRecvQueueCallBack, num, RECV_BUFFER_SIZE);
 }
 
 

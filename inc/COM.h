@@ -25,14 +25,14 @@ typedef struct {
 } ComPortInfo_t;
 
 /*================== 外部变量声明		=========================================*/
-extern ComPortInfo_t comPort;
+extern ComPortInfo_t const * const ComPort;
 
 /*================== 外部函数声明		=========================================*/
 void ComPortResourceInit(bool start);
 const char *getComPortList(bool VPID);
 int8_t OpenComPort(const char* portName, uint32_t baudRate, uint8_t dataBits, uint8_t stopBits, uint8_t parity);
 DWORD ComPortSendData(char const *tcpRecvBuffer, int bytesReceived, DWORD *retError);
-void CloseComPort(const char * reason);
+void CloseComPort(const char * reason, bool isSelfCall);
 
 BOOL COM_UseAsyncRecv(uint16_t num);
 BOOL COM_UseAsyncSend(uint16_t num);

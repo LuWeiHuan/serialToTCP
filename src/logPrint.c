@@ -138,5 +138,34 @@ void DisableQuickEditMode(void) {
 }
 
 
+#include <stdatomic.h>
+/**
+ * @brief  格式化字符串并返回字符串空间
+ * @param 
+ *		@arg printf 格式
+ * @retval 格式化后的字符串
+ * 注意每个线程尽量不要嵌套超过6次容易字符串混淆
+ */
+char *getPrintf(const char *format, ...)
+{
+  // 使用线程局部存储，每个线程有自己的副本
+  // 线程副本会让程序体积增加不少
+  static __thread uint8_t buffIndex = 0;
+  static __thread char stringBuff[6][1024];
 
+  if( ++buffIndex >= sizeof stringBuff / sizeof stringBuff[0] )
+    buffIndex = 0;
+  memset(stringBuff[buffIndex], 0, sizeof stringBuff[buffIndex]);
 
+  va_list args; 
+  va_start(args, format);
+  int retLen = vsnprintf(stringBuff[buffIndex], sizeof stringBuff[buffIndex], format, args);
+  va_end(args);
+
+  if(retLen <= 0) {
+    memset(stringBuff[buffIndex], 0, sizeof stringBuff[buffIndex]);
+    strcpy(stringBuff[buffIndex], "get Printf Format error");
+  }
+    
+  return stringBuff[buffIndex];
+}

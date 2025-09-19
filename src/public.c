@@ -12,33 +12,35 @@
 */
 
 /*================== 头文件包含     =========================================*/
+
+
 #include "public.h"
 #include "main.h"
 #include "COM.h"
 #include "TrafficStats.h"
 #include "logPrint.h"
-#include "client.h"
+#include "clients.h"
 
 #include <stdio.h>
 #include <time.h>
 
+#include <string.h>
 #include <winsock2.h>
-#include <windows.h>
+ 
+
 
 /*================== 本地宏定义     =========================================*/
 /*================== 全局共享变量    ========================================*/
 runInfo_t  runInfo = {
-  .serverPrintData = 0,
-  .monopolizeSocket = NULL,
-  .monopolizeIndex = 0,
   .startTime = 0,
+  .serverPrintData = 0,
+  .monopolizeComRecvIndex = NULL,
+  .monopolizeComSendIndex = NULL,
 };
 
 /*================== 本地常量声明    ========================================*/
 /*================== 本地变量声明    ========================================*/
 /*================== 本地函数声明    ========================================*/
-
-
 /*================== 外部函数和变量声明    ==================================*/
 
 // 获取从运行到现在的间戳（毫秒）程序运行要调用一次
@@ -58,7 +60,7 @@ uint64_t GetCurrentTimeMillis(void)
 }
 
 
-void updataConsoleTitle(char *threadName, DWORD theradID)
+void updataConsoleTitle(const char *threadName, DWORD theradID)
 { 
   char title[100];
   memset(title, 0, sizeof title);
@@ -128,7 +130,7 @@ void printBuildInfo(void)
 char *getSendRecvDirectionStr(char *direct, uint8_t index)
 {
   char *endptr;  // 用于检测未转换的字符 
-  uint8_t comNum = strtol(comPort.portName + 3, &endptr, 10);
+  uint8_t comNum = strtol(ComPort->portName + 3, &endptr, 10);
 
   static char retStr[30];
   memset(retStr, 0, sizeof retStr);
@@ -142,9 +144,9 @@ char *getSendRecvDirectionStr(char *direct, uint8_t index)
   if( strcmp(direct, "[COM --> TCP]") == 0 ){
     memset(retStr, 0, sizeof retStr);
 
-    if( runInfo.monopolizeSocket != NULL ) // 独占串口数据
+    if( runInfo.monopolizeComRecvIndex != NULL ) // 独占串口数据
       snprintf(retStr, sizeof retStr, "COM%-3d--> TCP%-3d", 
-        comNum, runInfo.monopolizeIndex);
+        comNum, *runInfo.monopolizeComRecvIndex);
     else
       snprintf(retStr, sizeof retStr, "COM%-3d--> TCP%3d",
         comNum, getClientNum() );
@@ -152,21 +154,22 @@ char *getSendRecvDirectionStr(char *direct, uint8_t index)
 #else
   if( strcmp(direct, "[TCP --> COM]") == 0 ){
     memset(retStr, 0, sizeof retStr);
-    snprintf(retStr, sizeof retStr, "%-16s--> COM%-3d" , getClientIP(index), comNum);
+    snprintf(retStr, sizeof retStr, "%-2d:%-16s==> COM%-3d" , index, getClientIP(index), comNum);
   }
 
   if( strcmp(direct, "[COM --> TCP]") == 0 ){
     memset(retStr, 0, sizeof retStr);
     static char clientString[32] = {0};
     memset(clientString, 0, sizeof clientString);
-    if (runInfo.monopolizeSocket != NULL) 
-      snprintf(clientString, sizeof clientString, "%s", getClientIP(runInfo.monopolizeIndex));
+    if (runInfo.monopolizeComRecvIndex != NULL) 
+      snprintf(clientString, sizeof clientString, "%-2d %s", 
+        *runInfo.monopolizeComRecvIndex, getClientIP(*runInfo.monopolizeComRecvIndex) );
     else if (getClientNum() == 0) 
       snprintf(clientString, sizeof clientString, "No client");
     else 
       snprintf(clientString, sizeof clientString, "All client %d", getClientNum());
 
-    snprintf(retStr, sizeof(retStr), "COM%-3d--> %-16s", comNum, clientString);
+    snprintf(retStr, sizeof(retStr), "COM%-3d==> %-19s", comNum, clientString);
   }
 #endif
   return retStr;
@@ -209,3 +212,8 @@ bool InitializeWinSocket(void)
       SafePrintf("WSAStartup failed: %d\n", result);
   return result == 0? true:false;
 }
+
+
+
+
+

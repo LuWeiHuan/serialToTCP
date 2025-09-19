@@ -23,9 +23,11 @@
 #include "DCM.h"
 #include "TrafficStats.h"
 #include "discovery.h"
-#include "client.h"
+#include "clients.h"
 #include "serverListen.h"
 #include "ServerConnect.h"
+#include "exception.h"
+
 
 /*================== 本地宏定义     =========================================*/
 /*================== 本地常量声明    ========================================*/
@@ -51,7 +53,8 @@ int main(int argc, char const *argv[])
 {
   GetCurrentTimeMillis();
   printBuildInfo();
-
+  SetupExceptionHandler();
+  
   logPrintResourceInit(true);
   microFuncCodeTest();
   InitializeWinSocket();
@@ -63,10 +66,11 @@ int main(int argc, char const *argv[])
   ClientResourceInit(true);
   ComPortResourceInit(true);
   DeviceChangeMonitor(true);    // 启动设备插拔变化监听 
-  UpdateDiscoveryInfo(mainServer.port, 0); // 初始客户端数量为0
-  // ConnectToServer("127.0.0.1", 8080); // 连接服务器测试
- 
+  UpdateDiscoveryInfo(mainServer.port, 0); // 初始客户端数量为0 
+  ServerConnectInit(true);
+  
   int8_t listenStartRet;
+  bool addRet;
   while( true ) {
     
     // 看看是否有新的客户端连接
@@ -79,18 +83,21 @@ int main(int argc, char const *argv[])
     }
 
     // 添加新客户端
-    addNewClient(mainServer.newSocket, mainServer.newIP);
+    addRet = addNewClient(mainServer.newSocket, mainServer.newIP);
+    if( addRet == false )
+      closesocket( mainServer.newSocket );
   }
 
   closesocket(mainServer.socket); 
+  ServerConnectInit(false);
   DiscoveryService(false);    // 在退出前停止发现服务 
   ClientResourceInit(false);
   ComPortResourceInit(false);
   DeviceChangeMonitor(false);
-  DisconnectingServer();
-
+  
   logPrintResourceInit(false);
   WSACleanup();
+  printf("main Program exit\n");
   return 0;
 }
 

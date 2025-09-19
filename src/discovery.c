@@ -1,22 +1,23 @@
 /******************************************************************************
-  * @file    æ–‡ä»¶ discovery.c 
-  * @author  ä½œè€… 
-  * @version ç‰ˆæœ¬ V1.0
-  * @date    æ—¥æœŸ 2025-08-17
-  * @brief   ç®€ä»‹ UDPæœåŠ¡å‘ç°åŠŸèƒ½
+  * @file    ÎÄ¼ş discovery.c 
+  * @author  ×÷Õß 
+  * @version °æ±¾ V1.0
+  * @date    ÈÕÆÚ 2025-08-17
+  * @brief   ¼ò½é UDP·şÎñ·¢ÏÖ¹¦ÄÜ
   ******************************************************************************
-  * @attention æ³¨æ„
+  * @attention ×¢Òâ
   *
   *
   *******************************************************************************
 */
 
-/*================== å¤´æ–‡ä»¶åŒ…å«     =========================================*/
+/*================== Í·ÎÄ¼ş°üº¬     =========================================*/
 #include "discovery.h"
 #include "main.h"
 #include "logPrint.h"
 #include "public.h"
-#include "client.h"
+#include "clients.h"
+#include "Command.h"
 
 #include <stdio.h>
 #include <string.h>
@@ -24,22 +25,22 @@
 #include <ws2tcpip.h>
 #include <windows.h>
 
-/*================== æœ¬åœ°æ•°æ®ç±»å‹   =========================================*/
+/*================== ±¾µØÊı¾İÀàĞÍ   =========================================*/
 typedef struct {
-    uint16_t serverPort;      // æœåŠ¡å™¨TCPç«¯å£
-    char *serverName;         // æœåŠ¡å™¨åç§°
-    char serverIP[20];        // æœåŠ¡å™¨åç§°
-    uint32_t clientCount;     // å½“å‰å®¢æˆ·ç«¯æ•°é‡
+    uint16_t serverPort;      // ·şÎñÆ÷TCP¶Ë¿Ú
+    char *serverName;         // ·şÎñÆ÷Ãû³Æ
+    char serverIP[20];        // ·şÎñÆ÷Ãû³Æ
+    uint32_t clientCount;     // µ±Ç°¿Í»§¶ËÊıÁ¿
 } DiscoveryInfo_t;
 
-/*================== æœ¬åœ°å®å®šä¹‰     =========================================*/
-#define DISCOVERY_INTERVAL_MS  1000        // å‘ç°è¯·æ±‚æ£€æŸ¥é—´éš”
-#define RESPONSE_BUFFER_SIZE   256         // å“åº”ç¼“å†²åŒºå¤§å°
+/*================== ±¾µØºê¶¨Òå     =========================================*/
+#define DISCOVERY_INTERVAL_MS  1000        // ·¢ÏÖÇëÇó¼ì²é¼ä¸ô
+#define RESPONSE_BUFFER_SIZE   256         // ÏìÓ¦»º³åÇø´óĞ¡
 
-/*================== å…¨å±€å…±äº«å˜é‡    ========================================*/
-/*================== æœ¬åœ°å¸¸é‡å£°æ˜    ========================================*/
-/*================== æœ¬åœ°å˜é‡å£°æ˜    ========================================*/
-static bool getIPmethod = true;              // è·å–IPçš„æ–¹æ³•
+/*================== È«¾Ö¹²Ïí±äÁ¿    ========================================*/
+/*================== ±¾µØ³£Á¿ÉùÃ÷    ========================================*/
+/*================== ±¾µØ±äÁ¿ÉùÃ÷    ========================================*/
+static bool getIPmethod = true;              // »ñÈ¡IPµÄ·½·¨
 static volatile BOOL discoveryRunning = FALSE;
 static HANDLE hDiscoveryThread = NULL;
 static SOCKET discoverySocket = INVALID_SOCKET;
@@ -51,7 +52,7 @@ static DiscoveryInfo_t discoveryInfo = {
     .serverIP = "NULL",
     .clientCount = 0,
 };
-/*================== æœ¬åœ°å‡½æ•°å£°æ˜    ========================================*/
+/*================== ±¾µØº¯ÊıÉùÃ÷    ========================================*/
 static void DiscoveryServiceStart(void);
 static void DiscoveryServiceStop(void);
 
@@ -61,7 +62,7 @@ static void SendDiscoveryResponse(struct sockaddr_in* clientAddr);
 static void GetMatchingSubnetIP(struct sockaddr_in* clientAddr, char* ipBuffer);
 static void SelectMatchingSubnetIP(struct sockaddr_in* clientAddr, char* selectedIP);
 
-/*================== å¤–éƒ¨å‡½æ•°å’Œå˜é‡å£°æ˜    ==================================*/
+/*================== Íâ²¿º¯ÊıºÍ±äÁ¿ÉùÃ÷    ==================================*/
 
 void DiscoveryService(bool start)
 {
@@ -71,7 +72,7 @@ void DiscoveryService(bool start)
     DiscoveryServiceStop( );
 }
 
-// å¯åŠ¨å‘ç°æœåŠ¡
+// Æô¶¯·¢ÏÖ·şÎñ
 static void DiscoveryServiceStart(void)
 {
     if (discoveryRunning) 
@@ -95,7 +96,7 @@ static void DiscoveryServiceStart(void)
     }
 }
 
-// åœæ­¢å‘ç°æœåŠ¡
+// Í£Ö¹·¢ÏÖ·şÎñ
 static void DiscoveryServiceStop(void)
 {
     if (!discoveryRunning)
@@ -117,7 +118,7 @@ static void DiscoveryServiceStop(void)
     SafePrintf("Discovery service stopped\n");
 }
 
-// æ›´æ–°å‘ç°ä¿¡æ¯
+// ¸üĞÂ·¢ÏÖĞÅÏ¢
 void UpdateDiscoveryInfo(uint16_t port, uint32_t clientCount)
 {
     EnterCriticalSection(&csDiscovery);
@@ -126,7 +127,7 @@ void UpdateDiscoveryInfo(uint16_t port, uint32_t clientCount)
     LeaveCriticalSection(&csDiscovery);
 }
 
-// åˆå§‹åŒ–å‘ç°Socket
+// ³õÊ¼»¯·¢ÏÖSocket
 static BOOL InitializeDiscoverySocket(void)
 { 
     discoverySocket = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
@@ -135,7 +136,7 @@ static BOOL InitializeDiscoverySocket(void)
         return FALSE;
     }
 
-    // è®¾ç½®Socketé€‰é¡¹ï¼šå…è®¸å¹¿æ’­å’Œåœ°å€é‡ç”¨
+    // ÉèÖÃSocketÑ¡Ïî£ºÔÊĞí¹ã²¥ºÍµØÖ·ÖØÓÃ
     BOOL broadcast = TRUE;
     if (setsockopt(discoverySocket, SOL_SOCKET, SO_BROADCAST, 
                   (char*)&broadcast, sizeof(broadcast)) == SOCKET_ERROR) {
@@ -151,7 +152,7 @@ static BOOL InitializeDiscoverySocket(void)
         SafePrintf("Set SO_REUSEADDR failed: %d\n", WSAGetLastError());
     }
 
-    // ç»‘å®šåˆ°å‘ç°ç«¯å£
+    // °ó¶¨µ½·¢ÏÖ¶Ë¿Ú
     struct sockaddr_in serverAddr;
     memset(&serverAddr, 0, sizeof(serverAddr));
     serverAddr.sin_family = AF_INET;
@@ -165,7 +166,7 @@ static BOOL InitializeDiscoverySocket(void)
         return FALSE;
     }
 
-    // è®¾ç½®éé˜»å¡æ¨¡å¼
+    // ÉèÖÃ·Ç×èÈûÄ£Ê½
     u_long nonBlocking = 1;
     if (ioctlsocket(discoverySocket, FIONBIO, &nonBlocking) == SOCKET_ERROR) {
         SafePrintf("Set non-blocking failed: %d\n", WSAGetLastError());
@@ -177,7 +178,7 @@ static BOOL InitializeDiscoverySocket(void)
     return TRUE;
 }
 
-// å‘ç°æœåŠ¡çº¿ç¨‹
+// ·¢ÏÖ·şÎñÏß³Ì
 static DWORD WINAPI DiscoveryThread(LPVOID lpParam)
 {
     (void)lpParam;
@@ -192,18 +193,18 @@ static DWORD WINAPI DiscoveryThread(LPVOID lpParam)
     memset(DiscoveryServerString, 0, sizeof DiscoveryServerString);
     snprintf(DiscoveryServerString, sizeof DiscoveryServerString, 
       "Discovery PROT:%d", DISCOVERY_PORT);
-
+    
     SafePrintf("Discovery service thread started on UDP port %d\n", DISCOVERY_PORT);
     
     while (discoveryRunning) {
-        // æ›´æ–°æ§åˆ¶å°æ ‡é¢˜æ˜¾ç¤ºå‘ç°æœåŠ¡çŠ¶æ€
+        // ¸üĞÂ¿ØÖÆÌ¨±êÌâÏÔÊ¾·¢ÏÖ·şÎñ×´Ì¬
         updataConsoleTitle(DiscoveryServerString, GetCurrentThreadId());
 
         FD_ZERO(&readSet);
         FD_SET(discoverySocket, &readSet);
 
         timeout.tv_sec = 0;
-        timeout.tv_usec = DISCOVERY_INTERVAL_MS * 1000; // è½¬æ¢ä¸ºå¾®ç§’
+        timeout.tv_usec = DISCOVERY_INTERVAL_MS * 1000; // ×ª»»ÎªÎ¢Ãë
 
         selectResult = select(0, &readSet, NULL, NULL, &timeout);
         if (selectResult == SOCKET_ERROR) {
@@ -215,7 +216,7 @@ static DWORD WINAPI DiscoveryThread(LPVOID lpParam)
         if (selectResult == 0 || FD_ISSET(discoverySocket, &readSet) == 0)
           continue;
 
-        // æ¥æ”¶å‘ç°è¯·æ±‚
+        // ½ÓÊÕ·¢ÏÖÇëÇó
         bytesReceived = recvfrom(discoverySocket, recvBuffer, sizeof(recvBuffer) 
                         - 1, 0, (struct sockaddr*)&clientAddr, &clientAddrLen);
         
@@ -223,14 +224,17 @@ static DWORD WINAPI DiscoveryThread(LPVOID lpParam)
           continue;
         recvBuffer[bytesReceived] = '\0';
         
-        // æ£€æŸ¥æ˜¯å¦æ˜¯æœ‰æ•ˆçš„å‘ç°è¯·æ±‚
-        if (strnicmp(recvBuffer, "DISCOVER_COM2TCP_SERVER", 
-            strlen("DISCOVER_COM2TCP_SERVER")) != 0) 
-          continue;
-
+        // ¼ì²éÊÇ·ñÊÇÓĞĞ§µÄ·¢ÏÖÇëÇó
+        if (strnicmp(recvBuffer, "discover_com2tcp_server", strlen("discover_com2tcp_server")) == 0){
+          SendDiscoveryResponse(&clientAddr); // ·¢ËÍÏìÓ¦
+        }
+        else if (strnicmp(recvBuffer, CTRL_HEADER, strlen(CTRL_HEADER)) == 0){ 
+          SafePrintf("UDPÃüÁîÄÚÈİ£º%s\n", recvBuffer);
+          HandleClientCommand(NULL, recvBuffer + strlen(CTRL_HEADER));
+        }
+        
         // SafePrintf("Discovery request from %s:%d\n", 
         //           inet_ntoa(clientAddr.sin_addr), ntohs(clientAddr.sin_port));
-        SendDiscoveryResponse(&clientAddr); // å‘é€å“åº”
     }
 
     SafePrintf("Discovery thread exiting\n");
@@ -246,12 +250,12 @@ static void SendDiscoveryResponse(struct sockaddr_in* clientAddr)
     EnterCriticalSection(&csDiscovery);
     char *ComputerFullName = GetComputerFullName();
 
-    if( getIPmethod == true )   // æ–¹æ³•1ï¼šä½¿ç”¨socketè¿æ¥æ–¹å¼è·å–æ­£ç¡®IPï¼ˆæ›´å¯é ï¼‰
+    if( getIPmethod == true )   // ·½·¨1£ºÊ¹ÓÃsocketÁ¬½Ó·½Ê½»ñÈ¡ÕıÈ·IP£¨¸ü¿É¿¿£©
       GetMatchingSubnetIP(clientAddr, discoveryInfo.serverIP);
-    else                        // æ–¹æ³•2ï¼šæˆ–è€…ä½¿ç”¨ç½‘æ®µåŒ¹é…ç®—æ³•
+    else                        // ·½·¨2£º»òÕßÊ¹ÓÃÍø¶ÎÆ¥ÅäËã·¨
       SelectMatchingSubnetIP(clientAddr, discoveryInfo.serverIP);
     
-    // æ„å»ºå“åº”æ¶ˆæ¯
+    // ¹¹½¨ÏìÓ¦ÏûÏ¢
     snprintf(responseBuffer, sizeof responseBuffer,
             "%s|%-15s|%-15s|%d|%u|%u\n",
             discoveryInfo.serverName != NULL ? 
@@ -264,30 +268,30 @@ static void SendDiscoveryResponse(struct sockaddr_in* clientAddr)
     
     LeaveCriticalSection(&csDiscovery);
 
-    // å‘é€å“åº”åˆ°å®¢æˆ·ç«¯
+    // ·¢ËÍÏìÓ¦µ½¿Í»§¶Ë
     int sendResult = sendto(discoverySocket, responseBuffer, strlen(responseBuffer), 
                   0, (struct sockaddr*)clientAddr, sizeof(*clientAddr));
 
-    SafePrintf("\rDiscovery response Sent to %s:%d -> Server IP: %s:%d  %s:%d  count:%-5d",
+    SafePrintf("Discovery response Sent to %s:%d -> Server IP: %s:%d  %s:%d  count:%-5d\r",
               inet_ntoa(clientAddr->sin_addr), ntohs(clientAddr->sin_port),
               discoveryInfo.serverIP, discoveryInfo.serverPort, 
               sendResult == SOCKET_ERROR? "failed":"succeed", WSAGetLastError(), ++count);
 }
 
-// è·å–ä¸å®¢æˆ·ç«¯ç›¸åŒç½‘æ®µçš„IPåœ°å€
+// »ñÈ¡Óë¿Í»§¶ËÏàÍ¬Íø¶ÎµÄIPµØÖ·
 static void GetMatchingSubnetIP(struct sockaddr_in* clientAddr, char* ipBuffer)
 {
     struct sockaddr_in tempAddr;
     int tempAddrLen = sizeof tempAddr;
     
-    // åˆ›å»ºä¸€ä¸ªä¸´æ—¶socketæ¥è·å–æœ¬åœ°æ¥å£ä¿¡æ¯
+    // ´´½¨Ò»¸öÁÙÊ±socketÀ´»ñÈ¡±¾µØ½Ó¿ÚĞÅÏ¢
     SOCKET tempSocket = socket(AF_INET, SOCK_DGRAM, 0);
     if (tempSocket == INVALID_SOCKET) {
         strcpy(ipBuffer, "127.0.0.1");
         return;
     }
     
-    // è¿æ¥åˆ°å®¢æˆ·ç«¯åœ°å€ï¼Œç³»ç»Ÿä¼šè‡ªåŠ¨é€‰æ‹©æ­£ç¡®çš„æœ¬åœ°æ¥å£
+    // Á¬½Óµ½¿Í»§¶ËµØÖ·£¬ÏµÍ³»á×Ô¶¯Ñ¡ÔñÕıÈ·µÄ±¾µØ½Ó¿Ú
     if (connect(tempSocket, (struct sockaddr*)clientAddr, 
               sizeof(*clientAddr)) == SOCKET_ERROR) {
         closesocket(tempSocket);
@@ -295,7 +299,7 @@ static void GetMatchingSubnetIP(struct sockaddr_in* clientAddr, char* ipBuffer)
         return;
     }
     
-    // è·å–socketçš„æœ¬åœ°åœ°å€ï¼ˆè¿™å°±æ˜¯ä¸å®¢æˆ·ç«¯é€šä¿¡çš„æ¥å£åœ°å€ï¼‰
+    // »ñÈ¡socketµÄ±¾µØµØÖ·£¨Õâ¾ÍÊÇÓë¿Í»§¶ËÍ¨ĞÅµÄ½Ó¿ÚµØÖ·£©
     int ret = getsockname(tempSocket, (struct sockaddr*)&tempAddr, &tempAddrLen); 
     strcpy(ipBuffer, ret == 0? inet_ntoa(tempAddr.sin_addr): "127.0.0.1");
 
@@ -307,7 +311,7 @@ static void GetMatchingSubnetIP(struct sockaddr_in* clientAddr, char* ipBuffer)
 
 
 
-// è·å–æ‰€æœ‰æœ¬åœ°IPåœ°å€
+// »ñÈ¡ËùÓĞ±¾µØIPµØÖ·
 static void GetAllLocalIPs(char ips[][20], int *count)
 {
     if( count == NULL )
@@ -332,7 +336,7 @@ static void GetAllLocalIPs(char ips[][20], int *count)
     }
 }
 
-// é€‰æ‹©ä¸å®¢æˆ·ç«¯ç›¸åŒç½‘æ®µçš„IP
+// Ñ¡ÔñÓë¿Í»§¶ËÏàÍ¬Íø¶ÎµÄIP
 static void SelectMatchingSubnetIP(struct sockaddr_in* clientAddr, char* selectedIP)
 {
     char localIPs[10][20] = {0};
@@ -345,23 +349,23 @@ static void SelectMatchingSubnetIP(struct sockaddr_in* clientAddr, char* selecte
         return;
     }
     
-    // å¦‚æœåªæœ‰ä¸€ä¸ªIPï¼Œç›´æ¥ä½¿ç”¨
+    // Èç¹ûÖ»ÓĞÒ»¸öIP£¬Ö±½ÓÊ¹ÓÃ
     if (ipCount == 1) {
         strcpy(selectedIP, localIPs[0]);
         return;
     }
     
-    // è·å–å®¢æˆ·ç«¯IPçš„ç½‘æ®µ
+    // »ñÈ¡¿Í»§¶ËIPµÄÍø¶Î
     char clientIP[16];
     strcpy(clientIP, inet_ntoa(clientAddr->sin_addr));
     
-    // æå–å®¢æˆ·ç«¯IPçš„å‰ä¸‰æ®µï¼ˆç½‘æ®µï¼‰
+    // ÌáÈ¡¿Í»§¶ËIPµÄÇ°Èı¶Î£¨Íø¶Î£©
     char clientSubnet[16] = {0};
     char* dot = strrchr(clientIP, '.');
     if (dot) 
         strncpy(clientSubnet, clientIP, dot - clientIP);
 
-    // å¯»æ‰¾åŒ¹é…ç½‘æ®µçš„æœ¬åœ°IP
+    // Ñ°ÕÒÆ¥ÅäÍø¶ÎµÄ±¾µØIP
     for (int i = 0; i < ipCount; i++) {
         char localSubnet[16] = {0};
         dot = strrchr(localIPs[i], '.');
@@ -375,7 +379,7 @@ static void SelectMatchingSubnetIP(struct sockaddr_in* clientAddr, char* selecte
         }
     }
     
-    // å¦‚æœæ²¡æœ‰æ‰¾åˆ°åŒ¹é…ç½‘æ®µçš„IPï¼Œä½¿ç”¨ç¬¬ä¸€ä¸ªéå›ç¯IP
+    // Èç¹ûÃ»ÓĞÕÒµ½Æ¥ÅäÍø¶ÎµÄIP£¬Ê¹ÓÃµÚÒ»¸ö·Ç»Ø»·IP
     strcpy(selectedIP, localIPs[0]);
 }
 
