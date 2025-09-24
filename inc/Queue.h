@@ -20,10 +20,14 @@ extern "C" {
 /*================== 数据类型声明		=========================================*/
 // struct enum union
 
+
+
 typedef struct {
   uint32_t len;            // 数据实际大小
   char *data;              // 数据内容指针
 } queueData_t;
+
+typedef void(*outDataCallBack_t)(queueData_t *);
 
 typedef struct {
   volatile BOOL running;    // 线程运行标志
@@ -38,21 +42,21 @@ typedef struct {
 
   char *dataBuffer;         // 数据缓冲区（一次性分配）
   queueData_t *index;       // 队列数组 
-  void(*outDataCallBack)(queueData_t *); // 必须有调用回调
-}AsyncSendQueue_t;
+  outDataCallBack_t   outDataCallBack; // 必须有调用回调
+}AsyncQueue_t;
 
 /*================== 外部变量声明		=========================================*/
 //extern
 
 /*================== 外部函数声明		=========================================*/
 
-BOOL startAsyncDataHandleThread(AsyncSendQueue_t *queue, 
-      void(*outDataCallBack)(queueData_t *), uint16_t queueSize, uint32_t elementSize);
-BOOL AddDataToAsyncQueue(AsyncSendQueue_t *queue, const char *data, uint32_t len);
-void FreeAsyncSendQueue(AsyncSendQueue_t *queue);
+BOOL startAsyncDataHandleThread(AsyncQueue_t *queue, 
+      outDataCallBack_t outDataCallBack, uint16_t queueSize, uint32_t elementSize);
+BOOL AddDataToAsyncQueue(AsyncQueue_t *queue, const char *data, uint32_t len);
+void FreeAsyncSendQueue(AsyncQueue_t *queue);
 
-int GetAsyncQueueRemainingSpace(AsyncSendQueue_t *queue);
-int GetAsyncQueueCurrentSize(AsyncSendQueue_t *queue);
+int GetAsyncQueueRemainingSpace(AsyncQueue_t *queue);
+int GetAsyncQueueCurrentSize(AsyncQueue_t *queue);
 
 #ifdef __cplusplus
 }

@@ -53,6 +53,7 @@
     "dbghelp.h": "c",
     "exception.h": "c",
     "networkconnect.h": "c",
-    "hostconnect.h": "c"
+    "hostconnect.h": "c",
+    "ratio": "c"
   }
 }

@@ -32,8 +32,7 @@ void CloseClientSocket(SOCKET socket, const char *reason);
 int sendDataToClients(const SOCKET *Socket, const char* buff, int len);
 int printfSend(SOCKET *Socket, const char *fmt, ...) __attribute__ ((__format__ (__printf__, 2, 3)));
 
-bool getClientIndex(SOCKET *Socket, uint16_t *retIndex);
-BOOL examineClientIsExist(const SOCKET *Socket);
+bool getClientIndex(const SOCKET *Socket, uint16_t *retIndex);
 const SOCKET *getClientSocket(uint16_t index);
 const char *getClientIP(uint16_t index);
 void getAllClientIPandIndexInfo(char *retStr, uint16_t len);

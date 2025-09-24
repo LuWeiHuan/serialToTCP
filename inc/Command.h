@@ -18,7 +18,7 @@ extern "C" {
 //struct enum union
 /*================== 外部变量声明		=========================================*/
 /*================== 外部函数声明		=========================================*/
-void HandleClientCommand(SOCKET *clientSocket, char* command);
+void HandleClientCommand(SOCKET *Socket, const char* command);
 
 #ifdef __cplusplus
 }

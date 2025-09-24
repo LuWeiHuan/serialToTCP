@@ -3,7 +3,7 @@
   * @author  作者 
   * @version 版本 V1.0
   * @date    日期 2025-08-17
-  * @brief   简介 连接远端服务器，域名解析
+  * @brief   简介 连接远端服务器，域名解析，获取本机IP
   ******************************************************************************
   * @attention 注意
   *
@@ -110,7 +110,7 @@ int8_t resolveHostname(const char* hostname, char* ipBuffer, uint8_t bufferSize,
 
 
 /**
- * @brief 连接到服务器
+ * @brief 开始以阻塞状态连接到服务器
  * @param host 主机名或IP地址
  * @param port 端口号
  * @param timeoutMs 连接超时时间，单位 ms
@@ -119,7 +119,7 @@ int8_t resolveHostname(const char* hostname, char* ipBuffer, uint8_t bufferSize,
  * @return 成功返回真，失败返回假。
  * @attention 一旦发起连接就会有阻塞，直到超时结束
  */
-bool trueConnectToServer(const char* host, uint16_t port, 
+bool startConnectToServer(const char* host, uint16_t port, 
         uint16_t timeoutMs, SOCKET *retSocket, char *retIP)
 {
   char resolvedIP[46] = {0};
@@ -192,3 +192,117 @@ bool trueConnectToServer(const char* host, uint16_t port,
   strcpy(retIP, resolvedIP); 
   return true;
 }
+
+
+
+
+// 获取与客户端相同网段的IP地址
+const char * GetMatchingSubnetIP(struct sockaddr_in* clientAddr )
+{
+  struct sockaddr_in tempAddr;
+  int tempAddrLen = sizeof tempAddr;
+  
+  // 创建一个临时socket来获取本地接口信息
+  SOCKET tempSocket = socket(AF_INET, SOCK_DGRAM, 0);
+  if (tempSocket == INVALID_SOCKET)
+      return "127.0.0.1";
+
+  // 连接到客户端地址，系统会自动选择正确的本地接口
+  if (connect(tempSocket, (struct sockaddr*)clientAddr, 
+            sizeof(*clientAddr)) == SOCKET_ERROR) {
+      closesocket(tempSocket);
+      return "127.0.0.1";
+  }
+  
+  // 获取socket的本地地址（这就是与客户端通信的接口地址）
+  int ret = getsockname(tempSocket, (struct sockaddr*)&tempAddr, &tempAddrLen);
+  
+  static char retMyIP[20];
+  memset(retMyIP, 0, sizeof retMyIP);
+  strcpy(retMyIP, ret == 0? inet_ntoa(tempAddr.sin_addr): "127.0.0.1");
+
+  closesocket(tempSocket);
+  return retMyIP; 
+}
+
+
+
+
+
+
+// 获取所有本地IP地址
+static void GetAllLocalIPs(char ips[][20], int *count)
+{
+    if( count == NULL )
+      return;
+
+    char hostname[256];
+    if (gethostname(hostname, sizeof hostname) == SOCKET_ERROR)
+        return;
+
+    struct hostent* hostinfo = gethostbyname(hostname);
+    if (hostinfo == NULL) 
+        return;
+
+    *count = 0;
+     struct in_addr addr;
+    for (int i = 0; hostinfo->h_addr_list[i] != NULL && *count < 10; i++) {
+        memcpy(&addr, hostinfo->h_addr_list[i], sizeof(struct in_addr));
+        if (strcmp(inet_ntoa(addr), "127.0.0.1") == 0) 
+          continue;
+        strncpy(ips[*count], inet_ntoa(addr), 16);
+        (*count)++;
+    }
+}
+
+// 选择与客户端相同网段的IP
+const char * SelectMatchingSubnetIP(struct sockaddr_in* clientAddr)
+{
+  char localIPs[10][20] = {0};
+  int ipCount = 0;
+  static char retMyIP[20];
+  memset(retMyIP, 0, sizeof retMyIP);
+
+  GetAllLocalIPs(localIPs, &ipCount);
+  
+  if (ipCount == 0) 
+      return "127.0.0.1" ;  
+
+  // 如果只有一个IP，直接使用
+  if (ipCount == 1) {
+      strcpy(retMyIP, localIPs[0]);
+      return retMyIP;
+  }
+  
+  // 获取客户端IP的网段
+  char clientIP[16];
+  strcpy(clientIP, inet_ntoa(clientAddr->sin_addr));
+  
+  // 提取客户端IP的前三段（网段）
+  char clientSubnet[16] = {0};
+  char* dot = strrchr(clientIP, '.');
+  if (dot) 
+      strncpy(clientSubnet, clientIP, dot - clientIP);
+
+
+
+  // 寻找匹配网段的本地IP
+  for (int i = 0; i < ipCount; i++) {
+      char localSubnet[16] = {0};
+      dot = strrchr(localIPs[i], '.');
+      if (dot == 0) 
+        continue;
+
+      strncpy(localSubnet, localIPs[i], dot - localIPs[i]);
+      if (strcmp(clientSubnet, localSubnet) == 0) {
+          strcpy(retMyIP, localIPs[i]);
+          return retMyIP;
+      }
+  }
+  
+  // 如果没有找到匹配网段的IP，使用第一个非回环IP
+  strcpy(retMyIP, localIPs[0]);
+
+  return retMyIP;
+}
+

@@ -20,8 +20,11 @@ extern "C" {
 
 /*================== 外部函数声明		=========================================*/
 int8_t resolveHostname(const char* hostname, char* ipBuffer, uint8_t bufferSize, int*);
-bool trueConnectToServer(const char* host, uint16_t port, 
+bool startConnectToServer(const char* host, uint16_t port, 
         uint16_t timeoutMs, SOCKET *retSocket, char *retIP);
+
+const char* GetMatchingSubnetIP(struct sockaddr_in* clientAddr);
+const char* SelectMatchingSubnetIP(struct sockaddr_in* clientAddr);
         
 #ifdef __cplusplus
 }

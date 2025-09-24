@@ -51,7 +51,7 @@ static bool startServer(int argc, char const *argv[]);
 =============================================================================*/
 int main(int argc, char const *argv[])
 {
-  GetCurrentTimeMillis();
+  GetCurrentTimeMs();
   printBuildInfo();
   SetupExceptionHandler();
   
@@ -66,7 +66,6 @@ int main(int argc, char const *argv[])
   ClientResourceInit(true);
   ComPortResourceInit(true);
   DeviceChangeMonitor(true);    // 启动设备插拔变化监听 
-  UpdateDiscoveryInfo(mainServer.port, 0); // 初始客户端数量为0 
   ServerConnectInit(true);
   
   int8_t listenStartRet;

@@ -41,7 +41,7 @@ static DWORD WINAPI AsyncSendThreadProc(LPVOID lpParam);
  返   回：成功返回真，失败返回假
  描   述：无
 =============================================================================*/
-BOOL startAsyncDataHandleThread(AsyncSendQueue_t *queue, 
+BOOL startAsyncDataHandleThread(AsyncQueue_t *queue, 
     void(*outDataCallBack)(queueData_t *), uint16_t queueNum, uint32_t elementSize) 
 {
     if( queue == NULL || outDataCallBack == NULL )
@@ -85,8 +85,7 @@ BOOL startAsyncDataHandleThread(AsyncSendQueue_t *queue,
     queue->capacity = queueNum;
     queue->elementSize = elementSize;
     queue->front = queue->rear = 0;
-    queue->running = TRUE;
-
+    
     // 创建同步对象
     queue->hMutex = CreateMutex(NULL, FALSE, NULL);
     queue->hDataEvent = CreateEvent(NULL, TRUE, FALSE, NULL); // 初始无数据
@@ -106,7 +105,7 @@ BOOL startAsyncDataHandleThread(AsyncSendQueue_t *queue,
 
 // 异步发送线程主函数
 static DWORD WINAPI AsyncSendThreadProc(LPVOID lpParam) {
-  AsyncSendQueue_t *queue = (AsyncSendQueue_t*)lpParam;
+  AsyncQueue_t *queue = (AsyncQueue_t*)lpParam;
       // SafePrintf("Queue initialized: queueNum=%d, elementSize=%d, totalMemory=%I64d KB\n",
     //      queueNum, elementSize, (queueNum * sizeof(queueData_t)) + totalDataSize);
   SafePrintf("Async queue thread %s! queue num %d, element size: %d\n", 
@@ -115,8 +114,9 @@ static DWORD WINAPI AsyncSendThreadProc(LPVOID lpParam) {
     lpParam == NULL? 0:queue->elementSize);
   
   if( lpParam == NULL)
-    return -1; 
+    return -1;
   
+  queue->running = TRUE;
   while (queue->running) {
     // 等待数据可用或退出信号
     DWORD waitResult = WaitForSingleObject(queue->hDataEvent, INFINITE);
@@ -161,7 +161,7 @@ static DWORD WINAPI AsyncSendThreadProc(LPVOID lpParam) {
 }
 
 // 释放队列资源
-void FreeAsyncSendQueue(AsyncSendQueue_t *queue) {
+void FreeAsyncSendQueue(AsyncQueue_t *queue) {
     // 设置停止标志
     queue->running = FALSE; 
 
@@ -206,7 +206,7 @@ void FreeAsyncSendQueue(AsyncSendQueue_t *queue) {
 }
 
 // 添加数据到发送队列
-BOOL AddDataToAsyncQueue(AsyncSendQueue_t *queue, const char *data, uint32_t len) {
+BOOL AddDataToAsyncQueue(AsyncQueue_t *queue, const char *data, uint32_t len) {
 
     if( queue->running == FALSE )
       return FALSE;
@@ -252,7 +252,7 @@ BOOL AddDataToAsyncQueue(AsyncSendQueue_t *queue, const char *data, uint32_t len
 }
 
 // 获取队列当前元素数量
-int GetAsyncQueueCurrentSize(AsyncSendQueue_t *queue) 
+int GetAsyncQueueCurrentSize(AsyncQueue_t *queue) 
 {
   if (!queue || !queue->running || !queue->hMutex) 
       return -1;
@@ -260,18 +260,17 @@ int GetAsyncQueueCurrentSize(AsyncSendQueue_t *queue)
   WaitForSingleObject(queue->hMutex, INFINITE);
   
   int currentSize;
-  if (queue->rear >= queue->front) {
+  if (queue->rear >= queue->front) 
       currentSize = queue->rear - queue->front;
-  } else {
+  else 
       currentSize = queue->capacity - queue->front + queue->rear;
-  }
   
   ReleaseMutex(queue->hMutex);
   return currentSize;
 }
 
 // 获取队列剩余可用数量
-int GetAsyncQueueRemainingSpace(AsyncSendQueue_t *queue) 
+int GetAsyncQueueRemainingSpace(AsyncQueue_t *queue) 
 {
   int currentSize = GetAsyncQueueCurrentSize(queue);
   if (currentSize < 0)

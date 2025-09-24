@@ -1,17 +1,17 @@
 /******************************************************************************
-  * @file    æ–‡ä»¶ Command.c 
-  * @author  ä½œè€… 
-  * @version ç‰ˆæœ¬ V1.0
-  * @date    æ—¥æœŸ 2025-08-17
-  * @brief   ç®€ä»‹ å¤„ç†å‘½ä»¤
+  * @file    ÎÄ¼ş Command.c 
+  * @author  ×÷Õß 
+  * @version °æ±¾ V1.0
+  * @date    ÈÕÆÚ 2025-08-17
+  * @brief   ¼ò½é ´¦ÀíÃüÁî
   ******************************************************************************
-  * @attention æ³¨æ„
+  * @attention ×¢Òâ
   *
   *
   *******************************************************************************
 */
 
-/*================== å¤´æ–‡ä»¶åŒ…å«     =========================================*/
+/*================== Í·ÎÄ¼ş°üº¬     =========================================*/
 #include "Command.h"
 #include "public.h"
 #include "COM.h"
@@ -19,10 +19,12 @@
 #include "logPrint.h"
 #include "Queue.h"
 #include "ServerConnect.h"
+#include "main.h"
+#include "discovery.h"
 
 #include <stdio.h>
 
-/*================== æœ¬åœ°æ•°æ®ç±»å‹   =========================================*/
+/*================== ±¾µØÊı¾İÀàĞÍ   =========================================*/
 typedef void (*CmdHandlerFunc)(SOCKET*, char*);
 
 typedef struct {
@@ -30,26 +32,29 @@ typedef struct {
     CmdHandlerFunc handler;
 } CommandEntry;
 
-/*================== æœ¬åœ°å®å®šä¹‰     =========================================*/
+/*================== ±¾µØºê¶¨Òå     =========================================*/
 #define DECOLLATOR    ",\n"
 
-/*================== å…¨å±€å…±äº«å˜é‡   =========================================*/
-/*================== æœ¬åœ°å¸¸é‡å£°æ˜   =========================================*/
-/*================== æœ¬åœ°å˜é‡å£°æ˜   =========================================*/
-/*================== æœ¬åœ°å‡½æ•°å£°æ˜   =========================================*/
-static void cmdExit(SOCKET *, char*);
-static void cmdComlist(SOCKET *, char*);
-static void cmdRunNewServer(SOCKET *, char*);
-static void cmdSetComAsyncSend(SOCKET *, char*);
-static void cmdSetComAsyncRecv(SOCKET *, char*);
-static void cmdPrintAllclientIP(SOCKET *, char*);
-static void cmdSetMonopolize(SOCKET *, char*);
-static void cmdDataPrintMode(SOCKET *, char*);
-static void cmdRunSystemCmd(SOCKET *, char*);
-static void cmdServerConnect(SOCKET *, char*);
-static void cmdOpenSerialCom(SOCKET *, char*);
+/*================== È«¾Ö¹²Ïí±äÁ¿   =========================================*/
+/*================== ±¾µØ³£Á¿ÉùÃ÷   =========================================*/
+/*================== ±¾µØ±äÁ¿ÉùÃ÷   =========================================*/
+/*================== ±¾µØº¯ÊıÉùÃ÷   =========================================*/
+static void cmdServerOverExit(SOCKET*, char*);
+static void cmdComlist(SOCKET*, char*);
+static void cmdRunNewServer(SOCKET*, char*);
+static void cmdSetComAsyncSend(SOCKET*, char*);
+static void cmdSetComAsyncRecv(SOCKET*, char*);
+static void cmdPrintAllclientIP(SOCKET*, char*);
+static void cmdSetMonopolize(SOCKET*, char*);
+static void cmdDataPrintMode(SOCKET*, char*);
+static void cmdRunSystemCmd(SOCKET*, char*);
+static void cmdServerConnect(SOCKET*, char*);
+static void cmdOpenSerialCom(SOCKET*, char*);
+static void cmdDoNotConnectCOM2TCP(SOCKET*, char*);
+static void cmdSetLogPollCut(SOCKET*, char*);
 
-/*================== å‘½ä»¤æ˜ å°„è¡¨     =========================================*/
+
+/*================== ÃüÁîÓ³Éä±í     =========================================*/
 static const CommandEntry cmdTable[] = {
   {"comlistVPID",           cmdComlist},
   {"comlistID",             cmdComlist},
@@ -58,136 +63,192 @@ static const CommandEntry cmdTable[] = {
   {"PrintAllclientIP",      cmdPrintAllclientIP},
   {"setCOMasyncSend",       cmdSetComAsyncSend},
   {"setCOMasyncRecv",       cmdSetComAsyncRecv},
-  {"setRecvCOMdataTo",      cmdSetMonopolize}, // æ—§å‘½ä»¤ï¼Œå¾…åˆ é™¤
   {"setCOMdata",            cmdSetMonopolize},
-  {"exit",                  cmdExit},
+  {"exit",                  cmdServerOverExit},
   {"serverPrintData",       cmdDataPrintMode},
   {"SystemCommands",        cmdRunSystemCmd},
   {"ExecuteSystemCommands", cmdRunSystemCmd},
   {"serverConnect",         cmdServerConnect},
+  {"OK! your index",        cmdDoNotConnectCOM2TCP},
+  {"Not Command",           cmdDoNotConnectCOM2TCP},
+  {"cmdSetLogPollCut",      cmdSetLogPollCut},
   {"open",                  cmdOpenSerialCom}
 };
 
-/*================== å¤–éƒ¨å‡½æ•°å£°æ˜   =========================================*/
-/*================== å¤–éƒ¨å˜é‡å£°æ˜   =========================================*/
+/*================== Íâ²¿º¯ÊıÉùÃ÷   =========================================*/
+/*================== Íâ²¿±äÁ¿ÉùÃ÷   =========================================*/
 
 /**
- * @brief å¤„ç†å®¢æˆ·ç«¯å‘è¿‡æ¥çš„æŒ‡ä»¤
- * @param clientSocket  TCPå®¢æˆ·ç«¯å¥—æ¥å­—
- * @param command       å‘½ä»¤å­—ç¬¦ä¸²
+ * @brief ´¦Àí¿Í»§¶Ë·¢¹ıÀ´µÄÖ¸Áî
+ * @param Socket    ¿Í»§¶ËÌ×½Ó×Ö£¬±ØĞëÓĞ£¡
+ * @param command   ÃüÁî×Ö·û´®
  * @return
  * @attention
  */
-void HandleClientCommand(SOCKET *clientSocket, char* command) 
+void HandleClientCommand(SOCKET *Socket, const char* command)
 { 
-  // æŸ¥æ‰¾å¹¶æ‰§è¡Œå‘½ä»¤
+  if( Socket == NULL ){
+    SafePrintf("Command Handle Not Client Socket !\n");
+    return;
+  }
+
+  static char handleCommand[200];
+  memset(handleCommand, 0, sizeof handleCommand);
+  uint8_t maxCopyLen = strlen(command) < (sizeof handleCommand) - 2?
+                       strlen(command) : (sizeof handleCommand) - 2; 
+  memcpy(handleCommand, command, maxCopyLen); 
+  // ²éÕÒ²¢Ö´ĞĞÃüÁî
   for (uint8_t i = 0; i < sizeof cmdTable / sizeof cmdTable[0]; i++) 
     if (strnicmp(command, cmdTable[i].cmdName, strlen(cmdTable[i].cmdName)) == 0) {
-        cmdTable[i].handler(clientSocket, command);
+        cmdTable[i].handler(Socket, handleCommand);
         return;
     }
-
-  // æœªæ‰¾åˆ°å‘½ä»¤
-  printfSend(clientSocket, "Not Command:%s\n", command);
+  printfSend(Socket, "Not Command:%s\n", handleCommand);
 }
 
-static void cmdComlist(SOCKET *clientSocket, char* commandData)
+// ¹ã²¥·¢ËÍ´¦Àí½á¹û
+static void broadcastSendHandleResult(SOCKET *Socket, const char *info)
 { 
-  sendComPortsListToClient( clientSocket, strstr(commandData, "ID") ? true:false ); 
+  uint16_t sendLen = strlen(info);
+  if( getDiscoverySocket() == *Socket )
+    sendDataToClients(Socket, info, sendLen);
+  sendDataToClients(NULL, info, sendLen);
 }
 
-static void cmdExit(SOCKET *clientSocket, char* commandData)
+// ÊÕ·¢ÈÕÖ¾ÊÇ·ñ¹ö¶¯
+static void cmdSetLogPollCut(SOCKET *Socket, char* commandData)
+{
+  (void)Socket; (void)commandData;
+  char *token = strtok(commandData, DECOLLATOR);
+  token = strtok(NULL, DECOLLATOR); //Recv or Send
+  if(token != NULL){
+    if( strnicmp(token, "Recv", strlen("Recv") ) == 0 )
+      runInfo.COMrecvPoll = !runInfo.COMrecvPoll;
+    else if( strnicmp(token, "send", strlen("send") ) == 0 )
+      runInfo.COMSendPoll = !runInfo.COMSendPoll;
+    else{
+      runInfo.COMrecvPoll = !runInfo.COMrecvPoll;
+      runInfo.COMSendPoll = !runInfo.COMSendPoll;
+    }
+  }
+  else{
+    runInfo.COMrecvPoll = !runInfo.COMrecvPoll;
+    runInfo.COMSendPoll = !runInfo.COMSendPoll;
+  }
+  
+  const char *setInfo = getPrintf( "Set log Poll [send %-3s | recv %-3s]\n",
+    runInfo.COMSendPoll? "YES":"NO", runInfo.COMrecvPoll? "YES":"NO" );
+  broadcastSendHandleResult(Socket, setInfo);
+}
+
+
+static void cmdDoNotConnectCOM2TCP(SOCKET *Socket, char* commandData)
+{
+  (void)commandData;
+  printfSend(Socket, "Please do not connect COM2TCP!\n" );
+  CloseClientSocket(*Socket, "Çë²»Òª»¥Áª´®¿Ú×ª·şÎñÆ÷³ÌĞò£¡");
+}
+
+static void cmdComlist(SOCKET *Socket, char* commandData)
+{
+  // Èç¹ûÓöµ½Ğ¡Ğ´id¾Í¸Ä³É´óĞ´ID
+  for( uint8_t i=0; commandData[i]; i++ ){
+    if( commandData[i] == 'i' ) commandData[i] = 'I';
+    if( commandData[i] == 'd' ) commandData[i] = 'D';
+  }
+
+  sendComPortsListToClient(Socket, strstr(commandData, "ID") ? true:false ); 
+}
+
+static void cmdServerOverExit(SOCKET *Socket, char* commandData)
 { 
-  (void)clientSocket; (void)commandData; 
-  printfSend(NULL, "server ready exit\n" );
-  SafePrintf("server ready exit\n" );
+  (void)commandData;
+  uint16_t port = getMainServerPort();
+  if( port == 10000 ){
+    printfSend(Socket, "sorry the server refuse exit. because Port:%d\n", port);
+    return;
+  }
+  
+  uint16_t ClientIndex = 0;
+  bool getRet = false;
+  char *exitInfo = "Unknown Client Ask For Server Ready Exit";
+  if( getDiscoverySocket() == *Socket){
+    exitInfo = getPrintf("Discovery UDP IP %s:%d Ask For Server Ready Exit", 
+      getDiscoveryNewClientIPAddr(), getDiscoveryNewClientPort());
+  }
+  else{ 
+    getRet = getClientIndex(Socket, &ClientIndex);
+    if( getRet )
+      exitInfo = getPrintf("Client [%-2d]IP:%s Ask For Server Ready Exit", 
+        ClientIndex, getClientIP(ClientIndex) );
+  }
+
+  broadcastSendHandleResult(Socket, exitInfo);
+  SafePrintf("\033[H\033[J \n%s\n%s\n\n", exitInfo, exitInfo); 
   exit(0);
 }
 
-static void cmdPrintAllclientIP(SOCKET *clientSocket, char* commandData)
+static void cmdPrintAllclientIP(SOCKET *Socket, char* commandData)
 {
-  (void)clientSocket; (void)commandData;
+  (void)commandData;
   static char handleString[512];
   memset(handleString, 0, sizeof handleString);
   getAllClientIPandIndexInfo(handleString, sizeof handleString);
-  SafePrintf("All Client index IP:\n%s\n", handleString);
-  printfSend(clientSocket, "All Client index IP\n%s\n", handleString);
+  SafePrintf("All %d/%d Client index IP:\n%s\n", getClientNum(), getMaxClient(), handleString);
+  printfSend(Socket, "All %d/%d Client index IP\n%s\n", getClientNum(), getMaxClient(), handleString);
 }
 
-// è¿è¡Œä¸€ä¸ªæ–°æœåŠ¡å™¨ç¨‹åº
-static void cmdRunNewServer(SOCKET *clientSocket, char* commandData)
+// ÔËĞĞÒ»¸öĞÂ·şÎñÆ÷³ÌĞò
+static void cmdRunNewServer(SOCKET *Socket, char* commandData)
 {
   char path[MAX_PATH + 50];
   strcpy(path, "start \"\" \"");
   if (GetModuleFileName(NULL, path + strlen(path), MAX_PATH) == 0) { 
-    printfSend(clientSocket, "Error: Get Server File Name Path failed (%ld)\n",  GetLastError());
+    printfSend(Socket, "Error: Get Server File Name Path failed (%ld)\n",  GetLastError());
     return;
   }
   strcat(path, "\" ");
   char *token = strtok(commandData, DECOLLATOR);
-  token = strtok(NULL, DECOLLATOR); // ä¼ é€’å‚æ•°
+  token = strtok(NULL, DECOLLATOR); // ´«µİ²ÎÊı
   if( token )
     strcat(path, token);
 
   system(path);
   SafePrintf("run New Server, Run Cmd: %s\n", path);
-  printfSend(clientSocket, "run New Server, arg:%s\n", token?token:"NULL");
+  printfSend(Socket, "run New Server, arg:%s\n", token?token:"NULL");
 }
 
-// è®¾ç½®å®¢æˆ·ç«¯æ•°æ®å¼‚æ­¥å‘ç»™ä¸²å£
-static void cmdSetComAsyncSend(SOCKET *clientSocket, char* commandData)
+// ÉèÖÃ¿Í»§¶ËÊı¾İÒì²½·¢¸ø´®¿Ú
+static void cmdSetComAsyncSend(SOCKET *Socket, char* commandData)
 {
-  (void)clientSocket;
+  (void)Socket; 
   char *token = strtok(commandData, DECOLLATOR);
   token = strtok(NULL, DECOLLATOR);
   uint16_t num = token==NULL? 0:atoi(token);
-  
-  if( num == 0 ){
-    COM_UseAsyncSend(0);
-    printfSend(NULL, "set COM send sync\n");
-    return;
-  }
-
   BOOL ret = COM_UseAsyncSend(num);
-  printfSend(NULL, "set COM send Async %s set Queue num %d/%d ~ %d\n", 
-    ret? "OK!":"Fail! scope !", num, MIN_QUEUE_SIZE, MAX_QUEUE_SIZE);
+  const char * setInfo = getPrintf("set COM Send %csync %s Queue num %d/%d ~ %d\n", 
+    num  == 0? ' ':'A', ret? "OK!":"Fail! scope !", num, MIN_QUEUE_SIZE, MAX_QUEUE_SIZE);
+  broadcastSendHandleResult(Socket, setInfo);
 }
 
-// è®¾ç½®æ”¶åˆ°ä¸²å£æ•°æ®å¼‚æ­¥å‘ç»™å®¢æˆ·ç«¯
-static void cmdSetComAsyncRecv(SOCKET *clientSocket, char* commandData)
+// ÉèÖÃÊÕµ½´®¿ÚÊı¾İÒì²½·¢¸ø¿Í»§¶Ë
+static void cmdSetComAsyncRecv(SOCKET *Socket, char* commandData)
 {
-  (void)clientSocket;
+  (void)Socket; 
   char *token = strtok(commandData, DECOLLATOR);
   token = strtok(NULL, DECOLLATOR);
   uint16_t num = token==NULL? 0:atoi(token);
-  
-  if( num == 0 ){
-    COM_UseAsyncRecv(0);
-    printfSend(NULL, "set COM Recv sync\n");
-    return;
-  }
-
   BOOL ret = COM_UseAsyncRecv(num);
-  printfSend(NULL, "set COM Recv Async %s set Queue num %d/%d ~ %d\n", 
-    ret? "OK!":"Fail! scope !", num, MIN_QUEUE_SIZE, MAX_QUEUE_SIZE);
+  const char *setInfo = getPrintf("set COM Recv %csync %s Queue num %d/%d ~ %d\n", 
+    num  == 0? ' ':'A', ret? "OK!":"Fail! scope !", num, MIN_QUEUE_SIZE, MAX_QUEUE_SIZE);
+  broadcastSendHandleResult(Socket, setInfo);
 }
 
-// è®¾ç½®ç‹¬å ä¿¡æ¯
-static void cmdSetMonopolize(SOCKET *clientSocket, char* commandData)
+// ÉèÖÃ¶ÀÕ¼ĞÅÏ¢
+static void cmdSetMonopolize(SOCKET *Socket, char* commandData)
 {
   char *token = strtok(commandData, DECOLLATOR);
   token = strtok(NULL, DECOLLATOR); //Recv Send  my or All
-  
-  #if 1 // æ—§å‘½ä»¤ä¿®æ”¹æˆæ–°å‘½ä»¤åŒºåŸŸä»£ç 
-  if( strnicmp(token, "my", strlen("my") ) == 0 || 
-      strnicmp(token, "All", strlen("All") ) == 0 ){
-      char monopolize[5];
-      memset(monopolize, 0, sizeof monopolize);
-      strcpy(monopolize, token);
-      sprintf(token, "Recv,%s ", monopolize);
-      token = strtok(token, DECOLLATOR); // é‡æ–°æŒ‡å®šä¸€ä¸‹
-  }
-  #endif
 
   char clientStr[30];
   memset(clientStr, 0, sizeof clientStr);
@@ -197,49 +258,56 @@ static void cmdSetMonopolize(SOCKET *clientSocket, char* commandData)
 
     if( strnicmp(token, "my", strlen("my") ) == 0 ){
       static uint16_t monopolizeComRecvIndex = 0;
-      bool retIndexSta = getClientIndex(clientSocket, &monopolizeComRecvIndex);
+      bool retIndexSta = getClientIndex(Socket, &monopolizeComRecvIndex);
       runInfo.monopolizeComRecvIndex = retIndexSta? &monopolizeComRecvIndex:NULL;
       if( retIndexSta )
         snprintf(clientStr, sizeof clientStr,
           "[%-2d]:IP%s", monopolizeComRecvIndex, getClientIP(monopolizeComRecvIndex));
-      else
-        strcpy(clientStr, "[NO client] All");
+      else{
+        strcpy(clientStr, "[NO client] amend All");
+        printfSend(Socket, "%s\n", clientStr);
+      }
     }
     else{
       strcpy(clientStr, "All");
       runInfo.monopolizeComRecvIndex = NULL;
-    }
-    printfSend(NULL, "set COM --> TCP %s client\n", clientStr);
+    } 
+    const char *setInfo = getPrintf("Set COM --> TCP %s Client\n", clientStr);
+    broadcastSendHandleResult(Socket, setInfo);
   }
   else if( strnicmp(token, "Send", strlen("Send") ) == 0){
     token = strtok(NULL, DECOLLATOR); // my or All 
 
     if( strnicmp(token, "my", strlen("my") ) == 0 ){
       static uint16_t monopolizeComSendIndex = 0;
-      bool retIndexSta = getClientIndex(clientSocket, &monopolizeComSendIndex);
+      bool retIndexSta = getClientIndex(Socket, &monopolizeComSendIndex);
       runInfo.monopolizeComSendIndex = retIndexSta? &monopolizeComSendIndex:NULL;
       if( retIndexSta )
         snprintf(clientStr, sizeof clientStr,
           "[%-2d]:IP%s", monopolizeComSendIndex, getClientIP(monopolizeComSendIndex));
-      else
-        strcpy(clientStr, "[NO client] All");
+      else{
+        strcpy(clientStr, "[NO client] amend All");
+        printfSend(Socket, "%s\n", clientStr);
+      }
     }
     else{
       strcpy(clientStr, "All");
       runInfo.monopolizeComSendIndex = NULL;
-    }
-    printfSend(NULL, "set TCP %s client --> COM \n", clientStr);
-
+    } 
+    const char *setInfo = getPrintf("Set TCP %s Client --> COM \n", clientStr);
+    broadcastSendHandleResult(Socket, setInfo);
   }
   else
-    printfSend(clientSocket, "Set Monopolize No Recv or send\n"); 
+    printfSend(Socket, "Set Monopolize No Recv or send\n"); 
 }
 
-// æ•°æ®æ‰“å°æ¨¡å¼
-static void cmdDataPrintMode(SOCKET *clientSocket, char* commandData)
-{ (void)clientSocket;
+// Êı¾İ´òÓ¡Ä£Ê½
+static void cmdDataPrintMode(SOCKET *Socket, char* commandData)
+{ 
+  (void)Socket;
+
   char *token = strtok(commandData, DECOLLATOR);
-  token = strtok(NULL, DECOLLATOR); // æ˜¾ç¤ºæ¨¡å¼
+  token = strtok(NULL, DECOLLATOR); // ÏÔÊ¾Ä£Ê½
   runInfo.serverPrintData = 0;
   if( strnicmp(token, "NULL", strlen("NULL") ) == 0 )
     runInfo.serverPrintData = 0;
@@ -249,26 +317,24 @@ static void cmdDataPrintMode(SOCKET *clientSocket, char* commandData)
     runInfo.serverPrintData = 2;
   if( strnicmp(token, "CMD", strlen("CMD")) == 0 )
     runInfo.serverPrintData = 3;
-  printfSend(NULL, "server Print Data: %d %s \n", 
+  
+  const char *setInfo = getPrintf("server Print Data: %d %s \n", 
       runInfo.serverPrintData, token);
+  broadcastSendHandleResult(Socket, setInfo);
 }
 
-// æ‰§è¡Œä¸€æ¡ç³»ç»Ÿå‘½ä»¤
-static void cmdRunSystemCmd(SOCKET *clientSocket, char* commandData)
+// Ö´ĞĞÒ»ÌõÏµÍ³ÃüÁî
+static void cmdRunSystemCmd(SOCKET *Socket, char* commandData)
 {
+  
   char *token = strtok(commandData, DECOLLATOR);
-  token = strtok(NULL, DECOLLATOR); // æŒ‡ä»¤ 
+  token = strtok(NULL, DECOLLATOR); // Ö¸Áî 
   int ret = system(token);
-  printfSend(clientSocket, "execute system %s :%d\n", 
+  printfSend(Socket, "execute system %s :%d\n", 
       ret == 0? "success": "failed", ret);
 }
 
-
-typedef struct { 
-  
-} connectServerInfoStart_t;
-
-// è¿æ¥æœåŠ¡å™¨ç»“æœå›è°ƒ
+// Á¬½Ó·şÎñÆ÷½á¹û»Øµ÷
 static void connectServerResultCoback(ConnectState_t State, 
         void* arg, const char *hsot, uint16_t port, uint16_t residueTimeMs)
 {
@@ -295,48 +361,46 @@ static void connectServerResultCoback(ConnectState_t State,
               stateStrings[State], State==1? residueTimeMsString:" ");  
 }
 
-// è¿æ¥ä¸€ä¸ªè¿œç«¯æœåŠ¡å™¨
-static void cmdServerConnect(SOCKET *clientSocket, char* commandData) 
-{ 
+// Á¬½ÓÒ»¸öÔ¶¶Ë·şÎñÆ÷
+static void cmdServerConnect(SOCKET *Socket, char* commandData) 
+{
   char *token = strtok(commandData, DECOLLATOR);
-  token = strtok(NULL, DECOLLATOR); // è¿œç«¯æœåŠ¡å™¨åœ°å€ï¼ˆåŸŸåæˆ–IPï¼‰ æˆ–æŸ¥è¯¢è¿æ¥çŠ¶æ€å’Œæ–­å¼€è¿æ¥
+  token = strtok(NULL, DECOLLATOR); // Ô¶¶Ë·şÎñÆ÷µØÖ·£¨ÓòÃû»òIP£© »ò²éÑ¯Á¬½Ó×´Ì¬ºÍ¶Ï¿ªÁ¬½Ó
   if (token == NULL) {
-    if( clientSocket )
-      printfSend(clientSocket, "Usage: serverConnect,<hostname|ip>[,port]\n");
+    if( Socket )
+      printfSend(Socket, "Usage: serverConnect,<hostname|ip>[,port]\n");
     return;
   }
 
   if (strnicmp(token, "disconnect", strlen("disconnect")) == 0) {
-    DisconnectingServer();
-    printfSend(clientSocket, "Disconnected from server\n");
+    ConnectToServer("disconnect", 0, connectServerResultCoback, Socket);
+    printfSend(Socket, "Disconnected from server\n");
     return;
   }
-  char  serverAddress[256]; 
+  char serverAddress[256]; 
   memset(serverAddress, 0, sizeof serverAddress);
   strcpy(serverAddress, token); 
-  token = strtok(NULL, DECOLLATOR); // ç«¯å£å· 
+  token = strtok(NULL, DECOLLATOR); // ¶Ë¿ÚºÅ 
   uint16_t port = atoi( token? token: "1000");
   if ( port == 0) {
-    if( clientSocket )
-      printfSend(clientSocket, "Invalid port number: %s\n", token);
+    if( Socket )
+      printfSend(Socket, "Invalid port number: %s\n", token);
     return;
   }
   
-  // å…ˆæµ‹è¯•åŸŸåè§£æ
-  if( clientSocket )
-    printfSend(clientSocket, "Connecting to %s:%d ...\n", serverAddress, port);
-  ConnectToServer(serverAddress, port, connectServerResultCoback, clientSocket);
+  // ÏÈ²âÊÔÓòÃû½âÎö 
+  printfSend(Socket, "Ready Connect to %s:%d ...\n", serverAddress, port);
+  ConnectToServer(serverAddress, port, connectServerResultCoback, Socket);
 }
 
-
-// æ‰“å¼€ä¸²å£å‘½ä»¤
-static void cmdOpenSerialCom(SOCKET *clientSocket, char* commandData) 
-{ 
+// ´ò¿ª´®¿ÚÃüÁî
+static void cmdOpenSerialCom(SOCKET *Socket, char* commandData) 
+{
   char *token = strtok(commandData, DECOLLATOR);
-  token = strtok(NULL, DECOLLATOR); // ä¸²å£å·
+  token = strtok(NULL, DECOLLATOR); // ´®¿ÚºÅ
 
   if( token == NULL || strnicmp(token, "COM", strlen("COM") ) != 0 ) {
-    printfSend(clientSocket, "The input is not :%s\n", token == NULL? "NULL":token);
+    printfSend(Socket, "The input is not :%s\n", token == NULL? "NULL":token);
     return;
   }
 
@@ -344,24 +408,24 @@ static void cmdOpenSerialCom(SOCKET *clientSocket, char* commandData)
   memset(portName, 0, sizeof portName);
   snprintf(portName, sizeof portName, "COM%d", (int)strtol(token + strlen("COM"), &endptr, 10) );
 
-  if( strcmp(portName, ComPort->portName) == 0 ){ // é˜²æ­¢é‡å¤æ‰“å¼€åŒä¸€ä¸ªä¸²å£æµªè´¹èµ„æº
-    printfSend(clientSocket, "the %s has been turned on\n", portName);
+  if( strcmp(portName, ComPort->portName) == 0 ){ // ·ÀÖ¹ÖØ¸´´ò¿ªÍ¬Ò»¸ö´®¿ÚÀË·Ñ×ÊÔ´
+    printfSend(Socket, "the %s has been turned on\n", portName);
     return;
   }
 
-  /* è§£æä¸²å£è®¾ç½®çš„å‚æ•° */
+  /* ½âÎö´®¿ÚÉèÖÃµÄ²ÎÊı */
   uint32_t baudRate = 921600;
   uint8_t dataBits = 8, stopBits = 1, parity = 0;
-  token = strtok(NULL, DECOLLATOR); // æ³¢ç‰¹ç‡
+  token = strtok(NULL, DECOLLATOR); // ²¨ÌØÂÊ
   if (token) baudRate = atoi(token);
 
-  token = strtok(NULL, DECOLLATOR); // æ•°æ®ä½
+  token = strtok(NULL, DECOLLATOR); // Êı¾İÎ»
   if (token) dataBits = atoi(token);
 
-  token = strtok(NULL, DECOLLATOR); // åœæ­¢ä½
+  token = strtok(NULL, DECOLLATOR); // Í£Ö¹Î»
   if (token) stopBits = atoi(token);
 
-  token = strtok(NULL, DECOLLATOR); // æ ¡éªŒä½
+  token = strtok(NULL, DECOLLATOR); // Ğ£ÑéÎ»
   if (token) parity = atoi(token);
 
   if ( ComPort->isOpen ){ 
@@ -369,13 +433,14 @@ static void cmdOpenSerialCom(SOCKET *clientSocket, char* commandData)
     CloseComPort(reason, false);
   }
 
-  printfSend(clientSocket, "opening %s...\n", portName); 
+  printfSend(Socket, "opening %s...\n", portName);
   int8_t ret = OpenComPort(portName, baudRate, dataBits, stopBits, parity); 
   DWORD error = (ret != 0)? GetLastError(): 0;
 
-  char *comParameter = getPrintf( "open [%s,%d,%d,%d,%d] %s! (%d:%ld)\n", 
+  const char *comParameter = getPrintf( "open [%s,%d,%d,%d,%d] %s! (%d:%ld)\n", 
       portName,baudRate,dataBits,stopBits,parity,
       ret == 0 ? "success":"failed", ret, error);
-  printfSend(NULL, "%s", comParameter);
+  
+  broadcastSendHandleResult(Socket, comParameter);
   SafePrintf("%s", comParameter);
 }

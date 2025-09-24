@@ -1,8 +1,9 @@
 # 编译器设置
 CC = gcc
-CFLAGS = -Wall -Wextra -O2 -MMD -MP
-LDFLAGS = -lws2_32 -lsetupapi -luuid -static -lDbghelp
+CFLAGS = -Wall -Wextra -O2 -MMD -MP 
+LDFLAGS = -lws2_32 -lsetupapi -luuid -static 
 TARGET = com2tcp_server
+DEBUG_HELP = -lDbghelp -g -Wl,-Map=$(TARGET).map 
 
 # 目录设置
 BUILD_DIR = build
@@ -47,7 +48,7 @@ build-timer: $(EXE) copy-to-root
 $(EXE): $(OBJS) 
 	@$(call PS_MKDIR,$(BIN_DIR))
 	@echo Linking $@...
-	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS)
+	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS) $(DEBUG_HELP) 
 
 # 编译规则（包含头文件依赖）
 $(BUILD_DIR)/%.o: $(SRC_DIR)/%.c
@@ -94,6 +95,7 @@ clean:
 	
 # 清理顶层目录的复制文件
 	@$(call PS_REMOVE_FILE,./$(TARGET).exe)
+	@$(call PS_REMOVE_FILE,./$(TARGET).map)
 	
 	@echo Clean completed (including top-level copy)
 

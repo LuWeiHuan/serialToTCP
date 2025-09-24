@@ -28,12 +28,10 @@ typedef void(*connectResultCallback)(ConnectState_t state,
 //extern
 
 /*================== 外部函数声明   =========================================*/
+void ServerConnectInit(bool);
 void ConnectToServer(const char* host, uint16_t port, 
           connectResultCallback connectResult, void *arg);
-void ServerConnectInit(bool);
-void DisconnectingServer(void);
 
-// 域名解析函数
 bool ResolveDomainName(const char* domain, char* ipBuffer, uint8_t bufferSize);
 
 #ifdef __cplusplus

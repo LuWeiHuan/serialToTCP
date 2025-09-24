@@ -36,6 +36,8 @@ runInfo_t  runInfo = {
   .serverPrintData = 0,
   .monopolizeComRecvIndex = NULL,
   .monopolizeComSendIndex = NULL,
+  .COMrecvPoll = true,
+  .COMSendPoll = true,
 };
 
 /*================== 本地常量声明    ========================================*/
@@ -44,7 +46,7 @@ runInfo_t  runInfo = {
 /*================== 外部函数和变量声明    ==================================*/
 
 // 获取从运行到现在的间戳（毫秒）程序运行要调用一次
-uint64_t GetCurrentTimeMillis(void) 
+uint64_t GetCurrentTimeMs(void) 
 {
   struct _timeb timebuffer; 
   _ftime_s(&timebuffer);
@@ -165,7 +167,7 @@ char *getSendRecvDirectionStr(char *direct, uint8_t index)
       snprintf(clientString, sizeof clientString, "%-2d %s", 
         *runInfo.monopolizeComRecvIndex, getClientIP(*runInfo.monopolizeComRecvIndex) );
     else if (getClientNum() == 0) 
-      snprintf(clientString, sizeof clientString, "No client");
+      snprintf(clientString, sizeof clientString, " No client");
     else 
       snprintf(clientString, sizeof clientString, "All client %d", getClientNum());
 
@@ -179,7 +181,7 @@ char *getSendRecvDirectionStr(char *direct, uint8_t index)
  * 获取计算机全名（DNS全名）
  * 返回值：计算机名字符串
  */
-char *GetComputerFullName(void) 
+const char *GetComputerFullName(void) 
 {
     DWORD nameLen = 0;
     static char computerName[20]; // Win提示计算机名最大15个字符

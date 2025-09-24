@@ -10,7 +10,7 @@ extern "C" {
 #include <stdbool.h>
 
 /*================== 宏定义声明			=========================================*/
-#define MAX_CLIENTS         3
+#define MAX_CLIENTS         50
 #define DEFAULT_PORT        9000
 #define RECV_BUFFER_SIZE    1024*10
 

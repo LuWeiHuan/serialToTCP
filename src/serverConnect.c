@@ -81,20 +81,30 @@ void ServerConnectInit(bool start)
 }
 
 // 如果之前连结过服务器就断开之前的连接
-void DisconnectingServer(void)
+static void DisconnectingServer(void)
 { 
   EnterCriticalSection(&csClient);
+  if (client.socket != INVALID_SOCKET) 
+    printfSend(&client.socket, "Connect New Server, You are Disconnect!\n" );
+  
   CloseClientSocket( client.socket, "断开之前连接的服务器");
-  client.state = CONNECT_STATE_FAILURE_DISCONNECTED;
+
   if (client.socket != INVALID_SOCKET) {
     closesocket(client.socket);
     client.socket = INVALID_SOCKET;
   }
-  memset(client.serverIP, 0, sizeof client.serverIP);
-  client.serverPort = 0;
   LeaveCriticalSection(&csClient);
 }
 
+/**
+ * @brief 连接到服务器
+ * @param host 主机名或IP地址，当主机名为 "disconnect" 或空 表示断开服务器连接
+ * @param port 端口号          当端口号为 0 表示断开服务器连接
+ * @param ResultCallback 连接结果通知回调
+ * @param arg   连接结果通知回调 携带的参数
+ * @return 无
+ * @attention 
+ */
 void ConnectToServer(const char* host, uint16_t port, 
           connectResultCallback ResultCallback, void *arg)
 { 
@@ -104,18 +114,13 @@ void ConnectToServer(const char* host, uint16_t port,
   if (client.state == CONNECT_STATE_CONNECTING || client.thread ) {
       if( ResultCallback )
         ResultCallback(client.state, arg, client.hsot, client.serverPort, 
-          CONNECT_TIMEOUT_MS - (GetCurrentTimeMillis() - client.startTimeMs));
+          CONNECT_TIMEOUT_MS - (GetCurrentTimeMs() - client.startTimeMs));
       LeaveCriticalSection(&csClient);
       return;
   }
-  LeaveCriticalSection(&csClient);
-  
-  DisconnectingServer();  // 如果已经连接，先断开
 
-  EnterCriticalSection(&csClient);
-  
   client.state = CONNECT_STATE_CONNECTING;  // 设置连接状态
-  strcpy( client.hsot, host);
+  strcpy(client.hsot, host);
   client.serverPort = port;
   client.Callback = ResultCallback;
   client.arg = arg;
@@ -130,14 +135,24 @@ void ConnectToServer(const char* host, uint16_t port,
     if( ResultCallback )
       ResultCallback(client.state, arg, client.hsot, client.serverPort, 0);
   }
+
   LeaveCriticalSection(&csClient);
 }
 
 static DWORD WINAPI ConnectServerThread(LPVOID lpParam)
 { 
-  connectServer_t* clientInfo = (connectServer_t*)lpParam;
-  clientInfo->startTimeMs = GetCurrentTimeMillis();
-  bool ret = trueConnectToServer(clientInfo->hsot, 
+  DisconnectingServer();  // 如果已经连接，先断开
+  connectServer_t* clientInfo = (connectServer_t*)lpParam; 
+
+  if( clientInfo->hsot == NULL || clientInfo->serverPort == 0 ||
+     strnicmp(clientInfo->hsot, "disconnect", strlen("disconnect")) == 0 ){
+    client.state = CONNECT_STATE_FAILURE_DISCONNECTED;
+    clientInfo->thread = NULL;
+    return 0;
+  }
+
+  clientInfo->startTimeMs = GetCurrentTimeMs();
+  bool ret = startConnectToServer(clientInfo->hsot, 
       clientInfo->serverPort, CONNECT_TIMEOUT_MS, 
       &clientInfo->socket, 
       clientInfo->serverIP);

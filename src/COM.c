@@ -36,8 +36,8 @@
 /*================== 本地常量声明    ========================================*/
 /*================== 本地变量声明    ========================================*/
 static  CRITICAL_SECTION csComPort;
-static AsyncSendQueue_t asyncSendQueue = {0};
-static AsyncSendQueue_t asyncRecvQueue = {0};
+static AsyncQueue_t asyncSendQueue = {0};
+static AsyncQueue_t asyncRecvQueue = {0};
 static ComPortInfo_t comPort = { INVALID_HANDLE_VALUE, FALSE, "NULL", {0}, NULL, 0, 0 };
 
 /*================== 全局共享变量    ========================================*/
@@ -91,10 +91,8 @@ void CloseComPort(const char * reason, bool isSelfCall)
     if (waitResult == WAIT_TIMEOUT) {
         DWORD exitCode;
         if (GetExitCodeThread(comPort.hThread, &exitCode) && 
-            exitCode == STILL_ACTIVE) {
-            TerminateThread(comPort.hThread, 0); 
-        }
-        
+            exitCode == STILL_ACTIVE) 
+          TerminateThread(comPort.hThread, 0);
     }
     closeThreadRet = CloseHandle(comPort.hThread);
     comPort.hThread = NULL;
@@ -134,9 +132,17 @@ const char *getComPortList(bool VPID)
         
     bool exist = false;  
     static char response[2048];
-    memset(response, 0, sizeof response);
-    strcpy(response, VPID? "COM Ports:\n": "COM Ports: ");
+    memset(response, 0, sizeof response); 
 
+    #if 1
+    strcpy(response, VPID? "COM Ports:\n": "COM Ports: ");
+    #else
+    sprintf(response, "[%s %s] %s",
+      comPort.isOpen? comPort.portName:"COM",
+      comPort.isOpen? "has been opened":"not open",
+      VPID? "COM Ports:\n": "COM Ports: "); 
+    #endif
+    
     SP_DEVINFO_DATA deviceInfoData;
     deviceInfoData.cbSize = sizeof deviceInfoData;
     BYTE buffer[256];
@@ -364,23 +370,36 @@ static void ProcessReceivedData(char *comRecvBuffer, DWORD len)
   #endif
   
   int sendRet = 0;
-  if( getClientNum() ){  // 没有客户端不发送数据 
-    if (runInfo.monopolizeComRecvIndex != NULL) { // 发送给指定客户端或所有客户端
-        const SOCKET *socket = getClientSocket( *runInfo.monopolizeComRecvIndex );
-        if( socket == NULL || ( socket && *socket == INVALID_SOCKET ) )
-          runInfo.monopolizeComRecvIndex = NULL;
-        sendRet = sendDataToClients(socket, comRecvBuffer, len);
-        
-      // 如果发送失败。检查独占客户端是否还存在。
-      if (sendRet <= 0 && !examineClientIsExist(socket) ) { 
-        runInfo.monopolizeComRecvIndex = NULL;    // 独占客户端已经下线
-        SafePrintf("Monopolize client disconnected, switching to all clients\n");
-        sendRet = sendDataToClients(NULL, comRecvBuffer, len);
-      }
+  do {
+    if( getClientNum() == 0 )  // 没有客户端不发送数据 
+      break;
+
+    if (runInfo.monopolizeComRecvIndex == NULL ){  // 没有独占就广播
+      sendRet = sendDataToClients(NULL, comRecvBuffer, len);
+      break;
     }
-    else 
-        sendRet = sendDataToClients(NULL, comRecvBuffer, len);
-  }
+    
+    // 获取独占客户端套接字，获取不到就剔除独占广播发送
+    const SOCKET *socket = getClientSocket( *runInfo.monopolizeComRecvIndex );
+    if( socket == NULL || *socket == INVALID_SOCKET ){
+      runInfo.monopolizeComRecvIndex = NULL;
+      continue; // 广播这条数据
+    }
+      
+    sendRet = sendDataToClients(socket, comRecvBuffer, len);
+    if (sendRet > 0 ) break;
+
+    // 如果发送失败 且 检查独占客户端不存在的情况下，取消独占并改为广播发送。
+    bool Exist = getClientIndex(socket, NULL);
+    // SafePrintf("Monopolize Client Send Fail, Ready Switching To All Clients."
+    //         "sendRet:%d/%ld Exist:%s\n", sendRet, len, Exist? "YES":"NO");
+    if( Exist )
+      break;
+    runInfo.monopolizeComRecvIndex = NULL;    // 独占客户端已经下线
+    continue; // 广播这条数据
+  } while (0);
+  
+
 
   char *Direct = getSendRecvDirectionStr("[COM --> TCP]", 0);
   char *timeStr = getCurrentTime();
@@ -392,11 +411,12 @@ static void ProcessReceivedData(char *comRecvBuffer, DWORD len)
   if( runInfo.monopolizeComRecvIndex )
     oneLen = sendRet;
 
-  SafePrintf( "%-21s%6I64d [%s]  %-6d/%-6ld Byte (%s : %d)%s %s",
+  SafePrintf( "%-21s%6I64d [%s]  %-6d/%-6ld Byte (%s : %d)%s %c",
       timeStr, ++comPort.sendCount, Direct, oneLen, len,
       (sendRet == lenSum)? "OK":"Fail", lenSum - sendRet,
       runInfo.serverPrintData != 0? " data:":" ", 
-      (runInfo.serverPrintData !=0 || ClientNum)? "\n":"\r");
+      ( ( runInfo.serverPrintData == 0  || runInfo.serverPrintData == 3) &&
+        ( ClientNum == 0 || runInfo.COMrecvPoll == false))? '\r':'\n');
   
   if (runInfo.serverPrintData == 0) 
     return;

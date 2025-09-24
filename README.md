@@ -36,8 +36,8 @@ AI 平台：DeepSeek
 15. 请让服务端实现被发现的能力，这个功能在子线程用UDP实现，使用19000端口
 16. 获取串口列表增加PID和VID功能，可以用于识别产品
 
-
-控制服务器动作指令介绍：
+=================================================================
+控制服务器动作指令介绍：  所有指令不区分大小写
 =================================================================
 获取系统内可用的串口列表
 ctrlInfo:comlist      只有COM口号
@@ -49,10 +49,10 @@ ctrlInfo:open,COM4              打开串口其他参数默认
 ctrlInfo:open,COM4,115200       打开串口并设置波特率，其他默认
 ctrlInfo:open,COM1,9600,8,1,0   打开串口并设置全部参数
 
-
+=================================================================
 剩下的是一些扩展命令：可根据自己情况需要去去使用
 ==================================================================
-让服务端退出仅此而已
+让服务端退出仅此而已。服务器如果运行在 10000 端口的话，会拒绝这个指令会，用于复活服务端
 ctrlInfo:exit
 
 让服务端运行再运行一个新的服务端并不指定端口号，端口号被占用会递增加1
@@ -65,20 +65,20 @@ ctrlInfo:SystemCommands,cls           “cls”是执行内容
 ctrlInfo:ExecuteSystemCommands,cls    “cls”是执行内容
 
 
-发给串口的数据或接收到的串口数据，指定指定给哪个客户端
-ctrlInfo:setCOMdata,Send,my    给自己
-ctrlInfo:setCOMdata,Send,all   所有客户端
-ctrlInfo:setCOMdata,Recv,my    给自己
-ctrlInfo:setCOMdata,Recv,all   所有客户端
+串口独占
+ctrlInfo:setCOMdata,Send,my    只有发这个指令的客户端能：给串口发数据
+ctrlInfo:setCOMdata,Send,all   所有客户端都能：          给串口发数据
+ctrlInfo:setCOMdata,Recv,my    只有发这个指令的客户端能：接收串口数据
+ctrlInfo:setCOMdata,Recv,all   所有客户端能：            接收串口数据
 
 
 设置客户端发给串口的数据，是否用异步队列缓存起来后，再发给串口
 ctrlInfo:setCOMasyncSend,0
-ctrlInfo:setCOMasyncSend,100    其中 "100" 是队列数量，10~512条
+ctrlInfo:setCOMasyncSend,100    其中 "100" 是队列数量，失败会有回复限定数量
 
 设置接受到串口的数据，是否用异步队列缓存起来后，逐一发给所有客户端
 ctrlInfo:setCOMasyncRecv,0
-ctrlInfo:setCOMasyncRecv,100    其中 "100" 是队列数量，10~512条
+ctrlInfo:setCOMasyncRecv,100    其中 "100" 是队列数量，失败会有回复限定数量
 
 
 获取服务端上的所有已经连接的客户端IP和索引
@@ -86,8 +86,13 @@ ctrlInfo:PrintAllclientIP
 
 
 设置服务端控制台打印客户端发过来的数据和串口收到的数据，
-打印方式里面 打印16进制，没有很认真开发这个功能，如果数据量很大会比较慢，所有要酌情使用！
+打印方式里面 打印16进制
 ctrlInfo:serverPrintData,NILL       关闭数据打印
 ctrlInfo:serverPrintData,CMD        只打印命令其它不打印
 ctrlInfo:serverPrintData,HEX        打印16进制
 ctrlInfo:serverPrintData,ASCII      打印字符串
+
+设置收发日志是否滚动切换，由于没有设计保存设置，这个收发默认都开启
+ctrlInfo:cmdSetLogPollCut,recv      串口发上来 的日志滚动
+ctrlInfo:cmdSetLogPollCut,send      发给串口   的日志滚动
+ctrlInfo:cmdSetLogPollCut,se        匹配不上 recv 或 send 都切换滚动

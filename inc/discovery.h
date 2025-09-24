@@ -9,6 +9,8 @@ extern "C" {
 #include <stdint.h>
 #include <stdbool.h>
 
+#include <winsock2.h>
+
 /*================== 宏定义声明			=========================================*/
 #define DISCOVERY_PORT              19000       // UDP发现端口
 //#define DISCOVERY_RESPONSE_PORT   19001       // UDP响应端口
@@ -19,8 +21,11 @@ extern "C" {
 /*================== 外部函数声明		=========================================*/
 
 void DiscoveryService(bool start);
-void UpdateDiscoveryInfo(uint16_t port, uint32_t clientCount);
 
+
+SOCKET getDiscoverySocket(void);
+const char * getDiscoveryNewClientIPAddr(void);
+uint16_t getDiscoveryNewClientPort(void);
 #ifdef __cplusplus
 }
 #endif
