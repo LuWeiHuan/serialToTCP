@@ -27,16 +27,16 @@ typedef struct {
 /*================== 外部函数声明		=========================================*/
 void ClientResourceInit(bool start);
 bool addNewClient(SOCKET socket, const char *ip);
-void CloseClientSocket(SOCKET socket, const char *reason);
+void CloseClientExt(const SOCKET *socket, const char *reason);
 
 int sendDataToClients(const SOCKET *Socket, const char* buff, int len);
-int printfSend(SOCKET *Socket, const char *fmt, ...) __attribute__ ((__format__ (__printf__, 2, 3)));
+int printfSend(const SOCKET *Socket, const char *fmt, ...) __attribute__ ((__format__ (__printf__, 2, 3)));
 
 bool getClientIndex(const SOCKET *Socket, uint16_t *retIndex);
 const SOCKET *getClientSocket(uint16_t index);
 const char *getClientIP(uint16_t index);
 void getAllClientIPandIndexInfo(char *retStr, uint16_t len);
-
+void KickAllClients(const char* reason);
 
 inline uint16_t getClientNum(void){
   extern ClientsNum_t const * const g_clientsNum;

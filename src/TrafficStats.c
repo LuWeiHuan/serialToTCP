@@ -31,7 +31,7 @@ static void formatSpeedString(uint64_t bytesPerSec, char* output, uint16_t retMa
 /*================== 外部函数和变量声明    ==================================*/
 
 // 启动流量统计线程
-void StartTrafficMonitor(void) 
+void startTrafficMonitor(void) 
 {
   memset(&trafficStats, 0, sizeof trafficStats);
   trafficStats.run = true;

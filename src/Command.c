@@ -39,6 +39,7 @@ typedef struct {
 /*================== 本地常量声明   =========================================*/
 /*================== 本地变量声明   =========================================*/
 /*================== 本地函数声明   =========================================*/
+static void broadcastSendHandleResult(SOCKET *Socket, const char *info);
 static void cmdServerOverExit(SOCKET*, char*);
 static void cmdComlist(SOCKET*, char*);
 static void cmdRunNewServer(SOCKET*, char*);
@@ -52,6 +53,7 @@ static void cmdServerConnect(SOCKET*, char*);
 static void cmdOpenSerialCom(SOCKET*, char*);
 static void cmdDoNotConnectCOM2TCP(SOCKET*, char*);
 static void cmdSetLogPollCut(SOCKET*, char*);
+static void cmdKickAllClients(SOCKET*, char*);
 
 
 /*================== 命令映射表     =========================================*/
@@ -71,7 +73,8 @@ static const CommandEntry cmdTable[] = {
   {"serverConnect",         cmdServerConnect},
   {"OK! your index",        cmdDoNotConnectCOM2TCP},
   {"Not Command",           cmdDoNotConnectCOM2TCP},
-  {"cmdSetLogPollCut",      cmdSetLogPollCut},
+  {"SetLogPollCut",         cmdSetLogPollCut},
+  {"KickAllClients",        cmdKickAllClients},
   {"open",                  cmdOpenSerialCom}
 };
 
@@ -106,13 +109,23 @@ void HandleClientCommand(SOCKET *Socket, const char* command)
   printfSend(Socket, "Not Command:%s\n", handleCommand);
 }
 
-// 广播发送处理结果
-static void broadcastSendHandleResult(SOCKET *Socket, const char *info)
-{ 
-  uint16_t sendLen = strlen(info);
-  if( getDiscoverySocket() == *Socket )
-    sendDataToClients(Socket, info, sendLen);
-  sendDataToClients(NULL, info, sendLen);
+// 让所有客户端下线
+static void cmdKickAllClients(SOCKET *Socket, char* commandData)
+{
+  (void)commandData;
+
+  printfSend(Socket, "Kick Clients Num %d\n", getClientNum());
+  if( getClientNum() == 0) 
+    return; 
+
+  if( getDiscoverySocket() == *Socket ) {
+    const char *exitInfo = getPrintf("UDP IP %s:%d", 
+        getDiscoveryNewClientIPAddr(), getDiscoveryNewClientPort());
+    KickAllClients(exitInfo);
+    return;
+  }
+
+  printfSend(Socket, "Sorry, it can't be achieved for the time being\n" );
 }
 
 // 收发日志是否滚动
@@ -141,12 +154,17 @@ static void cmdSetLogPollCut(SOCKET *Socket, char* commandData)
   broadcastSendHandleResult(Socket, setInfo);
 }
 
+// 异步自我关闭
+static void AsyncSelfCloseClient(void *arg)
+{
+  CloseClientExt((SOCKET*)arg, "请不要互联串口转服务器程序！");
+}
 
 static void cmdDoNotConnectCOM2TCP(SOCKET *Socket, char* commandData)
 {
   (void)commandData;
   printfSend(Socket, "Please do not connect COM2TCP!\n" );
-  CloseClientSocket(*Socket, "请不要互联串口转服务器程序！");
+  addAsyncFuncHandle(AsyncSelfCloseClient, Socket);
 }
 
 static void cmdComlist(SOCKET *Socket, char* commandData)
@@ -171,20 +189,20 @@ static void cmdServerOverExit(SOCKET *Socket, char* commandData)
   
   uint16_t ClientIndex = 0;
   bool getRet = false;
-  char *exitInfo = "Unknown Client Ask For Server Ready Exit";
+  char *exitInfo = "Unknown Client Ask For Server Ready Exit\n";
   if( getDiscoverySocket() == *Socket){
-    exitInfo = getPrintf("Discovery UDP IP %s:%d Ask For Server Ready Exit", 
+    exitInfo = getPrintf("Discovery UDP IP %s:%d Ask For Server Ready Exit\n", 
       getDiscoveryNewClientIPAddr(), getDiscoveryNewClientPort());
   }
   else{ 
     getRet = getClientIndex(Socket, &ClientIndex);
     if( getRet )
-      exitInfo = getPrintf("Client [%-2d]IP:%s Ask For Server Ready Exit", 
+      exitInfo = getPrintf("Client [%-2d]IP:%s Ask For Server Ready Exit\n", 
         ClientIndex, getClientIP(ClientIndex) );
   }
 
   broadcastSendHandleResult(Socket, exitInfo);
-  SafePrintf("\033[H\033[J \n%s\n%s\n\n", exitInfo, exitInfo); 
+  SafePrintf("\033[H\033[J \n%s%s\n", exitInfo, exitInfo); 
   exit(0);
 }
 
@@ -326,7 +344,6 @@ static void cmdDataPrintMode(SOCKET *Socket, char* commandData)
 // 执行一条系统命令
 static void cmdRunSystemCmd(SOCKET *Socket, char* commandData)
 {
-  
   char *token = strtok(commandData, DECOLLATOR);
   token = strtok(NULL, DECOLLATOR); // 指令 
   int ret = system(token);
@@ -443,4 +460,13 @@ static void cmdOpenSerialCom(SOCKET *Socket, char* commandData)
   
   broadcastSendHandleResult(Socket, comParameter);
   SafePrintf("%s", comParameter);
+}
+
+// 广播发送处理结果
+static void broadcastSendHandleResult(SOCKET *Socket, const char *info)
+{ 
+  uint16_t sendLen = strlen(info);
+  if( getDiscoverySocket() == *Socket )
+    sendDataToClients(Socket, info, sendLen);
+  sendDataToClients(NULL, info, sendLen);
 }

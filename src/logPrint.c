@@ -23,7 +23,7 @@
 #include <windows.h>
 
 /*================== 本地宏定义     =========================================*/
-// #define MAX_ASYNC_PRINTF_LEN 1024*10  // 异步队列发送
+//#define MAX_ASYNC_PRINTF_LEN 1024*10  // 异步队列发送
 /*================== 全局共享变量    ========================================*/
 /*================== 本地常量声明    ========================================*/
 static CRITICAL_SECTION g_log_cs;
@@ -46,14 +46,14 @@ void logPrintResourceInit(bool start)
   if( start ){
     InitializeCriticalSection(&g_log_cs);
     #if MAX_ASYNC_PRINTF_LEN 
-    startAsyncDataHandleThread(&AsyncPrintQueue, 
-        AsyncPrintfCallBack, 5, MAX_ASYNC_PRINTF_LEN);
+    startAsyncQueue(&AsyncPrintQueue, 
+        AsyncPrintfCallBack, 200, MAX_ASYNC_PRINTF_LEN, "Printf");
     #endif
     DisableQuickEditMode();
   }
   else{ 
     #if MAX_ASYNC_PRINTF_LEN
-    FreeAsyncSendQueue(&AsyncPrintQueue);
+    FreeAsyncQueue(&AsyncPrintQueue);
     #endif
     DeleteCriticalSection(&g_log_cs);
   }

@@ -84,15 +84,15 @@ void ServerConnectInit(bool start)
 static void DisconnectingServer(void)
 { 
   EnterCriticalSection(&csClient);
-  if (client.socket != INVALID_SOCKET) 
-    printfSend(&client.socket, "Connect New Server, You are Disconnect!\n" );
-  
-  CloseClientSocket( client.socket, "断开之前连接的服务器");
-
-  if (client.socket != INVALID_SOCKET) {
-    closesocket(client.socket);
-    client.socket = INVALID_SOCKET;
+  if (client.socket == INVALID_SOCKET) {
+    LeaveCriticalSection(&csClient);
+    return;
   }
+
+  printfSend(&client.socket, "Connect New Server, You are Disconnect!\n" ); 
+  CloseClientExt( &client.socket, "断开之前连接的服务器");
+  // closesocket(client.socket);
+  client.socket = INVALID_SOCKET;
   LeaveCriticalSection(&csClient);
 }
 

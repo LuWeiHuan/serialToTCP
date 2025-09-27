@@ -503,12 +503,12 @@ static void COMAsyncSendQueueCallBack(queueData_t *queueData)
 BOOL COM_UseAsyncSend(uint16_t num)
 {
   if( num < MIN_QUEUE_SIZE ){
-    FreeAsyncSendQueue(&asyncSendQueue);
+    FreeAsyncQueue(&asyncSendQueue);
     return num == 0? true:false;
   }
     
-  return startAsyncDataHandleThread(&asyncSendQueue, 
-      COMAsyncSendQueueCallBack, num, RECV_BUFFER_SIZE);
+  return startAsyncQueue(&asyncSendQueue, 
+      COMAsyncSendQueueCallBack, num, RECV_BUFFER_SIZE, "COM Send");
 }
 
 
@@ -522,12 +522,12 @@ static void COMAsyncRecvQueueCallBack(queueData_t *queueData)
 BOOL COM_UseAsyncRecv(uint16_t num)
 {
   if( num < MIN_QUEUE_SIZE ){
-    FreeAsyncSendQueue(&asyncRecvQueue);
+    FreeAsyncQueue(&asyncRecvQueue);
     return num == 0? true:false;
   }
     
-  return startAsyncDataHandleThread(&asyncRecvQueue, 
-      COMAsyncRecvQueueCallBack, num, RECV_BUFFER_SIZE);
+  return startAsyncQueue(&asyncRecvQueue, 
+      COMAsyncRecvQueueCallBack, num, RECV_BUFFER_SIZE, "COM Recv");
 }
 
 

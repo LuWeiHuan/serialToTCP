@@ -17,6 +17,7 @@
 #include <time.h>
 
 #include "main.h"
+#include "Queue.h"
 #include "logPrint.h"
 #include "public.h"
 #include "COM.h"
@@ -62,7 +63,8 @@ int main(int argc, char const *argv[])
   if( startServer(argc, argv) == false )
     return 1;
   DiscoveryService(true);       // 启动发现服务
-  StartTrafficMonitor();        // 流量统计
+  startAsyncFuncHandle(true);
+  startTrafficMonitor();        // 流量统计
   ClientResourceInit(true);
   ComPortResourceInit(true);
   DeviceChangeMonitor(true);    // 启动设备插拔变化监听 
@@ -93,7 +95,7 @@ int main(int argc, char const *argv[])
   ClientResourceInit(false);
   ComPortResourceInit(false);
   DeviceChangeMonitor(false);
-  
+  startAsyncFuncHandle(false);
   logPrintResourceInit(false);
   WSACleanup();
   printf("main Program exit\n");
@@ -117,9 +119,6 @@ static bool startServer(int argc, char const *argv[])
   return serRet;
 }
 
-
-
 static void microFuncCodeTest(void)
 {
-
 }

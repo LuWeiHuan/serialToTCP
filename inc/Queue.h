@@ -39,7 +39,7 @@ typedef struct {
   HANDLE hDataEvent;        // 数据可用事件
   HANDLE hSpaceEvent;       // 空间可用事件
   HANDLE hThread;           // 发送线程句柄
-
+  const char *name;
   char *dataBuffer;         // 数据缓冲区（一次性分配）
   queueData_t *index;       // 队列数组 
   outDataCallBack_t   outDataCallBack; // 必须有调用回调
@@ -50,13 +50,16 @@ typedef struct {
 
 /*================== 外部函数声明		=========================================*/
 
-BOOL startAsyncDataHandleThread(AsyncQueue_t *queue, 
-      outDataCallBack_t outDataCallBack, uint16_t queueSize, uint32_t elementSize);
+BOOL startAsyncQueue(AsyncQueue_t *queue, outDataCallBack_t CallBack, 
+      uint16_t queueSize, uint32_t elementSize, const char *queueName);
 BOOL AddDataToAsyncQueue(AsyncQueue_t *queue, const char *data, uint32_t len);
-void FreeAsyncSendQueue(AsyncQueue_t *queue);
+void FreeAsyncQueue(AsyncQueue_t *queue);
 
 int GetAsyncQueueRemainingSpace(AsyncQueue_t *queue);
 int GetAsyncQueueCurrentSize(AsyncQueue_t *queue);
+
+BOOL startAsyncFuncHandle(bool start);
+BOOL addAsyncFuncHandle(void(*CallBack)(void*) , void *arg);
 
 #ifdef __cplusplus
 }

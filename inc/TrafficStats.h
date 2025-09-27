@@ -32,7 +32,7 @@ typedef struct {
 extern GlobalTrafficStats_t trafficStats;
 
 /*================== 外部函数声明		=========================================*/
-void StartTrafficMonitor(void);
+void startTrafficMonitor(void);
 
 #ifdef __cplusplus
 }

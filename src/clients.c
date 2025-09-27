@@ -93,12 +93,13 @@ static void ClientList_Remove(ClientNode_t* node);
 static ClientNode_t* ClientList_GetOldest(void);
 static ClientNode_t* ClientPool_Alloc(void);
 static void ClientPool_Free(ClientNode_t* node);
-static ClientNode_t* FindClientBySocket(const SOCKET *socket);
+static ClientNode_t* FindClientBySocket(const SOCKET *socket, bool isHASH);
 
 static void AsyncCloseCallback(queueData_t *);
 static void CloseClient(ClientNode_t* node, BOOL isSelfCall, const char *reason);
 
 static bool sendMonopolizeExamine(ClientNode_t* clientInfo);
+
 
 /*================== 外部函数和变量声明    ==================================*/
 
@@ -122,7 +123,7 @@ bool getClientIndex(const SOCKET *Socket, uint16_t *retIndex)
     return false;
   
   EnterCriticalSection(&csClient); 
-  ClientNode_t *targetClient = FindClientBySocket( Socket );
+  ClientNode_t *targetClient = FindClientBySocket(Socket, true);
    if( targetClient && retIndex )
     *retIndex = targetClient->index; 
   LeaveCriticalSection(&csClient);
@@ -131,20 +132,13 @@ bool getClientIndex(const SOCKET *Socket, uint16_t *retIndex)
 }
 
 
-void CloseClientSocket(SOCKET socket, const char *reason)
+void CloseClientExt(const SOCKET *socket, const char *reason)
 { 
   EnterCriticalSection(&csClient); 
-  ClientNode_t *targetClient = NULL;
-  for (ClientNode_t* curr = clientList.head; curr; curr = curr->next)  
-    if( curr->socket == socket){
-      targetClient = curr;
-      break;
-    } 
-  LeaveCriticalSection(&csClient);
-
-  char *reasonInfo = getPrintf("关闭套接字，搜索节点%s，%s", 
+  ClientNode_t *targetClient = FindClientBySocket(socket, true); 
+  LeaveCriticalSection(&csClient); 
+  char *reasonInfo = getPrintf("外部关闭节点%s，%s", 
       targetClient? "存在":"没有", reason? reason:"未知");
-  
   CloseClient(targetClient, false, reasonInfo);
 }
 
@@ -164,8 +158,8 @@ void ClientResourceInit(bool start)
     InitializeCriticalSection(&csClient);
     
     // 初始化异步关闭客户端队列，优化后同步关闭也蛮快
-    startAsyncDataHandleThread(&asyncCloseQueue,
-      AsyncCloseCallback, 5, sizeof(asyncRequest_t) );
+    startAsyncQueue(&asyncCloseQueue,
+      AsyncCloseCallback, 5, sizeof(asyncRequest_t), "Client Close");
   } 
   else {
     // 首先停止接受新的异步关闭请求
@@ -197,7 +191,7 @@ void ClientResourceInit(bool start)
     LeaveCriticalSection(&csClient);
     
     // 现在安全关闭异步队列
-    FreeAsyncSendQueue(&asyncCloseQueue);
+    FreeAsyncQueue(&asyncCloseQueue);
     
     // 释放资源
     if (clientPool != LocalStaticClientPool && clientPool != NULL)
@@ -268,17 +262,24 @@ static void ClientList_Remove(ClientNode_t* node)
   ClientPool_Free(node);
 }
 
-// 快速通过Socket查找节点
-static ClientNode_t* FindClientBySocket(const SOCKET *socket)
+// 通过Socket查找节点，
+// isHASH 传入真快速搜索，存在客户端列表的套接字，不一定能搜索到
+// isHASH 传入假传统搜索，存在客户端列表的套接字，基本都能搜索到
+static ClientNode_t* FindClientBySocket(const SOCKET *socket, bool isHASH)
 {
   if( socket == NULL )
     return NULL;
-    
+  
   ClientNode_t *found = NULL;
-  HASH_FIND_INT(socketHashTable, socket, found);
+
+  if( isHASH )
+    HASH_FIND_INT(socketHashTable, socket, found);
+  else for (ClientNode_t* curr = clientList.head; curr; curr = curr->next)  
+    if( curr->socket == *socket)
+      return curr;
+  
   return found;
 }
-
 
 
 // 获取最早的客户端
@@ -441,7 +442,7 @@ static DWORD WINAPI ClientRecvDataThread(LPVOID lpParam)
   return 0;
 }
 
-// 返回：如果为真请结束循环不要发给串口，假的放形继续
+// 返回：如果为真请结束循环不要发给串口，假的放行继续
 static bool sendMonopolizeExamine(ClientNode_t* clientInfo)
 {
   // 串口发上来的数据是否被独占。
@@ -602,7 +603,7 @@ static void CloseClient(ClientNode_t* node, BOOL isSelfCall, const char *reason)
 
   EnterCriticalSection(&csClient);
   ClientList_Remove(node);
-  LeaveCriticalSection(&csClient);   
+  LeaveCriticalSection(&csClient);
 
   BOOL useAsync = AddDataToAsyncQueue(&asyncCloseQueue, (char*)&request, sizeof request); 
   if (!useAsync)
@@ -689,7 +690,7 @@ int sendDataToClients(const SOCKET *socket, const char* buff, int len)
       if (lastFoundClient && lastFoundClient->socket == *socket) 
         targetClient = lastFoundClient;
       else  // 如果不是上次的客户端，重新搜索
-        targetClient = lastFoundClient = FindClientBySocket(socket);
+        targetClient = lastFoundClient = FindClientBySocket(socket, true);
 
       sendFailErrorHandle(false, targetClient, error, &closeCount, 
           errorList, clientsToClose, &currentTime, sendRet, len);
@@ -737,12 +738,11 @@ int sendDataToClients(const SOCKET *socket, const char* buff, int len)
  *		@arg fmt: printf 格式
  * @retval 
  */
-int printfSend(SOCKET *Socket, const char *fmt, ...)
+int printfSend(const SOCKET *Socket, const char *fmt, ...)
 {
-	static char stringBuff[1024]; // 字符串缓冲区
-	memset(stringBuff, 0, sizeof stringBuff);
+	static __thread char stringBuff[1024*4]; // 字符串缓冲区
   strcpy(stringBuff, CTRL_HEADER);
-  uint8_t ctrlHeaderLen = strlen(CTRL_HEADER);
+  static uint8_t ctrlHeaderLen = strlen(CTRL_HEADER);
 
   // args为定义的一个指向可变参数的变量，va_list以及下边要用到的
   // va_start,va_end都是是在定义可变参数函数中必须要用到宏，在stdarg.h头文件中定义
@@ -751,24 +751,27 @@ int printfSend(SOCKET *Socket, const char *fmt, ...)
   int retLen = vsnprintf(stringBuff + ctrlHeaderLen, 
     sizeof stringBuff - ctrlHeaderLen, fmt, args);
   va_end(args); // 初始化args的函数，使其指向可变参数的第一个参数，fmt是可变参数的前一个参数
-
+  stringBuff[retLen + ctrlHeaderLen] = '\0';
   return sendDataToClients(Socket, stringBuff, retLen + ctrlHeaderLen); 
 }
 
 
 /**
- * @brief 踢掉所有已连接的客户端
+ * @brief 踢掉所有已连接的客户端。
  * @param reason 踢掉客户端的原因（可选，可为NULL）
  * @param graceful 是否优雅关闭（TRUE:发送通知后关闭, FALSE:强制立即关闭）
+ * @attention 不能同步调用，也就是不能由任何客户端发起，
+ *  如果要用。必须异步调用或者由不在客户端列表里的成员发起，比如UDP搜索服务。
  */
-void KickAllClientsEx(const char* reason) 
+void KickAllClients(const char* reason)
 {
   const char* kickReason = reason? reason : "NULL";
-  printfSend(NULL, "Kicking all clients: %s\n", kickReason);
-
+  printfSend(NULL, "Kicking all clients, reason:%s\n", kickReason);
+  char chsExitInfo[100];
+  snprintf(chsExitInfo, sizeof chsExitInfo, "所有客户端下线 %s", kickReason);
   for (ClientNode_t* next, * curr = clientList.head; curr; curr = next) {
-      next = curr->next; 
-      CloseClient(curr, false, kickReason); // 使用 FALSE 表示外部调用
+    next = curr->next;
+    CloseClient(curr, false, chsExitInfo); // 使用 FALSE 表示外部调用
   }
   
   // 重置计数和状态
