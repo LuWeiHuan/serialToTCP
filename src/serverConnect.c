@@ -84,13 +84,18 @@ void ServerConnectInit(bool start)
 static void DisconnectingServer(void)
 { 
   EnterCriticalSection(&csClient);
-  if (client.socket == INVALID_SOCKET) {
+
+  bool ret = getClientIndex(&client.socket, NULL);
+  const char* DisconnectServerInfo = getPrintf("断开之前连接的服务器，套接字：%s%s效", 
+      ret? "存在":"没有", client.socket == INVALID_SOCKET? "无":"有"); 
+  if (ret == false || client.socket == INVALID_SOCKET) {
+    // SafePrintf("%s\n", DisconnectServerInfo);
     LeaveCriticalSection(&csClient);
     return;
   }
 
   printfSend(&client.socket, "Connect New Server, You are Disconnect!\n" ); 
-  CloseClientExt( &client.socket, "断开之前连接的服务器");
+  CloseClientSocket( &client.socket, DisconnectServerInfo);
   // closesocket(client.socket);
   client.socket = INVALID_SOCKET;
   LeaveCriticalSection(&csClient);
@@ -103,7 +108,7 @@ static void DisconnectingServer(void)
  * @param ResultCallback 连接结果通知回调
  * @param arg   连接结果通知回调 携带的参数
  * @return 无
- * @attention 
+ * @attention 连接新服务器之前，如果之前已经连接会断开
  */
 void ConnectToServer(const char* host, uint16_t port, 
           connectResultCallback ResultCallback, void *arg)
@@ -114,11 +119,11 @@ void ConnectToServer(const char* host, uint16_t port,
   if (client.state == CONNECT_STATE_CONNECTING || client.thread ) {
       if( ResultCallback )
         ResultCallback(client.state, arg, client.hsot, client.serverPort, 
-          CONNECT_TIMEOUT_MS - (GetCurrentTimeMs() - client.startTimeMs));
+          CONNECT_TIMEOUT_MS - (getRuningTimeMs() - client.startTimeMs));
       LeaveCriticalSection(&csClient);
       return;
   }
-
+  
   client.state = CONNECT_STATE_CONNECTING;  // 设置连接状态
   strcpy(client.hsot, host);
   client.serverPort = port;
@@ -129,8 +134,6 @@ void ConnectToServer(const char* host, uint16_t port,
   client.thread = CreateThread(NULL, 0, ConnectServerThread, &client, 0, NULL);
   if (client.thread == NULL) {
     SafePrintf("Failed to create Connect Server thread\n");
-    closesocket(client.socket);
-    client.socket = INVALID_SOCKET;
     client.state = CONNECT_STATE_FAILURE_DISCONNECTED;
     if( ResultCallback )
       ResultCallback(client.state, arg, client.hsot, client.serverPort, 0);
@@ -151,15 +154,14 @@ static DWORD WINAPI ConnectServerThread(LPVOID lpParam)
     return 0;
   }
 
-  clientInfo->startTimeMs = GetCurrentTimeMs();
-  bool ret = startConnectToServer(clientInfo->hsot, 
+  clientInfo->startTimeMs = getRuningTimeMs();
+  bool ConnectRet = startConnectToServer(clientInfo->hsot, 
       clientInfo->serverPort, CONNECT_TIMEOUT_MS, 
-      &clientInfo->socket, 
-      clientInfo->serverIP);
+      &clientInfo->socket, clientInfo->serverIP);
 
- if( ret ){  // 连接成功将连接交给clients.c管理
-    ret = addNewClient(clientInfo->socket, clientInfo->serverIP);
-    if (ret == false) {
+ if( ConnectRet ){  // 连接成功将连接交给clients.c管理
+    ConnectRet = addNewClient(clientInfo->socket, clientInfo->serverIP);
+    if (ConnectRet == false) {
       SafePrintf("Failed to add client to management\n");
       closesocket(clientInfo->socket);
       clientInfo->socket = INVALID_SOCKET; 
@@ -167,7 +169,7 @@ static DWORD WINAPI ConnectServerThread(LPVOID lpParam)
  }
 
   EnterCriticalSection(&csClient); 
-  clientInfo->state = ret? 
+  clientInfo->state = ConnectRet? 
       CONNECT_STATE_CONNECTED : CONNECT_STATE_FAILURE_DISCONNECTED;
   
   if( clientInfo->Callback )
@@ -178,8 +180,6 @@ static DWORD WINAPI ConnectServerThread(LPVOID lpParam)
   clientInfo->thread = NULL;
   return 0;
 }
-
-
 
 // 域名解析
 bool ResolveDomainName(const char* domain, char* ipBuffer, uint8_t bufferSize)

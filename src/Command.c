@@ -54,7 +54,7 @@ static void cmdOpenSerialCom(SOCKET*, char*);
 static void cmdDoNotConnectCOM2TCP(SOCKET*, char*);
 static void cmdSetLogPollCut(SOCKET*, char*);
 static void cmdKickAllClients(SOCKET*, char*);
-
+static void cmdsetCOM4KByteRecvNum(SOCKET*, char*);
 
 /*================== 命令映射表     =========================================*/
 static const CommandEntry cmdTable[] = {
@@ -65,6 +65,7 @@ static const CommandEntry cmdTable[] = {
   {"PrintAllclientIP",      cmdPrintAllclientIP},
   {"setCOMasyncSend",       cmdSetComAsyncSend},
   {"setCOMasyncRecv",       cmdSetComAsyncRecv},
+  {"setCOM4KByteNum",       cmdsetCOM4KByteRecvNum},
   {"setCOMdata",            cmdSetMonopolize},
   {"exit",                  cmdServerOverExit},
   {"serverPrintData",       cmdDataPrintMode},
@@ -80,6 +81,9 @@ static const CommandEntry cmdTable[] = {
 
 /*================== 外部函数声明   =========================================*/
 /*================== 外部变量声明   =========================================*/
+
+
+
 
 /**
  * @brief 处理客户端发过来的指令
@@ -118,14 +122,21 @@ static void cmdKickAllClients(SOCKET *Socket, char* commandData)
   if( getClientNum() == 0) 
     return; 
 
+  const char *exitInfo;
   if( getDiscoverySocket() == *Socket ) {
-    const char *exitInfo = getPrintf("UDP IP %s:%d", 
+    exitInfo = getPrintf("Discovery UDP IP [%s]:%d",
         getDiscoveryNewClientIPAddr(), getDiscoveryNewClientPort());
-    KickAllClients(exitInfo);
-    return;
   }
+  else{
+    uint16_t ClientIndex = 0;
+    bool getRet = getClientIndex(Socket, &ClientIndex); 
+    exitInfo = getPrintf("Client TPC IP [%d]:%s", getRet? ClientIndex:-1, 
+        getRet? getClientIP(ClientIndex):"invalid");
+  }
+  SafePrintf("\033[H\033[J 全员下线 %s\n", exitInfo); 
+  KickAllClients(exitInfo);
 
-  printfSend(Socket, "Sorry, it can't be achieved for the time being\n" );
+  //printfSend(Socket, "Sorry, it can't be achieved for the time being\n" );
 }
 
 // 收发日志是否滚动
@@ -138,33 +149,27 @@ static void cmdSetLogPollCut(SOCKET *Socket, char* commandData)
     if( strnicmp(token, "Recv", strlen("Recv") ) == 0 )
       runInfo.COMrecvPoll = !runInfo.COMrecvPoll;
     else if( strnicmp(token, "send", strlen("send") ) == 0 )
-      runInfo.COMSendPoll = !runInfo.COMSendPoll;
+      runInfo.COMsendPoll = !runInfo.COMsendPoll;
     else{
       runInfo.COMrecvPoll = !runInfo.COMrecvPoll;
-      runInfo.COMSendPoll = !runInfo.COMSendPoll;
+      runInfo.COMsendPoll = !runInfo.COMsendPoll;
     }
   }
   else{
     runInfo.COMrecvPoll = !runInfo.COMrecvPoll;
-    runInfo.COMSendPoll = !runInfo.COMSendPoll;
+    runInfo.COMsendPoll = !runInfo.COMsendPoll;
   }
   
   const char *setInfo = getPrintf( "Set log Poll [send %-3s | recv %-3s]\n",
-    runInfo.COMSendPoll? "YES":"NO", runInfo.COMrecvPoll? "YES":"NO" );
+    runInfo.COMsendPoll? "YES":"NO", runInfo.COMrecvPoll? "YES":"NO" );
   broadcastSendHandleResult(Socket, setInfo);
-}
-
-// 异步自我关闭
-static void AsyncSelfCloseClient(void *arg)
-{
-  CloseClientExt((SOCKET*)arg, "请不要互联串口转服务器程序！");
 }
 
 static void cmdDoNotConnectCOM2TCP(SOCKET *Socket, char* commandData)
 {
   (void)commandData;
   printfSend(Socket, "Please do not connect COM2TCP!\n" );
-  addAsyncFuncHandle(AsyncSelfCloseClient, Socket);
+  CloseClientSocket(Socket, "请不要互联串口转服务器程序！");
 }
 
 static void cmdComlist(SOCKET *Socket, char* commandData)
@@ -262,6 +267,20 @@ static void cmdSetComAsyncRecv(SOCKET *Socket, char* commandData)
   broadcastSendHandleResult(Socket, setInfo);
 }
 
+static void cmdsetCOM4KByteRecvNum(SOCKET *Socket, char* commandData)
+{
+  char *token = strtok(commandData, DECOLLATOR);
+  token = strtok(NULL, DECOLLATOR); // 4Kbyte 数量
+  uint8_t in4KBnum = atoi(token? token : "0");
+  uint8_t max4KBnum = ((RECV_BUFFER_SIZE) / 4096) - 1 ;
+
+  if( in4KBnum > max4KBnum )
+    in4KBnum = max4KBnum;
+  runInfo.COMrecv4Knum = in4KBnum * 4096;
+  printfSend(Socket, "Set COM revc 4KByte Number: %d/%d\n", 
+        in4KBnum, max4KBnum);
+}
+
 // 设置独占信息
 static void cmdSetMonopolize(SOCKET *Socket, char* commandData)
 {
@@ -347,7 +366,7 @@ static void cmdRunSystemCmd(SOCKET *Socket, char* commandData)
   char *token = strtok(commandData, DECOLLATOR);
   token = strtok(NULL, DECOLLATOR); // 指令 
   int ret = system(token);
-  printfSend(Socket, "execute system %s :%d\n", 
+  printfSend(Socket, "execute system cmd %s :%d\n", 
       ret == 0? "success": "failed", ret);
 }
 
@@ -447,7 +466,7 @@ static void cmdOpenSerialCom(SOCKET *Socket, char* commandData)
 
   if ( ComPort->isOpen ){ 
     char *reason = getPrintf("Open New %s", portName);
-    CloseComPort(reason, false);
+    CloseComPort(reason);
   }
 
   printfSend(Socket, "opening %s...\n", portName);
@@ -467,6 +486,6 @@ static void broadcastSendHandleResult(SOCKET *Socket, const char *info)
 { 
   uint16_t sendLen = strlen(info);
   if( getDiscoverySocket() == *Socket )
-    sendDataToClients(Socket, info, sendLen);
-  sendDataToClients(NULL, info, sendLen);
+    printfSend(Socket, info, sendLen);
+  printfSend(NULL, info, sendLen);
 }

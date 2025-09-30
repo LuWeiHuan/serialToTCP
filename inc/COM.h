@@ -31,8 +31,8 @@ extern ComPortInfo_t const * const ComPort;
 void ComPortResourceInit(bool start);
 const char *getComPortList(bool VPID);
 int8_t OpenComPort(const char* portName, uint32_t baudRate, uint8_t dataBits, uint8_t stopBits, uint8_t parity);
-DWORD ComPortSendData(char const *tcpRecvBuffer, int bytesReceived, DWORD *retError);
-void CloseComPort(const char * reason, bool isSelfCall);
+int ComPortSendData(char const *tcpRecvBuffer, int bytesReceived, DWORD *retError);
+void CloseComPort(const char * reason);
 
 BOOL COM_UseAsyncRecv(uint16_t num);
 BOOL COM_UseAsyncSend(uint16_t num);

@@ -52,9 +52,9 @@ static bool startServer(int argc, char const *argv[]);
 =============================================================================*/
 int main(int argc, char const *argv[])
 {
-  GetCurrentTimeMs();
+  getRuningTimeMs();
   printBuildInfo();
-  SetupExceptionHandler();
+  InitializeProcessExceptionMonitor();
   
   logPrintResourceInit(true);
   microFuncCodeTest();
@@ -79,7 +79,7 @@ int main(int argc, char const *argv[])
     if( listenStartRet == -1 ) 
       break;
     if( listenStartRet && listenStartRet != 0 ){
-      updataConsoleTitle("Main", GetCurrentThreadId());
+      updataConsoleTitle("Main");
       continue;
     }
 
@@ -97,6 +97,7 @@ int main(int argc, char const *argv[])
   DeviceChangeMonitor(false);
   startAsyncFuncHandle(false);
   logPrintResourceInit(false);
+  CleanupProcessExceptionMonitor();
   WSACleanup();
   printf("main Program exit\n");
   return 0;

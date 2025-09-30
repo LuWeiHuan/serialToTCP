@@ -112,7 +112,7 @@ int SafePrintf(const char* format, ...)
  返   回：无
  描   述：无
 =============================================================================*/
-void printf_hex8(const uint8_t *pdata, uint16_t len, uint8_t numEnter, uint8_t endEnter)
+void printHex(const uint8_t *pdata, uint16_t len, uint8_t numEnter, uint8_t endEnter)
 {
   EnterCriticalSection(&g_log_cs);
   static char outputBuffer[4096];  // 更大的缓冲区，可以容纳更多数据

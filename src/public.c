@@ -36,8 +36,9 @@ runInfo_t  runInfo = {
   .serverPrintData = 0,
   .monopolizeComRecvIndex = NULL,
   .monopolizeComSendIndex = NULL,
-  .COMrecvPoll = true,
-  .COMSendPoll = true,
+  .COMsendPoll = false,
+  .COMrecvPoll = false,
+  .COMrecv4Knum = (RECV_BUFFER_SIZE) - 4096 - 1,
 };
 
 /*================== 本地常量声明    ========================================*/
@@ -46,7 +47,7 @@ runInfo_t  runInfo = {
 /*================== 外部函数和变量声明    ==================================*/
 
 // 获取从运行到现在的间戳（毫秒）程序运行要调用一次
-uint64_t GetCurrentTimeMs(void) 
+uint64_t getRuningTimeMs(void) 
 {
   struct _timeb timebuffer; 
   _ftime_s(&timebuffer);
@@ -54,48 +55,44 @@ uint64_t GetCurrentTimeMs(void)
   static uint64_t initialTimeMs = 0;
   if( initialTimeMs == 0 ){
     initialTimeMs = timebuffer.time * 1000 + timebuffer.millitm;
-    time(&runInfo.startTime);  // 获取当前时间（从 1970-01-01 00:00:00 开始的秒数） 
+    runInfo.startTime = time(NULL);  // 获取当前时间（从 1970-01-01 00:00:00 开始的秒数） 
   }
   
   uint64_t atPresent = timebuffer.time * 1000 + timebuffer.millitm;
   return atPresent - initialTimeMs;
 }
 
+// 更新标题栏内容
+void updataConsoleTitle(const char *threadName)
+{
+  time_t currentTime = time(NULL) - runInfo.startTime;
+  uint16_t day = currentTime / 86400;
+  uint8_t hour = currentTime / 3600 % 24;
+  uint8_t min  = currentTime / 60 % 60;
+  uint8_t sec  = currentTime % 60;
 
-void updataConsoleTitle(const char *threadName, DWORD theradID)
-{ 
   char title[100];
-  memset(title, 0, sizeof title);
-  time_t currentTime;
-  time(&currentTime); 
-  currentTime -= runInfo.startTime;
-  //currentTime += 60*60*24 - 6;
+  memset(title, 0, sizeof title); 
 
-  uint8_t sec = currentTime % 60;
-  uint8_t min = currentTime / 60 % 60;
-  uint8_t hour = currentTime / 360 % 24;
-  uint32_t day = currentTime / 86400;
-
+  DWORD theradID = GetCurrentThreadId();
   #ifdef __TRAFFIC_STATS_H_
   if( trafficStats.run && currentTime % 6 < 3 )
     snprintf(title, sizeof title, "串口转TCP     串口:↑ %s  ↓ %s   网络：↑ %s  ↓ %s    线程%ld：%s",
-      trafficStats.com.recvRate,
-      trafficStats.com.sendRate,
-      trafficStats.net.sendRate,
-      trafficStats.net.recvRate,
+      trafficStats.com.recvRate, trafficStats.com.sendRate,
+      trafficStats.net.sendRate, trafficStats.net.recvRate,
       theradID, threadName =! NULL? threadName:"No thread Name");
   else
   #endif
     snprintf(title, sizeof title, "串口转TCP     服务端口号：%d   "
       "已运行%d天：%02d:%02d:%02d  客户端：%d/%d  线程%ld：%s",
-        getMainServerPort(), day, hour, min,sec, getClientNum(), getMaxClient(), 
+        getMainServerPort(), day, hour, min, sec, getClientNum(), getMaxClient(), 
         theradID, threadName =! NULL? threadName:"No thread Name");
   
   SetConsoleTitleA( title );
 }
 
 
-char *getCurrentTime(void) 
+char *getCurrentTimeStringSec(void) 
 {
   static char timeStr[40];
   memset(timeStr, 0, sizeof timeStr);
@@ -181,7 +178,7 @@ char *getSendRecvDirectionStr(char *direct, uint8_t index)
  * 获取计算机全名（DNS全名）
  * 返回值：计算机名字符串
  */
-const char *GetComputerFullName(void) 
+const char *getComputerFullName(void) 
 {
     DWORD nameLen = 0;
     static char computerName[20]; // Win提示计算机名最大15个字符
@@ -214,8 +211,3 @@ bool InitializeWinSocket(void)
       SafePrintf("WSAStartup failed: %d\n", result);
   return result == 0? true:false;
 }
-
-
-
-
-

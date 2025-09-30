@@ -38,7 +38,6 @@
 /*================== 全局共享变量    ========================================*/
 /*================== 本地常量声明    ========================================*/
 /*================== 本地变量声明    ========================================*/
-static bool getIPmethod = true;              // 获取IP的方法
 static volatile BOOL discoveryRunning = FALSE;
 static HANDLE hDiscoveryThread = NULL;
 static SOCKET discoverySocket = INVALID_SOCKET;
@@ -86,98 +85,98 @@ uint16_t getDiscoveryNewClientPort(void)
 // 启动发现服务
 static void DiscoveryServiceStart(void)
 {
-    if (discoveryRunning) 
-        return;
-    
-    InitializeCriticalSection(&csDiscovery);
-    
-    if (!InitializeDiscoverySocket()) {
-        SafePrintf("Failed to initialize discovery socket\n");
-        return;
-    }
- 
-    hDiscoveryThread = CreateThread(NULL, 0, DiscoveryThread, NULL, 0, NULL);
-    discoveryRunning = hDiscoveryThread? TRUE:FALSE;
-    if (hDiscoveryThread == NULL) {
-        closesocket(discoverySocket);
-        discoverySocket = INVALID_SOCKET; 
-        SafePrintf("Failed to create discovery thread\n");
-    }
+  if (discoveryRunning) 
+      return;
+  
+  InitializeCriticalSection(&csDiscovery);
+  
+  if (!InitializeDiscoverySocket()) {
+    SafePrintf("Failed to initialize discovery socket\n");
+    return;
+  }
+
+  hDiscoveryThread = CreateThread(NULL, 0, DiscoveryThread, NULL, 0, NULL);
+  discoveryRunning = hDiscoveryThread? TRUE:FALSE;
+  if (hDiscoveryThread == NULL) {
+    closesocket(discoverySocket);
+    discoverySocket = INVALID_SOCKET; 
+    SafePrintf("Failed to create discovery thread\n");
+  }
 }
 
 // 停止发现服务
 static void DiscoveryServiceStop(void)
 {
-    if (!discoveryRunning)
-        return;
-    discoveryRunning = FALSE;
+  if (!discoveryRunning)
+    return;
+  discoveryRunning = FALSE;
 
-    // 关闭套接字促使线程退出
-    if (discoverySocket != INVALID_SOCKET) {
-        closesocket(discoverySocket);
-        discoverySocket = INVALID_SOCKET;
-    }
-    
-    if (hDiscoveryThread) {
-        WaitForSingleObject(hDiscoveryThread, 1000);
-        CloseHandle(hDiscoveryThread);
-        hDiscoveryThread = NULL;
-    }
+  // 关闭套接字促使线程退出
+  if (discoverySocket != INVALID_SOCKET) {
+    closesocket(discoverySocket);
+    discoverySocket = INVALID_SOCKET;
+  }
+  
+  if (hDiscoveryThread) {
+    WaitForSingleObject(hDiscoveryThread, 1000);
+    CloseHandle(hDiscoveryThread);
+    hDiscoveryThread = NULL;
+  }
 
-    DeleteCriticalSection(&csDiscovery);
-    SafePrintf("Discovery service stopped\n");
+  DeleteCriticalSection(&csDiscovery);
+  SafePrintf("Discovery service stopped\n");
 }
 
 
 // 初始化发现Socket
 static BOOL InitializeDiscoverySocket(void)
 { 
-    discoverySocket = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
-    if (discoverySocket == INVALID_SOCKET) {
-        SafePrintf("Discovery socket creation failed: %d\n", WSAGetLastError());
-        return FALSE;
-    }
+  discoverySocket = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
+  if (discoverySocket == INVALID_SOCKET) {
+    SafePrintf("Discovery socket creation failed: %d\n", WSAGetLastError());
+    return FALSE;
+  }
 
-    // 设置Socket选项：允许广播和地址重用
-    BOOL broadcast = TRUE;
-    if (setsockopt(discoverySocket, SOL_SOCKET, SO_BROADCAST, 
-                  (char*)&broadcast, sizeof(broadcast)) == SOCKET_ERROR) {
-        SafePrintf("Set SO_BROADCAST failed: %d\n", WSAGetLastError());
-        closesocket(discoverySocket);
-        discoverySocket = INVALID_SOCKET;
-        return FALSE;
-    }
+  // 设置Socket选项：允许广播和地址重用
+  BOOL broadcast = TRUE;
+  if (setsockopt(discoverySocket, SOL_SOCKET, SO_BROADCAST, 
+                (char*)&broadcast, sizeof(broadcast)) == SOCKET_ERROR) {
+    SafePrintf("Set SO_BROADCAST failed: %d\n", WSAGetLastError());
+    closesocket(discoverySocket);
+    discoverySocket = INVALID_SOCKET;
+    return FALSE;
+  }
 
-    BOOL reuseAddr = TRUE;
-    if (setsockopt(discoverySocket, SOL_SOCKET, SO_REUSEADDR, 
-                  (char*)&reuseAddr, sizeof(reuseAddr)) == SOCKET_ERROR) {
-        SafePrintf("Set SO_REUSEADDR failed: %d\n", WSAGetLastError());
-    }
+  BOOL reuseAddr = TRUE;
+  if (setsockopt(discoverySocket, SOL_SOCKET, SO_REUSEADDR, 
+                (char*)&reuseAddr, sizeof(reuseAddr)) == SOCKET_ERROR) {
+    SafePrintf("Set SO_REUSEADDR failed: %d\n", WSAGetLastError());
+  }
 
-    // 绑定到发现端口
-    struct sockaddr_in serverAddr;
-    memset(&serverAddr, 0, sizeof(serverAddr));
-    serverAddr.sin_family = AF_INET;
-    serverAddr.sin_addr.s_addr = htonl(INADDR_ANY);
-    serverAddr.sin_port = htons(DISCOVERY_PORT);
+  // 绑定到发现端口
+  struct sockaddr_in serverAddr;
+  memset(&serverAddr, 0, sizeof(serverAddr));
+  serverAddr.sin_family = AF_INET;
+  serverAddr.sin_addr.s_addr = htonl(INADDR_ANY);
+  serverAddr.sin_port = htons(DISCOVERY_PORT);
 
-    if (bind(discoverySocket, (struct sockaddr*)&serverAddr, sizeof(serverAddr)) == SOCKET_ERROR) {
-        SafePrintf("Discovery bind failed: %d\n", WSAGetLastError());
-        closesocket(discoverySocket);
-        discoverySocket = INVALID_SOCKET;
-        return FALSE;
-    }
+  if (bind(discoverySocket, (struct sockaddr*)&serverAddr, sizeof(serverAddr)) == SOCKET_ERROR) {
+    SafePrintf("Discovery bind failed: %d\n", WSAGetLastError());
+    closesocket(discoverySocket);
+    discoverySocket = INVALID_SOCKET;
+    return FALSE;
+  }
 
-    // 设置非阻塞模式
-    u_long nonBlocking = 1;
-    if (ioctlsocket(discoverySocket, FIONBIO, &nonBlocking) == SOCKET_ERROR) {
-        SafePrintf("Set non-blocking failed: %d\n", WSAGetLastError());
-        closesocket(discoverySocket);
-        discoverySocket = INVALID_SOCKET;
-        return FALSE;
-    }
+  // 设置非阻塞模式
+  u_long nonBlocking = 1;
+  if (ioctlsocket(discoverySocket, FIONBIO, &nonBlocking) == SOCKET_ERROR) {
+    SafePrintf("Set non-blocking failed: %d\n", WSAGetLastError());
+    closesocket(discoverySocket);
+    discoverySocket = INVALID_SOCKET;
+    return FALSE;
+  }
 
-    return TRUE;
+  return TRUE;
 }
 
 // 发现服务线程
@@ -199,7 +198,7 @@ static DWORD WINAPI DiscoveryThread(LPVOID lpParam)
   
   while (discoveryRunning) {
     // 更新控制台标题显示发现服务状态
-    updataConsoleTitle(DiscoveryServerString, GetCurrentThreadId());
+    updataConsoleTitle(DiscoveryServerString);
 
     FD_ZERO(&readSet);
     FD_SET(discoverySocket, &readSet);
@@ -231,41 +230,46 @@ static DWORD WINAPI DiscoveryThread(LPVOID lpParam)
     }
     else if (strnicmp(recvBuffer, CTRL_HEADER, strlen(CTRL_HEADER)) == 0){
       if (runInfo.serverPrintData == 3)
-        SafePrintf("UDP COM info:%-60s\n", recvBuffer);
-
-      // 连接UDP套接字到特定服务器
+        SafePrintf("UDP [%s]:%d CMD: %-60s\n", inet_ntoa(newClientInfo.sin_addr), 
+                ntohs(newClientInfo.sin_port), recvBuffer);
+      
+      // 连接UDP套接字到特定服务器，方便使用send发送数据
       connect(discoverySocket, (struct sockaddr*)&newClientInfo, sizeof newClientInfo); 
       HandleClientCommand(&discoverySocket, recvBuffer + strlen(CTRL_HEADER));
-    }
-    
-    // SafePrintf("Discovery request from %s:%d\n", 
-    //           inet_ntoa(clientAddr.sin_addr), ntohs(clientAddr.sin_port));
-  }
 
+      // 这里是进行程序异常退出捕获测试的位置，用于程序自我错误定位
+      #if 0
+      if( strnicmp(recvBuffer, CTRL_HEADER"errorTest", strlen(CTRL_HEADER"errorTest")) == 0 )
+        for( int8_t i = -2; i < 2; i++)
+          SafePrintf("开始异常除法运算 8 / %d = %d\n", i, 8/i);
+      #endif
+    }
+  }
+  
   SafePrintf("Discovery thread exiting\n");
   return 0;
 }
 
+
+
 static void SendDiscoveryResponse(struct sockaddr_in* clientAddr)
 { 
   static uint16_t count = 0;
-  char responseBuffer[RESPONSE_BUFFER_SIZE]; 
-  const char *getServerIP = "NULL IP"; 
-
   EnterCriticalSection(&csDiscovery);
-
-  const char *ComputerFullName = GetComputerFullName();
-
+  
+  static bool getIPmethod = true;   // 获取IP的方法
+  const char *getServerIP = "NULL IP"; 
   if( getIPmethod == true )   // 方法1：使用socket连接方式获取正确IP（更可靠）
-    getServerIP = GetMatchingSubnetIP(clientAddr );
+    getServerIP = GetMatchingSubnetIP(clientAddr);
   else                        // 方法2：或者使用网段匹配算法
     getServerIP = SelectMatchingSubnetIP(clientAddr);
   
   // 构建响应消息
-  snprintf(responseBuffer, sizeof responseBuffer,
-          "%s|%-15s|%-15s|%d|%u|%u\n", DISCOVERY_MAGIC,
-          ComputerFullName, getServerIP,
-          getMainServerPort(), getClientNum(), getMaxClient());
+  const char *ComputerFullName = getComputerFullName();
+  char responseBuffer[RESPONSE_BUFFER_SIZE]; 
+  snprintf(responseBuffer, sizeof responseBuffer, "%s|%-15s|%-15s|%d|%u|%u\n",
+      DISCOVERY_MAGIC, ComputerFullName, getServerIP,
+      getMainServerPort(), getClientNum(), getMaxClient());
   
   LeaveCriticalSection(&csDiscovery);
 

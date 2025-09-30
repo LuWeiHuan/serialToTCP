@@ -54,6 +54,7 @@
     "exception.h": "c",
     "networkconnect.h": "c",
     "hostconnect.h": "c",
-    "ratio": "c"
+    "ratio": "c",
+    "chrono": "c"
   }
 }

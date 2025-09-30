@@ -22,7 +22,7 @@ typedef enum {
 } ConnectState_t;
 
 typedef void(*connectResultCallback)(ConnectState_t state, 
-                  void*arg, const char * IP, uint16_t port, uint16_t residueTimeMs);
+    void*arg, const char *IP, uint16_t port, uint16_t residueTimeMs);
 
 /*================== 外部变量声明   =========================================*/
 //extern

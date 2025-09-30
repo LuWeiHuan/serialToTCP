@@ -306,3 +306,16 @@ const char * SelectMatchingSubnetIP(struct sockaddr_in* clientAddr)
   return retMyIP;
 }
 
+// INET6_ADDRSTRLEN
+bool getSockfdPeerInfo(int sockfd, char *retIPstr, uint16_t *retPort) 
+{
+  struct sockaddr_in peer_addr;
+  socklen_t addr_len = sizeof(peer_addr);
+  int ret = getpeername(sockfd, (struct sockaddr*)&peer_addr, &addr_len);
+ 
+ if( ret == 0 && retIPstr)
+    inet_ntop(AF_INET, &peer_addr.sin_addr, retIPstr, INET6_ADDRSTRLEN);
+ if( ret == 0 && retPort)
+    *retPort = ntohs(peer_addr.sin_port);
+  return ret == 0? true:false;
+}

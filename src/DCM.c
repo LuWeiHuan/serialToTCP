@@ -59,7 +59,7 @@ static LRESULT CALLBACK DeviceMonitorWndProc(HWND hWnd, UINT message, WPARAM wPa
 static void HandleDeviceChange(WPARAM wParam, LPARAM lParam)
 {
     PDEV_BROADCAST_HDR pHdr = (PDEV_BROADCAST_HDR)lParam; (void)pHdr;
-    updataConsoleTitle("DCM changed",  GetCurrentThreadId());
+    updataConsoleTitle("DCM changed");
     switch (wParam)
     {
         #if 0
@@ -143,7 +143,7 @@ static DWORD WINAPI DeviceChangeMonitorThread(LPVOID lpParam)
     
     MSG msg;
     while (g_bDeviceChangeThreadRunning && GetMessage(&msg, NULL, 0, 0)) {
-      updataConsoleTitle("DCM Thread",  GetCurrentThreadId());
+      updataConsoleTitle("DCM Thread");
       TranslateMessage(&msg);
       DispatchMessage(&msg);
     }

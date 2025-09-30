@@ -11,6 +11,10 @@ extern "C" {
 #include <stdbool.h>
 
 /*================== 宏定义声明			=========================================*/
+// 定义控制宏
+
+
+
 /*================== 数据类型声明		=========================================*/
 //struct enum union
 
@@ -19,7 +23,27 @@ extern "C" {
 
 /*================== 外部函数声明		=========================================*/
 
-void SetupExceptionHandler();
+/**
+ * @brief 初始化进程异常监控
+ */
+void InitializeProcessExceptionMonitor(void);
+
+/**
+ * @brief 清理进程异常监控
+ */
+void CleanupProcessExceptionMonitor(void);
+
+/**
+ * @brief 设置异常日志路径
+ * @param logPath 日志文件路径
+ */
+void SetExceptionLogPath(const char* logPath);
+
+/**
+ * @brief 获取最后一次异常信息
+ * @return 异常信息字符串
+ */
+const char* GetLastExceptionInfo(void);
 #ifdef __cplusplus
 }
 #endif

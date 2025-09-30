@@ -64,7 +64,7 @@ static DWORD WINAPI TrafficMonitorThread(LPVOID lpParam)
     
     if( ++updataConsoConut > 1 ){
       updataConsoConut = 0;
-      updataConsoleTitle("TrafficMonitor", GetCurrentThreadId());
+      updataConsoleTitle("TrafficMonitor");
     }
     Sleep( 1000 );// 统计间隔1秒
   }

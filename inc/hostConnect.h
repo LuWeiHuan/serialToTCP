@@ -25,7 +25,7 @@ bool startConnectToServer(const char* host, uint16_t port,
 
 const char* GetMatchingSubnetIP(struct sockaddr_in* clientAddr);
 const char* SelectMatchingSubnetIP(struct sockaddr_in* clientAddr);
-        
+bool getSockfdPeerInfo(int sockfd, char *retIPstr, uint16_t *retPort);
 #ifdef __cplusplus
 }
 #endif

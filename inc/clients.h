@@ -17,8 +17,8 @@ extern "C" {
 /*================== 数据类型声明		=========================================*/
 //struct enum union
 typedef struct {
-    const uint16_t *const count;
-    uint16_t  max;
+  uint16_t count;
+  uint16_t max;
 }ClientsNum_t;
 
 /*================== 外部变量声明		=========================================*/
@@ -27,7 +27,7 @@ typedef struct {
 /*================== 外部函数声明		=========================================*/
 void ClientResourceInit(bool start);
 bool addNewClient(SOCKET socket, const char *ip);
-void CloseClientExt(const SOCKET *socket, const char *reason);
+void CloseClientSocket(const SOCKET *socket, const char *reason);
 
 int sendDataToClients(const SOCKET *Socket, const char* buff, int len);
 int printfSend(const SOCKET *Socket, const char *fmt, ...) __attribute__ ((__format__ (__printf__, 2, 3)));
@@ -38,16 +38,21 @@ const char *getClientIP(uint16_t index);
 void getAllClientIPandIndexInfo(char *retStr, uint16_t len);
 void KickAllClients(const char* reason);
 
-inline uint16_t getClientNum(void){
+extern ClientsNum_t const * const g_clientsNum;
+#if 0
+inline uint16_t getClientNum(void){ 
   extern ClientsNum_t const * const g_clientsNum;
-  return *g_clientsNum->count;
+  return g_clientsNum->count;
 }
 
 inline uint16_t getMaxClient(void){
   extern ClientsNum_t const * const g_clientsNum;
   return g_clientsNum->max;
 }
-
+#else
+#define getClientNum() g_clientsNum->count
+#define getMaxClient() g_clientsNum->max
+#endif
 #ifdef __cplusplus
 }
 #endif
