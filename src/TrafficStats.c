@@ -25,7 +25,7 @@ GlobalTrafficStats_t trafficStats;
 /*================== 本地常量声明    ========================================*/
 /*================== 本地变量声明    ========================================*/
 /*================== 本地函数声明    ========================================*/
-static DWORD WINAPI TrafficMonitorThread(LPVOID lpParam);
+static DWORD WINAPI TrafficMonitorThread(void *lpParam);
 static void formatSpeedString(uint64_t bytesPerSec, char* output, uint16_t retMax) ;
 
 /*================== 外部函数和变量声明    ==================================*/
@@ -38,7 +38,7 @@ void startTrafficMonitor(void)
   CreateThread(NULL, 0, TrafficMonitorThread, NULL, 0, NULL);
 }
 
-static DWORD WINAPI TrafficMonitorThread(LPVOID lpParam)
+static DWORD WINAPI TrafficMonitorThread(void *lpParam)
 {
   (void)( lpParam );
   uint8_t updataConsoConut = 0;

@@ -1,46 +1,43 @@
 
 /******************************************************************************
-  * @file    ÎÄ¼ş serverConnect.c 
-  * @author  ×÷Õß 
-  * @version °æ±¾ V1.0
-  * @date    ÈÕÆÚ 2025-08-17
-  * @brief   ¼ò½é Á¬½ÓÆäËû·şÎñÆ÷
-  * Win»·¾³ÏÂÓÃCÓïÑÔ±àĞ´Ò»¸öTCP¿Í»§¶ËÁ¬½ÓÔ¶¶Ë·şÎñ¶Ë³ÌĞò£¬Ê¹ÓÃ¶ÀÁ¢Ïß³ÌÍê³É½ÓÊÕÊı¾İ£¬
-  * Ê¹ÓÃ·Ç×èÈû½ÓÊÕ£¬³¬Ê±Ñ¡¶¨ÔÚ1s£¬Ö÷Ñ­»·ÓÃÒÔ×öÆäËûÊÂÇé£¬±àĞ´Ò»¸öº¯Êı£¬
-  * ´«µİ·şÎñÆ÷IP¶Ë¿ÚºÅ£¬Èç¹ûÖ®Ç°ÒÑ¾­¾Í¶Ï¿ªÖ®Ç°µÄÁ¬½Ó£¬·ÀÖ¹¶à½ø³Ìµ÷ÓÃÔì³ÉÆµ·±Á¬½Ó
+  * @file    æ–‡ä»¶ serverConnect.c 
+  * @author  ä½œè€… 
+  * @version ç‰ˆæœ¬ V1.0
+  * @date    æ—¥æœŸ 2025-08-17
+  * @brief   ç®€ä»‹ è¿æ¥å…¶ä»–æœåŠ¡å™¨
+  * Winç¯å¢ƒä¸‹ç”¨Cè¯­è¨€ç¼–å†™ä¸€ä¸ªTCPå®¢æˆ·ç«¯è¿æ¥è¿œç«¯æœåŠ¡ç«¯ç¨‹åºï¼Œä½¿ç”¨ç‹¬ç«‹çº¿ç¨‹å®Œæˆæ¥æ”¶æ•°æ®ï¼Œ
+  * ä½¿ç”¨éé˜»å¡æ¥æ”¶ï¼Œè¶…æ—¶é€‰å®šåœ¨1sï¼Œä¸»å¾ªç¯ç”¨ä»¥åšå…¶ä»–äº‹æƒ…ï¼Œç¼–å†™ä¸€ä¸ªå‡½æ•°ï¼Œ
+  * ä¼ é€’æœåŠ¡å™¨IPç«¯å£å·ï¼Œå¦‚æœä¹‹å‰å·²ç»å°±æ–­å¼€ä¹‹å‰çš„è¿æ¥ï¼Œé˜²æ­¢å¤šè¿›ç¨‹è°ƒç”¨é€ æˆé¢‘ç¹è¿æ¥
   * 
-  * Á¬½Ó·şÎñÆ÷      serverConnect,192.168.1.100,9000
-  * ÓòÃû½âÎö²âÊÔ    serverConnect,google.com,80 
-  * ¶Ï¿ªÁ¬½Ó        serverConnect,disconnect
+  * è¿æ¥æœåŠ¡å™¨      serverConnect,192.168.1.100,9000
+  * åŸŸåè§£ææµ‹è¯•    serverConnect,google.com,80 
+  * æ–­å¼€è¿æ¥        serverConnect,disconnect
   ******************************************************************************
-  * @attention ×¢Òâ
+  * @attention æ³¨æ„
   *
   *
   *******************************************************************************
 */
 
-/*================== Í·ÎÄ¼ş°üº¬     =========================================*/
+/*================== å¤´æ–‡ä»¶åŒ…å«     =========================================*/
 #include "ServerConnect.h"
 #include "logPrint.h"
 #include "public.h"
 #include "clients.h"
 #include "hostConnect.h"
-#include "main.h"
 
-#include <stdio.h>
-#include <stdlib.h>
 #include <string.h>
 #include <winsock2.h>
 #include <windows.h>
 
-#include <ws2tcpip.h>  // Ìí¼ÓÓÃÓÚÓòÃû½âÎöµÄÍ·ÎÄ¼ş
+#include <ws2tcpip.h>  // æ·»åŠ ç”¨äºåŸŸåè§£æçš„å¤´æ–‡ä»¶
 
-/*================== ±¾µØÊı¾İÀàĞÍ   =========================================*/
+/*================== æœ¬åœ°æ•°æ®ç±»å‹   =========================================*/
 typedef struct {
   ConnectState_t  state;
   uint64_t        startTimeMs;
   SOCKET          socket;
-  char            serverIP[46];    // Ö§³ÖIPv6µÄ×î´ó³¤¶È
+  char            serverIP[46];    // æ”¯æŒIPv6çš„æœ€å¤§é•¿åº¦
   uint16_t        serverPort;
   HANDLE          thread;
   char            hsot[256];
@@ -48,10 +45,10 @@ typedef struct {
   void            *arg;
 }connectServer_t;
 
-/*================== ±¾µØºê¶¨Òå     =========================================*/
-/*================== È«¾Ö¹²Ïí±äÁ¿   =========================================*/
-/*================== ±¾µØ³£Á¿ÉùÃ÷   =========================================*/
-/*================== ±¾µØ±äÁ¿ÉùÃ÷   =========================================*/
+/*================== æœ¬åœ°å®å®šä¹‰     =========================================*/
+/*================== å…¨å±€å…±äº«å˜é‡   =========================================*/
+/*================== æœ¬åœ°å¸¸é‡å£°æ˜   =========================================*/
+/*================== æœ¬åœ°å˜é‡å£°æ˜   =========================================*/
 
 static connectServer_t client = {
   .state = CONNECT_STATE_FAILURE_DISCONNECTED,
@@ -66,28 +63,28 @@ static connectServer_t client = {
 
 static CRITICAL_SECTION csClient;
 
-/*================== ±¾µØº¯ÊıÉùÃ÷   =========================================*/
-static DWORD WINAPI ConnectServerThread(LPVOID lpParam);
+/*================== æœ¬åœ°å‡½æ•°å£°æ˜   =========================================*/
+static DWORD WINAPI ConnectServerThread(void *lpParam);
 
-/*================== Íâ²¿º¯ÊıÉùÃ÷   =========================================*/
-/*================== Íâ²¿±äÁ¿ÉùÃ÷   =========================================*/
+/*================== å¤–éƒ¨å‡½æ•°å£°æ˜   =========================================*/
+/*================== å¤–éƒ¨å˜é‡å£°æ˜   =========================================*/
 
 void ServerConnectInit(bool start)
 {
-  if( start ) // ³õÊ¼»¯ÁÙ½çÇø£¨ÔÚ³ÌĞòÆô¶¯Ê±µ÷ÓÃ£©
+  if( start ) // åˆå§‹åŒ–ä¸´ç•ŒåŒºï¼ˆåœ¨ç¨‹åºå¯åŠ¨æ—¶è°ƒç”¨ï¼‰
     InitializeCriticalSection(&csClient);
-  else        // ÇåÀí×ÊÔ´£¨ÔÚ³ÌĞòÍË³öÊ±µ÷ÓÃ£©
+  else        // æ¸…ç†èµ„æºï¼ˆåœ¨ç¨‹åºé€€å‡ºæ—¶è°ƒç”¨ï¼‰
     DeleteCriticalSection(&csClient);
 }
 
-// Èç¹ûÖ®Ç°Á¬½á¹ı·şÎñÆ÷¾Í¶Ï¿ªÖ®Ç°µÄÁ¬½Ó
+// å¦‚æœä¹‹å‰è¿ç»“è¿‡æœåŠ¡å™¨å°±æ–­å¼€ä¹‹å‰çš„è¿æ¥
 static void DisconnectingServer(void)
 { 
   EnterCriticalSection(&csClient);
 
   bool ret = getClientIndex(&client.socket, NULL);
-  const char* DisconnectServerInfo = getPrintf("¶Ï¿ªÖ®Ç°Á¬½ÓµÄ·şÎñÆ÷£¬Ì×½Ó×Ö£º%s%sĞ§", 
-      ret? "´æÔÚ":"Ã»ÓĞ", client.socket == INVALID_SOCKET? "ÎŞ":"ÓĞ"); 
+  const char* DisconnectServerInfo = getPrintf("æ–­å¼€ä¹‹å‰è¿æ¥çš„æœåŠ¡å™¨ï¼Œå¥—æ¥å­—ï¼š%s%sæ•ˆ", 
+      ret? "å­˜åœ¨":"æ²¡æœ‰", client.socket == INVALID_SOCKET? "æ— ":"æœ‰"); 
   if (ret == false || client.socket == INVALID_SOCKET) {
     // SafePrintf("%s\n", DisconnectServerInfo);
     LeaveCriticalSection(&csClient);
@@ -102,20 +99,20 @@ static void DisconnectingServer(void)
 }
 
 /**
- * @brief Á¬½Óµ½·şÎñÆ÷
- * @param host Ö÷»úÃû»òIPµØÖ·£¬µ±Ö÷»úÃûÎª "disconnect" »ò¿Õ ±íÊ¾¶Ï¿ª·şÎñÆ÷Á¬½Ó
- * @param port ¶Ë¿ÚºÅ          µ±¶Ë¿ÚºÅÎª 0 ±íÊ¾¶Ï¿ª·şÎñÆ÷Á¬½Ó
- * @param ResultCallback Á¬½Ó½á¹ûÍ¨Öª»Øµ÷
- * @param arg   Á¬½Ó½á¹ûÍ¨Öª»Øµ÷ Ğ¯´øµÄ²ÎÊı
- * @return ÎŞ
- * @attention Á¬½ÓĞÂ·şÎñÆ÷Ö®Ç°£¬Èç¹ûÖ®Ç°ÒÑ¾­Á¬½Ó»á¶Ï¿ª
+ * @brief è¿æ¥åˆ°æœåŠ¡å™¨
+ * @param host ä¸»æœºåæˆ–IPåœ°å€ï¼Œå½“ä¸»æœºåä¸º "disconnect" æˆ–ç©º è¡¨ç¤ºæ–­å¼€æœåŠ¡å™¨è¿æ¥
+ * @param port ç«¯å£å·          å½“ç«¯å£å·ä¸º 0 è¡¨ç¤ºæ–­å¼€æœåŠ¡å™¨è¿æ¥
+ * @param ResultCallback è¿æ¥ç»“æœé€šçŸ¥å›è°ƒ
+ * @param arg   è¿æ¥ç»“æœé€šçŸ¥å›è°ƒ æºå¸¦çš„å‚æ•°
+ * @return æ— 
+ * @attention è¿æ¥æ–°æœåŠ¡å™¨ä¹‹å‰ï¼Œå¦‚æœä¹‹å‰å·²ç»è¿æ¥ä¼šæ–­å¼€
  */
 void ConnectToServer(const char* host, uint16_t port, 
           connectResultCallback ResultCallback, void *arg)
 { 
   EnterCriticalSection(&csClient);  
 
-  // ·ÀÖ¹ÖØ¸´µ÷ÓÃÁ¬½Ó·şÎñÆ÷
+  // é˜²æ­¢é‡å¤è°ƒç”¨è¿æ¥æœåŠ¡å™¨
   if (client.state == CONNECT_STATE_CONNECTING || client.thread ) {
       if( ResultCallback )
         ResultCallback(client.state, arg, client.hsot, client.serverPort, 
@@ -124,13 +121,13 @@ void ConnectToServer(const char* host, uint16_t port,
       return;
   }
   
-  client.state = CONNECT_STATE_CONNECTING;  // ÉèÖÃÁ¬½Ó×´Ì¬
-  strcpy(client.hsot, host);
+  client.state = CONNECT_STATE_CONNECTING;  // è®¾ç½®è¿æ¥çŠ¶æ€
+  strcpy(client.hsot, host == NULL? "disconnect":host);
   client.serverPort = port;
   client.Callback = ResultCallback;
   client.arg = arg;
 
-  // Æô¶¯Á¬½ÓÆäËü·şÎñÆ÷Ïß³Ì
+  // å¯åŠ¨è¿æ¥å…¶å®ƒæœåŠ¡å™¨çº¿ç¨‹
   client.thread = CreateThread(NULL, 0, ConnectServerThread, &client, 0, NULL);
   if (client.thread == NULL) {
     SafePrintf("Failed to create Connect Server thread\n");
@@ -142,13 +139,13 @@ void ConnectToServer(const char* host, uint16_t port,
   LeaveCriticalSection(&csClient);
 }
 
-static DWORD WINAPI ConnectServerThread(LPVOID lpParam)
+static DWORD WINAPI ConnectServerThread(void *lpParam)
 { 
-  DisconnectingServer();  // Èç¹ûÒÑ¾­Á¬½Ó£¬ÏÈ¶Ï¿ª
+  DisconnectingServer();  // å¦‚æœå·²ç»è¿æ¥ï¼Œå…ˆæ–­å¼€
   connectServer_t* clientInfo = (connectServer_t*)lpParam; 
 
-  if( clientInfo->hsot == NULL || clientInfo->serverPort == 0 ||
-     strnicmp(clientInfo->hsot, "disconnect", strlen("disconnect")) == 0 ){
+  if( strnicmp(clientInfo->hsot, "disconnect", strlen("disconnect")) == 0 ||
+     clientInfo->serverPort == 0 ){
     client.state = CONNECT_STATE_FAILURE_DISCONNECTED;
     clientInfo->thread = NULL;
     return 0;
@@ -159,7 +156,7 @@ static DWORD WINAPI ConnectServerThread(LPVOID lpParam)
       clientInfo->serverPort, CONNECT_TIMEOUT_MS, 
       &clientInfo->socket, clientInfo->serverIP);
 
- if( ConnectRet ){  // Á¬½Ó³É¹¦½«Á¬½Ó½»¸øclients.c¹ÜÀí
+ if( ConnectRet ){  // è¿æ¥æˆåŠŸå°†è¿æ¥äº¤ç»™clients.cç®¡ç†
     ConnectRet = addNewClient(clientInfo->socket, clientInfo->serverIP);
     if (ConnectRet == false) {
       SafePrintf("Failed to add client to management\n");
@@ -181,7 +178,7 @@ static DWORD WINAPI ConnectServerThread(LPVOID lpParam)
   return 0;
 }
 
-// ÓòÃû½âÎö
+// åŸŸåè§£æ
 bool ResolveDomainName(const char* domain, char* ipBuffer, uint8_t bufferSize)
 {
   int getErr = 0;

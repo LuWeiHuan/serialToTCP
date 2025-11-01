@@ -15,10 +15,8 @@
 #include "Queue.h"
 #include "logPrint.h"
 
-#include <winsock2.h>
 #include <windows.h>
 
-#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <stdint.h>
@@ -42,7 +40,7 @@ static DWORD WINAPI AsyncQueueThreadProc(LPVOID lpParam);
  返   回：成功返回真，失败返回假
  描   述：无
 =============================================================================*/
-BOOL startAsyncQueue(AsyncQueue_t *queue, outDataCallBack_t CallBack, 
+bool startAsyncQueue(AsyncQueue_t *queue, outDataCallBack_t CallBack, 
     uint16_t queueNum, uint32_t elementSize, const char *queueName) 
 {
   if( queue == NULL || CallBack == NULL )
@@ -54,7 +52,7 @@ BOOL startAsyncQueue(AsyncQueue_t *queue, outDataCallBack_t CallBack,
       return FALSE;
   }
 
-  if (elementSize < 10) 
+  if( elementSize < 10 ) 
       elementSize = DEFAULT_ELEMENT_SIZE;
 
   if( queue->running )
@@ -154,7 +152,7 @@ static DWORD WINAPI AsyncQueueThreadProc(LPVOID lpParam) {
       ReleaseMutex(queue->hMutex);
       
       // 调用用户提供的回调
-      queue->outDataCallBack(&indexData);
+      queue->outDataCallBack(indexData.data, indexData.len);
     }
   }
   
@@ -209,7 +207,7 @@ void FreeAsyncQueue(AsyncQueue_t *queue)
 }
 
 // 添加数据到发送队列
-BOOL AddDataToAsyncQueue(AsyncQueue_t *queue, const char *data, uint32_t len) {
+bool AddDataToAsyncQueue(AsyncQueue_t *queue, const char *data, uint32_t len) {
 
     if( queue->running == FALSE )
       return FALSE;
@@ -289,9 +287,10 @@ typedef struct {
 } funcHandle_t;
 
 static AsyncQueue_t AsyncFuncHandleQueue;
-static void AsyncFuncHandleCallBack(queueData_t *queueData)
+static void AsyncFuncHandleCallBack(char *data, uint32_t len)
 {
-  funcHandle_t *funcHandle = (funcHandle_t *)queueData->data;
+  (void)len;
+  funcHandle_t *funcHandle = (funcHandle_t *)data;
   if( funcHandle->func )
     funcHandle->func( funcHandle->arg );
 }
@@ -302,7 +301,7 @@ static void AsyncFuncHandleCallBack(queueData_t *queueData)
  返   回：成功返回真，失败返回假
  描   述：无
 =============================================================================*/
-BOOL startAsyncFuncHandle(bool start) 
+bool startAsyncFuncHandle(bool start) 
 {
   if( start )
   return startAsyncQueue(&AsyncFuncHandleQueue, 
@@ -319,7 +318,7 @@ BOOL startAsyncFuncHandle(bool start)
  返   回：成功返回真，失败返回假
  描   述：最好能够快进快出的不要阻塞太久的函数，因为大家都是在一个线程里
 =============================================================================*/
-BOOL addAsyncFuncHandle(funcHandleCallBack_t CallBack, void *arg)
+bool addAsyncFuncHandle(funcHandleCallBack_t CallBack, void *arg)
 {
   funcHandle_t AsyncFunc;
   AsyncFunc.func = CallBack;

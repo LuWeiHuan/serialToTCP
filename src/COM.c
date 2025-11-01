@@ -1,17 +1,17 @@
 /******************************************************************************
-  * @file    ÎÄ¼ş COM.c 
-  * @author  ×÷Õß 
-  * @version °æ±¾ V1.0
-  * @date    ÈÕÆÚ 2025-08-17
-  * @brief   ¼ò½é 
+  * @file    æ–‡ä»¶ COM.c 
+  * @author  ä½œè€… 
+  * @version ç‰ˆæœ¬ V1.0
+  * @date    æ—¥æœŸ 2025-08-17
+  * @brief   ç®€ä»‹ 
   ******************************************************************************
-  * @attention ×¢Òâ
+  * @attention æ³¨æ„
   *
   *
   *******************************************************************************
 */
 
-/*================== Í·ÎÄ¼ş°üº¬     =========================================*/
+/*================== å¤´æ–‡ä»¶åŒ…å«     =========================================*/
 #include "COM.h"
 #include "main.h"
 #include "public.h"
@@ -21,7 +21,6 @@
 #include "Queue.h"
 
 #include <stdio.h>
-#include <stdlib.h>
 #include <string.h>
 #include <stdint.h>
 
@@ -32,22 +31,22 @@
 #include <initguid.h>
 #include <tchar.h>
 
-/*================== ±¾µØºê¶¨Òå     =========================================*/
-/*================== ±¾µØ³£Á¿ÉùÃ÷    ========================================*/
-/*================== ±¾µØ±äÁ¿ÉùÃ÷    ========================================*/
-static  CRITICAL_SECTION csComPort;
+/*================== æœ¬åœ°å®å®šä¹‰     =========================================*/
+/*================== æœ¬åœ°å¸¸é‡å£°æ˜    ========================================*/
+/*================== æœ¬åœ°å˜é‡å£°æ˜    ========================================*/
+static CRITICAL_SECTION csComPort;
 static AsyncQueue_t asyncSendQueue = {0}, asyncRecvQueue = {0};
 static ComPortInfo_t comPort = { INVALID_HANDLE_VALUE, FALSE, "NULL", {0}, NULL, 0, 0 };
 
-/*================== È«¾Ö¹²Ïí±äÁ¿    ========================================*/
+/*================== å…¨å±€å…±äº«å˜é‡    ========================================*/
 ComPortInfo_t const * const ComPort = &comPort;
 
-/*================== ±¾µØº¯ÊıÉùÃ÷    ========================================*/
-static DWORD WINAPI ComRecvDataThread(LPVOID lpParam);
+/*================== æœ¬åœ°å‡½æ•°å£°æ˜    ========================================*/
+static DWORD WINAPI ComRecvDataThread(void *lpParam);
 static void trueHandleReceivedData(const char *data,  DWORD len);
 static void get_COM_VID_PID_REV(const TCHAR* portName, char *, char *, char *);
 
-/*================== Íâ²¿º¯ÊıºÍ±äÁ¿ÉùÃ÷    ==================================*/
+/*================== å¤–éƒ¨å‡½æ•°å’Œå˜é‡å£°æ˜    ==================================*/
 
 
 
@@ -68,12 +67,12 @@ void CloseComPort(const char *reason)
 { 
   EnterCriticalSection(&csComPort);
   if (comPort.isOpen == FALSE) {
-    SafePrintf("%s is Close£¬ reason:%s\n", comPort.portName, reason? reason:"unknown");
+    SafePrintf("%s is Closeï¼Œ reason:%s\n", comPort.portName, reason? reason:"unknown");
     LeaveCriticalSection(&csComPort);
     return;
   }
 
-  // ´ÙÊ¹½ÓÊÕ´®¿ÚÊı¾İThread Exit
+  // ä¿ƒä½¿æ¥æ”¶ä¸²å£æ•°æ®Thread Exit
   WINBOOL closeComRet = FALSE;
   comPort.isOpen = FALSE;
   if (comPort.hCom != INVALID_HANDLE_VALUE) {
@@ -83,8 +82,8 @@ void CloseComPort(const char *reason)
 
   char *hThreadCloseInfo = "External Call";
   BOOL isSelfCall = comPort.threadId == GetCurrentThreadId()? true:false;
-  if (comPort.hThread && isSelfCall == false) { // ÆäËüµØ·½¹Ø±Õ£¬·ÇÏß³Ì¹Ø±Õ
-    // µÈ´ıThread Exit
+  if (comPort.hThread && isSelfCall == false) { // å…¶å®ƒåœ°æ–¹å…³é—­ï¼Œéçº¿ç¨‹å…³é—­
+    // ç­‰å¾…Thread Exit
     DWORD waitResult = WaitForSingleObject(comPort.hThread, 1000);
     if (waitResult == WAIT_TIMEOUT) {
       DWORD exitCode;
@@ -96,12 +95,12 @@ void CloseComPort(const char *reason)
         closeThreadRet == FALSE? "failed":"success", waitResult);
   }
   
-  char *closedInfo = getPrintf("closed %s %s, %s. reason: %s\n", 
+  const char *closedInfo = getPrintf("closed %s %s, %s. reason: %s\n", 
       comPort.portName, closeComRet == FALSE? "failed":"success", 
       hThreadCloseInfo, reason? reason:"unknown");
 
-  printfSend(NULL, closedInfo);
-  SafePrintf(closedInfo);
+  printfSend(NULL, "%s", closedInfo);
+  SafePrintf("%s", closedInfo);
 
   comPort.hThread = NULL;
   memset(comPort.portName, 0, sizeof comPort.portName);
@@ -117,8 +116,8 @@ void sendComPortsListToClient(SOCKET *socket, bool VPID)
     CloseComPort("disconnection inexistence!");
 }
 
-// »ñÈ¡WinÏµÍ³´®¿ÚÁĞ±í¡£
-// VPID ÊÇ·ñĞèÒªPID¡¢VIDºÍREVĞÅÏ¢£¬ÕæĞèÒª£¬·ñ²»ĞèÒª
+// è·å–Winç³»ç»Ÿä¸²å£åˆ—è¡¨ã€‚
+// VPID æ˜¯å¦éœ€è¦PIDã€VIDå’ŒREVä¿¡æ¯ï¼ŒçœŸéœ€è¦ï¼Œå¦ä¸éœ€è¦
 const char *getComPortList(bool VPID) 
 {
   EnterCriticalSection(&csComPort);
@@ -153,7 +152,7 @@ const char *getComPortList(bool VPID)
     if (ret == FALSE) 
         continue;
     
-    // ¸ü¾«È·µØ²éÕÒCOM¶Ë¿ÚºÅ - ²éÕÒ×îºóÒ»¸öÀ¨ºÅÄÚµÄCOMX
+    // æ›´ç²¾ç¡®åœ°æŸ¥æ‰¾COMç«¯å£å· - æŸ¥æ‰¾æœ€åä¸€ä¸ªæ‹¬å·å†…çš„COMX
     char* start = strrchr((char*)buffer, '(');
     if (start == NULL)
         continue;
@@ -162,16 +161,16 @@ const char *getComPortList(bool VPID)
     if (end == NULL)
         continue;
     
-    *end = '\0';// ÁÙÊ±½Ø¶Ï×Ö·û´®
+    *end = '\0';// ä¸´æ—¶æˆªæ–­å­—ç¬¦ä¸²
     
-    // ¼ì²éÀ¨ºÅÄÚµÄÄÚÈİÊÇ·ñÎªCOM¶Ë¿Ú
-    char* portName = start + 1; // Ìø¹ı'('
+    // æ£€æŸ¥æ‹¬å·å†…çš„å†…å®¹æ˜¯å¦ä¸ºCOMç«¯å£
+    char* portName = start + 1; // è·³è¿‡'('
     if (strncmp(portName, "COM", 3) != 0) {
-        *end = ')'; // Èç¹û²»ÊÇCOM¶Ë¿Ú£¬»Ö¸´×Ö·û´®²¢Ìø¹ı
+        *end = ')'; // å¦‚æœä¸æ˜¯COMç«¯å£ï¼Œæ¢å¤å­—ç¬¦ä¸²å¹¶è·³è¿‡
         continue;
     }
     
-    // È·ÈÏÕâÊÇÓĞĞ§µÄCOM¶Ë¿ÚºÅ£¨ºóÃæ¸ú×ÅÊı×Ö£©
+    // ç¡®è®¤è¿™æ˜¯æœ‰æ•ˆçš„COMç«¯å£å·ï¼ˆåé¢è·Ÿç€æ•°å­—ï¼‰
     if (strlen(portName) > 3 && isdigit(portName[3])) {
       if (exist) 
           strcat(response, VPID? ",\n":", ");
@@ -189,7 +188,7 @@ const char *getComPortList(bool VPID)
         exist = true;
     }
 
-    *end = ')';// »Ö¸´Ô­Ê¼×Ö·û´®
+    *end = ')';// æ¢å¤åŸå§‹å­—ç¬¦ä¸²
   }
 
   SetupDiDestroyDeviceInfoList(hDevInfo);
@@ -201,7 +200,7 @@ const char *getComPortList(bool VPID)
   return response;
 }
 
-// ³É¹¦·µ»Ø0£¬Ê§°Ü·µ»Ø¸ºÊı
+// æˆåŠŸè¿”å›0ï¼Œå¤±è´¥è¿”å›è´Ÿæ•°
 int8_t OpenComPort(const char* portName, uint32_t baudRate, 
         uint8_t dataBits, uint8_t stopBits, uint8_t parity)
 { 
@@ -216,7 +215,7 @@ int8_t OpenComPort(const char* portName, uint32_t baudRate,
     0,
     NULL,
     OPEN_EXISTING,
-    FILE_FLAG_OVERLAPPED, // FILE_FLAG_OVERLAPPED Òì²½Ä£Ê½£¬Í¬²½Ä£Ê½Ğ´0
+    FILE_FLAG_OVERLAPPED, // FILE_FLAG_OVERLAPPED å¼‚æ­¥æ¨¡å¼ï¼ŒåŒæ­¥æ¨¡å¼å†™0
     NULL);
 
   if (comPort.hCom == INVALID_HANDLE_VALUE) {
@@ -224,7 +223,7 @@ int8_t OpenComPort(const char* portName, uint32_t baudRate,
     return -1;
   }
 
-  // ÉèÖÃ´®¿Ú²ÎÊı
+  // è®¾ç½®ä¸²å£å‚æ•°
   memset(&comPort.dcb, 0, sizeof comPort.dcb);
   comPort.dcb.DCBlength = sizeof comPort.dcb;
   if (!GetCommState(comPort.hCom, &comPort.dcb)) {
@@ -234,23 +233,23 @@ int8_t OpenComPort(const char* portName, uint32_t baudRate,
     return -2;
   }
 
-  // È·±£ DCB ÕıÈ·ÅäÖÃ
-  comPort.dcb.BaudRate = baudRate;          // ²¨ÌØÂÊ£¨Èç 9600, 115200£©
-  comPort.dcb.ByteSize = (BYTE)dataBits;    // Êı¾İÎ»£¨5,6,7,8£©
-  comPort.dcb.StopBits = stopBits == 1 ? ONESTOPBIT : TWOSTOPBITS;  // Í£Ö¹Î»£¨1 »ò 2£©
-  comPort.dcb.Parity = (BYTE)parity;        // Ğ£ÑéÎ»£¨0=NONE, 1=ODD, 2=EVEN, 3=MARK, 4=SPACE£©
+  // ç¡®ä¿ DCB æ­£ç¡®é…ç½®
+  comPort.dcb.BaudRate = baudRate;          // æ³¢ç‰¹ç‡ï¼ˆå¦‚ 9600, 115200ï¼‰
+  comPort.dcb.ByteSize = (BYTE)dataBits;    // æ•°æ®ä½ï¼ˆ5,6,7,8ï¼‰
+  comPort.dcb.StopBits = stopBits == 1 ? ONESTOPBIT : TWOSTOPBITS;  // åœæ­¢ä½ï¼ˆ1 æˆ– 2ï¼‰
+  comPort.dcb.Parity = (BYTE)parity;        // æ ¡éªŒä½ï¼ˆ0=NONE, 1=ODD, 2=EVEN, 3=MARK, 4=SPACEï¼‰
   
-  // ±ØĞëÉèÖÃµÄ±êÖ¾Î»
-  comPort.dcb.fBinary = TRUE;               // ±ØĞëÎª TRUE£¨Windows ´®¿Ú½öÖ§³Ö¶ş½øÖÆÄ£Ê½£©
-  comPort.dcb.fOutxCtsFlow = FALSE;         // ½ûÓÃ CTS Á÷¿Ø
-  comPort.dcb.fOutxDsrFlow = FALSE;         // ½ûÓÃ DSR Á÷¿Ø
-  comPort.dcb.fDtrControl = DTR_CONTROL_ENABLE;  // DTR ĞÅºÅ¿ØÖÆ
-  comPort.dcb.fRtsControl = RTS_CONTROL_ENABLE;  // RTS ĞÅºÅ¿ØÖÆ
-  comPort.dcb.fOutX = FALSE;                // ½ûÓÃ XON/XOFF Êä³öÁ÷¿Ø
-  comPort.dcb.fInX = FALSE;                 // ½ûÓÃ XON/XOFF ÊäÈëÁ÷¿Ø
-  comPort.dcb.fErrorChar = FALSE;           // ½ûÓÃ´íÎóÌæ»»×Ö·û
-  comPort.dcb.fNull = FALSE;                // ½ûÖ¹¶ªÆú NULL ×Ö½Ú
-  comPort.dcb.fAbortOnError = FALSE;        // ·¢Éú´íÎóÊ±²»ÖÕÖ¹¶ÁĞ´²Ù×÷
+  // å¿…é¡»è®¾ç½®çš„æ ‡å¿—ä½
+  comPort.dcb.fBinary = TRUE;               // å¿…é¡»ä¸º TRUEï¼ˆWindows ä¸²å£ä»…æ”¯æŒäºŒè¿›åˆ¶æ¨¡å¼ï¼‰
+  comPort.dcb.fOutxCtsFlow = FALSE;         // ç¦ç”¨ CTS æµæ§
+  comPort.dcb.fOutxDsrFlow = FALSE;         // ç¦ç”¨ DSR æµæ§
+  comPort.dcb.fDtrControl = DTR_CONTROL_ENABLE;  // DTR ä¿¡å·æ§åˆ¶
+  comPort.dcb.fRtsControl = RTS_CONTROL_ENABLE;  // RTS ä¿¡å·æ§åˆ¶
+  comPort.dcb.fOutX = FALSE;                // ç¦ç”¨ XON/XOFF è¾“å‡ºæµæ§
+  comPort.dcb.fInX = FALSE;                 // ç¦ç”¨ XON/XOFF è¾“å…¥æµæ§
+  comPort.dcb.fErrorChar = FALSE;           // ç¦ç”¨é”™è¯¯æ›¿æ¢å­—ç¬¦
+  comPort.dcb.fNull = FALSE;                // ç¦æ­¢ä¸¢å¼ƒ NULL å­—èŠ‚
+  comPort.dcb.fAbortOnError = FALSE;        // å‘ç”Ÿé”™è¯¯æ—¶ä¸ç»ˆæ­¢è¯»å†™æ“ä½œ
 
   if (!SetCommState(comPort.hCom, &comPort.dcb)) {
     CloseHandle(comPort.hCom);
@@ -259,7 +258,7 @@ int8_t OpenComPort(const char* portName, uint32_t baudRate,
     return -3;
   }
 
-  // ÉèÖÃ³¬Ê±
+  // è®¾ç½®è¶…æ—¶
   COMMTIMEOUTS timeouts = {0};
   timeouts.ReadIntervalTimeout = MAXDWORD;
   timeouts.ReadTotalTimeoutMultiplier = 0;
@@ -272,7 +271,7 @@ int8_t OpenComPort(const char* portName, uint32_t baudRate,
   strcpy(comPort.portName, portName);
   comPort.isOpen = TRUE;
 
-  // ´´½¨´®¿Ú¶ÁÈ¡Ïß³Ì
+  // åˆ›å»ºä¸²å£è¯»å–çº¿ç¨‹
   comPort.hThread = CreateThread(NULL, 0, ComRecvDataThread, &comPort, 0, &comPort.threadId);
   if (comPort.hThread == NULL) {
     CloseHandle(comPort.hCom);
@@ -290,38 +289,38 @@ static void handleReceivedData(const char *comRecvBuffer, DWORD len)
 {
   if( comRecvBuffer == NULL || len == 0 )
     return;
-  // Òì²½Ìí¼ÓÊ§°Ü¾ÍÍ¬²½·¢³ö
+  // å¼‚æ­¥æ·»åŠ å¤±è´¥å°±åŒæ­¥å‘å‡º
   if( AddDataToAsyncQueue(&asyncRecvQueue, comRecvBuffer, len) == false )   
     trueHandleReceivedData(comRecvBuffer, len); 
 }
 
-// ´¦Àí´®¿ÚÊÕµ½µÄÊı¾İ²¢·¢¸ø¿Í»§¶Ë
-static DWORD WINAPI ComRecvDataThread(LPVOID lpParam) 
+// å¤„ç†ä¸²å£æ”¶åˆ°çš„æ•°æ®å¹¶å‘ç»™å®¢æˆ·ç«¯
+static DWORD WINAPI ComRecvDataThread(void *lpParam) 
 {
   (void)lpParam;
   static char comRecvBuffer[RECV_BUFFER_SIZE];
-  DWORD bytesRead = 0, totalBytesRead = 0;  // ÀÛ¼Æ¶ÁÈ¡µÄ×Ö½ÚÊı
+  DWORD bytesRead = 0, totalBytesRead = 0;  // ç´¯è®¡è¯»å–çš„å­—èŠ‚æ•°
   uint8_t zeroNumMax = 30, zeroNum = 0, timeoutNum = 0;
   bool readIs4KB = false;
   OVERLAPPED overlapped = {0};
   BOOL readRet;
   DWORD lastUpdateTime = 0, currentTickCount = 0;
-  const DWORD updateInterval = 1500; // 1.5Ãë¸üĞÂÒ»´ÎÏß³Ì×´Ì¬
+  const DWORD updateInterval = 1500; // 1.5ç§’æ›´æ–°ä¸€æ¬¡çº¿ç¨‹çŠ¶æ€
   comPort.sendCount = 0;
   char *ThreadExitReason = "Thread Exit, NULL";
 
   while ( comPort.isOpen ) {
     if( bytesRead == 0 || totalBytesRead == 0 )
-      Sleep(1); // 1msÒ²ÄÜÊ¹CPUÕ¼ÓÃ½µµÍ£¬²»È»CPUÕ¼ÓÃ²»Ğ¡
+      Sleep(1); // 1msä¹Ÿèƒ½ä½¿CPUå ç”¨é™ä½ï¼Œä¸ç„¶CPUå ç”¨ä¸å°
     CloseHandle(overlapped.hEvent);
 
-    // ÖØÖÃÖØµş½á¹¹
+    // é‡ç½®é‡å ç»“æ„
     memset(&overlapped, 0, sizeof overlapped);
     overlapped.hEvent = CreateEvent(NULL, TRUE, FALSE, NULL);
     
-    // ¼ÆËãÊ£Óà»º³åÇø¿Õ¼ä
+    // è®¡ç®—å‰©ä½™ç¼“å†²åŒºç©ºé—´
     DWORD remainingSpace = (sizeof comRecvBuffer) - 1 - totalBytesRead;
-    // »º³åÇøÒÑÂú¡¢³¬Ê±¹ı¶à£¬´¦ÀíÊı¾İ£¬zeroNum WIn7ÊÇ3~6£¬Win10 1~2
+    // ç¼“å†²åŒºå·²æ»¡ã€è¶…æ—¶è¿‡å¤šï¼Œå¤„ç†æ•°æ®ï¼ŒzeroNum WIn7æ˜¯3~6ï¼ŒWin10 1~2
     if (zeroNum > zeroNumMax || timeoutNum > 10 || remainingSpace == 0) {  
       SafePrintf("COM Repeatedly Read 4KB [Zero:%s(%d), timeout:%-2d, Full:%s] Recv:%ld(4KB:%0.1f)\n", 
           totalBytesRead % 4096 == 0? "YES":"NO", zeroNumMax, 
@@ -332,19 +331,19 @@ static DWORD WINAPI ComRecvDataThread(LPVOID lpParam)
       remainingSpace = (sizeof comRecvBuffer) - 1; 
     }
     
-    // ·¢ÆğÒì²½¶ÁÈ¡
+    // å‘èµ·å¼‚æ­¥è¯»å–
     readRet = ReadFile(comPort.hCom, comRecvBuffer + totalBytesRead, 
         remainingSpace, &bytesRead, &overlapped);
     if (!readRet) {
       DWORD error = GetLastError();
-      if (error == ERROR_IO_PENDING) {  // µÈ´ı¶ÁÈ¡Íê³É»ò³¬Ê± 
+      if (error == ERROR_IO_PENDING) {  // ç­‰å¾…è¯»å–å®Œæˆæˆ–è¶…æ—¶ 
         DWORD waitResult = WaitForSingleObject(overlapped.hEvent, 1000);
         timeoutNum = waitResult == WAIT_TIMEOUT ? timeoutNum+1:0;
         if (waitResult == WAIT_TIMEOUT) {
           updataConsoleTitle("COM: Timeout");
           continue;
         }
-        else if (waitResult == WAIT_OBJECT_0) { // ¶ÁÈ¡Íê³É 
+        else if (waitResult == WAIT_OBJECT_0) { // è¯»å–å®Œæˆ 
           if (!GetOverlappedResult(comPort.hCom, &overlapped, &bytesRead, FALSE)) {
             error = GetLastError();
             if (error != ERROR_OPERATION_ABORTED) { 
@@ -360,8 +359,8 @@ static DWORD WINAPI ComRecvDataThread(LPVOID lpParam)
       }
     }
 
-    if (bytesRead == 0) { // ´¦Àí½ÓÊÕµ½µÄÊı¾İÈç¹ûÊÇ¿Õ¶ÁÈ¡¾ÍÖØĞÂ¶Á
-      currentTickCount = GetTickCount();   // °´¼ä¸ô¸üĞÂÏß³Ì×´Ì¬
+    if (bytesRead == 0) { // å¤„ç†æ¥æ”¶åˆ°çš„æ•°æ®å¦‚æœæ˜¯ç©ºè¯»å–å°±é‡æ–°è¯»
+      currentTickCount = GetTickCount();   // æŒ‰é—´éš”æ›´æ–°çº¿ç¨‹çŠ¶æ€
       if (currentTickCount - lastUpdateTime >= updateInterval) {
         updataConsoleTitle(comPort.portName);
         lastUpdateTime = currentTickCount;
@@ -378,14 +377,14 @@ static DWORD WINAPI ComRecvDataThread(LPVOID lpParam)
     //   SafePrintf("COM zero Num:%-3d/%-3d, bytesRead:%ld total:%ld\n", 
     //     zeroNum, zeroNumMax, bytesRead, totalBytesRead + bytesRead);
 
-    totalBytesRead += bytesRead;  // ¸üĞÂ×Ü×Ö½ÚÊı
+    totalBytesRead += bytesRead;  // æ›´æ–°æ€»å­—èŠ‚æ•°
 
     if( runInfo.COMrecv4Knum < totalBytesRead ){
         zeroNumMax = 30;
         SafePrintf("\n\n");
     }
 
-    // ´¦Àí´®¿Ú½ÓÊÕµ½µÄÊı¾İ
+    // å¤„ç†ä¸²å£æ¥æ”¶åˆ°çš„æ•°æ®
     if( (readIs4KB == false && totalBytesRead) || runInfo.COMrecv4Knum < totalBytesRead ) {
       handleReceivedData(comRecvBuffer, totalBytesRead);
       totalBytesRead = 0;
@@ -396,12 +395,12 @@ static DWORD WINAPI ComRecvDataThread(LPVOID lpParam)
   CloseComPort(ThreadExitReason);
   CloseHandle(overlapped.hEvent);
 
-  if (totalBytesRead > 0)   // ÒòÎªÏß³ÌÍË³öÇ°´¦ÀíÊ£ÓàÊı¾İ
+  if (totalBytesRead > 0)   // å› ä¸ºçº¿ç¨‹é€€å‡ºå‰å¤„ç†å‰©ä½™æ•°æ®
     handleReceivedData(comRecvBuffer, totalBytesRead);
   return 0;
 }
 
-// ´¦Àí´®¿Ú·¢¹ıÀ´µÄÊı¾İ
+// å¤„ç†ä¸²å£å‘è¿‡æ¥çš„æ•°æ®
 static void trueHandleReceivedData(const char *comRecvBuffer, DWORD len)
 {
   #ifdef __TRAFFIC_STATS_H_
@@ -410,32 +409,32 @@ static void trueHandleReceivedData(const char *comRecvBuffer, DWORD len)
   
   int sendRet = 0;
   do {
-    if( getClientNum() == 0 )  // Ã»ÓĞ¿Í»§¶Ë²»·¢ËÍÊı¾İ 
+    if( getClientNum() == 0 )  // æ²¡æœ‰å®¢æˆ·ç«¯ä¸å‘é€æ•°æ® 
       break;
 
-    if (runInfo.monopolizeComRecvIndex == NULL ){  // Ã»ÓĞ¶ÀÕ¼¾Í¹ã²¥
+    if (runInfo.monopolizeComRecvIndex == NULL ){  // æ²¡æœ‰ç‹¬å å°±å¹¿æ’­
       sendRet = sendDataToClients(NULL, comRecvBuffer, len);
       break;
     }
     
-    // »ñÈ¡¶ÀÕ¼¿Í»§¶ËÌ×½Ó×Ö£¬»ñÈ¡²»µ½¾ÍÌŞ³ı¶ÀÕ¼¹ã²¥·¢ËÍ
+    // è·å–ç‹¬å å®¢æˆ·ç«¯å¥—æ¥å­—ï¼Œè·å–ä¸åˆ°å°±å‰”é™¤ç‹¬å å¹¿æ’­å‘é€
     const SOCKET *socket = getClientSocket( *runInfo.monopolizeComRecvIndex );
     if( socket == NULL || *socket == INVALID_SOCKET ){
       runInfo.monopolizeComRecvIndex = NULL;
-      continue; // ¹ã²¥ÕâÌõÊı¾İ
+      continue; // å¹¿æ’­è¿™æ¡æ•°æ®
     }
       
     sendRet = sendDataToClients(socket, comRecvBuffer, len);
     if (sendRet > 0 ) break;
 
-    // Èç¹û·¢ËÍÊ§°Ü ÇÒ ¼ì²é¶ÀÕ¼¿Í»§¶Ë²»´æÔÚµÄÇé¿öÏÂ£¬È¡Ïû¶ÀÕ¼²¢¸ÄÎª¹ã²¥·¢ËÍ¡£
+    // å¦‚æœå‘é€å¤±è´¥ ä¸” æ£€æŸ¥ç‹¬å å®¢æˆ·ç«¯ä¸å­˜åœ¨çš„æƒ…å†µä¸‹ï¼Œå–æ¶ˆç‹¬å å¹¶æ”¹ä¸ºå¹¿æ’­å‘é€ã€‚
     bool Exist = getClientIndex(socket, NULL);
     // SafePrintf("Monopolize Client Send Fail, Ready Switching To All Clients."
     //         "sendRet:%d/%ld Exist:%s\n", sendRet, len, Exist? "YES":"NO");
     if( Exist )
       break;
-    runInfo.monopolizeComRecvIndex = NULL;    // ¶ÀÕ¼¿Í»§¶ËÒÑ¾­ÏÂÏß
-    continue; // ¹ã²¥ÕâÌõÊı¾İ
+    runInfo.monopolizeComRecvIndex = NULL;    // ç‹¬å å®¢æˆ·ç«¯å·²ç»ä¸‹çº¿
+    continue; // å¹¿æ’­è¿™æ¡æ•°æ®
   } while (0);
   
   char *Direct = getSendRecvDirectionStr("[COM --> TCP]", 0);
@@ -443,7 +442,7 @@ static void trueHandleReceivedData(const char *comRecvBuffer, DWORD len)
   
   int ClientNum = getClientNum();
   int lenSum = runInfo.monopolizeComRecvIndex? len :len * ClientNum ; 
-  int oneLen = ClientNum==0? 0: sendRet / ClientNum; // ³ıÊıÎª0Ê±£¬³ÌĞò»á³ö´íÎó
+  int oneLen = ClientNum==0? 0: sendRet / ClientNum; // é™¤æ•°ä¸º0æ—¶ï¼Œç¨‹åºä¼šå‡ºé”™è¯¯
   //int oneLen = sendRet / ClientNum;
   if( runInfo.monopolizeComRecvIndex )
     oneLen = sendRet;
@@ -465,7 +464,7 @@ static void trueHandleReceivedData(const char *comRecvBuffer, DWORD len)
 }
 
 
-// ´®¿Ú×èÈûĞÎ·¢Êı¾İ
+// ä¸²å£é˜»å¡å½¢å‘æ•°æ®
 static DWORD ComPortTrueSendData(char const *tcpRecvBuffer, int bytesReceived, DWORD *retError)
 {
   EnterCriticalSection(&csComPort);
@@ -475,7 +474,7 @@ static DWORD ComPortTrueSendData(char const *tcpRecvBuffer, int bytesReceived, D
   WINBOOL WriteRet = WriteFile(comPort.hCom, tcpRecvBuffer, 
       bytesReceived, &bytesWritten, &writeOverlapped);
 
-  // ´¦ÀíÒì²½Ğ´Èë
+  // å¤„ç†å¼‚æ­¥å†™å…¥
   DWORD error = 0;
   if (!WriteRet && (error = GetLastError()) == ERROR_IO_PENDING)
       error = GetOverlappedResult(comPort.hCom, &writeOverlapped, &bytesWritten, TRUE)? 0:GetLastError();
@@ -483,7 +482,7 @@ static DWORD ComPortTrueSendData(char const *tcpRecvBuffer, int bytesReceived, D
   CloseHandle(writeOverlapped.hEvent); 
   LeaveCriticalSection(&csComPort);
   
-  if (error == ERROR_BAD_COMMAND || // µ±´®¿Ú°Îµôºó´íÎóÖµÊÇ22
+  if (error == ERROR_BAD_COMMAND || // å½“ä¸²å£æ‹”æ‰åé”™è¯¯å€¼æ˜¯22
       error == ERROR_OPERATION_ABORTED || 
       error == ERROR_INVALID_HANDLE) { 
     char *reason = getPrintf("Serial Port Write Error: %lu, closing port\n", error);
@@ -497,15 +496,15 @@ static DWORD ComPortTrueSendData(char const *tcpRecvBuffer, int bytesReceived, D
 
 int ComPortSendData(char const *tcpRecvBuffer, int bytesReceived, DWORD *retError) 
 {
-  if (!comPort.isOpen) {  // ¼ì²é´®¿ÚÊÇ·ñ´ò¿ª
+  if (!comPort.isOpen) {  // æ£€æŸ¥ä¸²å£æ˜¯å¦æ‰“å¼€
     SafePrintf("COM not open, discarding data\n");
     return FALSE;
   }
   
-  // Ê¹ÓÃÒì²½¶ÓÁĞ·¢ËÍÊı¾İ
+  // ä½¿ç”¨å¼‚æ­¥é˜Ÿåˆ—å‘é€æ•°æ®
   if( asyncSendQueue.running &&
     AddDataToAsyncQueue(&asyncSendQueue, tcpRecvBuffer, bytesReceived) ) {
-    if (retError) // ·µ»Ø³É¹¦Ìí¼Ó£¬Êµ¼Ê·¢ËÍÓÉÏß³Ì´¦Àí
+    if (retError) // è¿”å›æˆåŠŸæ·»åŠ ï¼Œå®é™…å‘é€ç”±çº¿ç¨‹å¤„ç†
       *retError = 0;
     return bytesReceived;
   }
@@ -513,21 +512,21 @@ int ComPortSendData(char const *tcpRecvBuffer, int bytesReceived, DWORD *retErro
   return ComPortTrueSendData(tcpRecvBuffer, bytesReceived, retError);
 }
 
-static void COMAsyncSendQueueCallBack(queueData_t *queueData)
+static void COMAsyncSendQueueCallBack(char *data, uint32_t len)
 {
   if (comPort.isOpen == FALSE) 
     return;
 
-  // ·¢ËÍÊı¾İµ½´®¿Ú
+  // å‘é€æ•°æ®åˆ°ä¸²å£
   DWORD error = 0;
-  DWORD bytesWritten = ComPortTrueSendData(queueData->data, queueData->len, &error);
+  DWORD bytesWritten = ComPortTrueSendData(data, len, &error);
   
-  if (bytesWritten != queueData->len) 
+  if (bytesWritten != len) 
     SafePrintf("COM Async send error: written %lu/%u bytes, error: %lu\n", 
-              bytesWritten, queueData->len, error);
+              bytesWritten, len, error);
 }
 
-// ÆôÓÃÒì²½·¢ËÍÊı¾İµ½COM¿Ú£¬ ´«Èë0´ú±í¹Ø±ÕÒì²½·¢ËÍ£¬´óÓÚ10´ú±íÆô¶¯Òì²½·¢ËÍ
+// å¯ç”¨å¼‚æ­¥å‘é€æ•°æ®åˆ°COMå£ï¼Œ ä¼ å…¥0ä»£è¡¨å…³é—­å¼‚æ­¥å‘é€ï¼Œå¤§äº10ä»£è¡¨å¯åŠ¨å¼‚æ­¥å‘é€
 BOOL COM_UseAsyncSend(uint16_t num)
 {
   if( num < MIN_QUEUE_SIZE ){
@@ -540,12 +539,12 @@ BOOL COM_UseAsyncSend(uint16_t num)
 }
 
 
-static void COMAsyncRecvQueueCallBack(queueData_t *queueData)
+static void COMAsyncRecvQueueCallBack(char *data, uint32_t len)
 {
-  trueHandleReceivedData(queueData->data, queueData->len); 
+  trueHandleReceivedData(data, len);
 }
 
-// ÆôÓÃÒì²½·¢ËÍÊı¾İµ½COM¿Ú£¬ ´«Èë0´ú±í¹Ø±ÕÒì²½·¢ËÍ£¬´óÓÚ10´ú±íÆô¶¯Òì²½·¢ËÍ
+// å¯ç”¨å¼‚æ­¥å‘é€æ•°æ®åˆ°COMå£ï¼Œ ä¼ å…¥0ä»£è¡¨å…³é—­å¼‚æ­¥å‘é€ï¼Œå¤§äº10ä»£è¡¨å¯åŠ¨å¼‚æ­¥å‘é€
 BOOL COM_UseAsyncRecv(uint16_t num)
 {
   if( num < MIN_QUEUE_SIZE ){
@@ -565,22 +564,22 @@ BOOL COM_UseAsyncRecv(uint16_t num)
 
 
 
-// »ñÈ¡Éè±¸ÊôĞÔ
+// è·å–è®¾å¤‡å±æ€§
 static LPTSTR GetDeviceProperty(HDEVINFO hDevInfo, PSP_DEVINFO_DATA pDevInfoData, DWORD Property)
 {
   static TCHAR buffer[1024];
   DWORD nSize = 0, dataType = 0;
   memset(buffer, 0, sizeof buffer);
-  // µÚÒ»´Îµ÷ÓÃ»ñÈ¡ËùĞè»º³åÇø´óĞ¡
+  // ç¬¬ä¸€æ¬¡è°ƒç”¨è·å–æ‰€éœ€ç¼“å†²åŒºå¤§å°
   if (!SetupDiGetDeviceRegistryProperty(hDevInfo, pDevInfoData, Property, NULL, NULL, 0, &nSize))
     if (GetLastError() != ERROR_INSUFFICIENT_BUFFER)
       return NULL;
   
-  // ¼ì²éÊÇ·ñĞèÒª»º³åÇø³¬³ö¾²Ì¬Êı×é´óĞ¡
+  // æ£€æŸ¥æ˜¯å¦éœ€è¦ç¼“å†²åŒºè¶…å‡ºé™æ€æ•°ç»„å¤§å°
   if (nSize > sizeof buffer)
     return NULL;
 
-  // µÚ¶ş´Îµ÷ÓÃ»ñÈ¡Êµ¼ÊÊı¾İ
+  // ç¬¬äºŒæ¬¡è°ƒç”¨è·å–å®é™…æ•°æ®
   if (!SetupDiGetDeviceRegistryProperty(hDevInfo, pDevInfoData, 
     Property, &dataType, (PBYTE)buffer, sizeof buffer, NULL))
       return NULL;
@@ -588,13 +587,13 @@ static LPTSTR GetDeviceProperty(HDEVINFO hDevInfo, PSP_DEVINFO_DATA pDevInfoData
   return buffer;
 }
 
-// »ñÈ¡COM´®¿ÚÉè±¸VIDºÍPID£¬VIDºÍPID³¤¶È´ó¸ÅÔÚ5¸ö×Ö·û£¬¿ÉÒÔ¸ø¶àÒ»µã
+// è·å–COMä¸²å£è®¾å¤‡VIDå’ŒPIDï¼ŒVIDå’ŒPIDé•¿åº¦å¤§æ¦‚åœ¨5ä¸ªå­—ç¬¦ï¼Œå¯ä»¥ç»™å¤šä¸€ç‚¹
 static void get_COM_VID_PID_REV(const TCHAR* portName, char *retVID, char *retPID, char *retREV)
 {
   if( portName == NULL )
     return;
 
-  // »ñÈ¡ËùÓĞ¶Ë¿ÚÉè±¸ĞÅÏ¢
+  // è·å–æ‰€æœ‰ç«¯å£è®¾å¤‡ä¿¡æ¯
   HDEVINFO hDevInfo = SetupDiGetClassDevs(&GUID_DEVCLASS_PORTS, NULL, NULL, DIGCF_PRESENT);
   if (hDevInfo == INVALID_HANDLE_VALUE) {
       SafePrintf("SetupDiGetClassDevs failed. Error: %ld\n", GetLastError());
@@ -603,26 +602,26 @@ static void get_COM_VID_PID_REV(const TCHAR* portName, char *retVID, char *retPI
 
   SP_DEVINFO_DATA devInfoData;
   devInfoData.cbSize = sizeof(SP_DEVINFO_DATA);
-  // Ã¶¾ÙËùÓĞ¶Ë¿ÚÉè±¸ 
+  // æšä¸¾æ‰€æœ‰ç«¯å£è®¾å¤‡ 
   for (DWORD i = 0; SetupDiEnumDeviceInfo(hDevInfo, i, &devInfoData); i++) {
-    // »ñÈ¡Éè±¸ÓÑºÃÃû³Æ£¬²¢ ¼ì²éÊÇ·ñÊÇÖ¸¶¨µÄ´®¿Ú
+    // è·å–è®¾å¤‡å‹å¥½åç§°ï¼Œå¹¶ æ£€æŸ¥æ˜¯å¦æ˜¯æŒ‡å®šçš„ä¸²å£
     LPTSTR DeviceInfo = GetDeviceProperty(hDevInfo, &devInfoData, SPDRP_FRIENDLYNAME);
     if (DeviceInfo == NULL || _tcsstr(DeviceInfo, portName) == NULL )
       continue;
     
     #if 0
     SafePrintf("Found port: %s\n", DeviceInfo);
-    // »ñÈ¡Éè±¸ÃèÊö
+    // è·å–è®¾å¤‡æè¿°
     DeviceInfo = GetDeviceProperty(hDevInfo, &devInfoData, SPDRP_DEVICEDESC);
     if (DeviceInfo != NULL) 
         SafePrintf("Device Description: %s\n", DeviceInfo); 
 
-    // »ñÈ¡ÖÆÔìÉÌĞÅÏ¢
+    // è·å–åˆ¶é€ å•†ä¿¡æ¯
     DeviceInfo = GetDeviceProperty(hDevInfo, &devInfoData, SPDRP_MFG);
     if (DeviceInfo != NULL) 
         SafePrintf("Manufacturer: %s\n", DeviceInfo);
 
-    // »ñÈ¡Ó²¼şID
+    // è·å–ç¡¬ä»¶ID
     DeviceInfo = GetDeviceProperty(hDevInfo, &devInfoData, SPDRP_HARDWAREID);
     if (DeviceInfo != NULL) 
         SafePrintf("Hardware ID: %s\n", DeviceInfo);
@@ -636,9 +635,9 @@ static void get_COM_VID_PID_REV(const TCHAR* portName, char *retVID, char *retPI
     SafePrintf("\n");
     #endif
 
-    // »ñÈ¡Ó²¼şID
+    // è·å–ç¡¬ä»¶ID
     DeviceInfo = GetDeviceProperty(hDevInfo, &devInfoData, SPDRP_HARDWAREID);
-    if (DeviceInfo != NULL) {   // ´ÓÓ²¼şIDÖĞÌáÈ¡VIDºÍPID 
+    if (DeviceInfo != NULL) {   // ä»ç¡¬ä»¶IDä¸­æå–VIDå’ŒPID 
         TCHAR* vidPos = _tcsstr(DeviceInfo, _T("VID_"));
         TCHAR* pidPos = _tcsstr(DeviceInfo, _T("PID_"));
         TCHAR* revPos = _tcsstr(DeviceInfo, _T("REV_"));

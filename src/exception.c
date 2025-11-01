@@ -1,18 +1,20 @@
 /******************************************************************************
-  * @file    ÎÄ¼ş exception.c 
-  * @author  ×÷Õß 
-  * @version °æ±¾ V1.0
-  * @date    ÈÕÆÚ 2025-08-17
-  * @brief   ¼ò½é ³ÌĞòÒì³£ÍË³ö¼ì²â
+  * @file    æ–‡ä»¶ exception.c 
+  * @author  ä½œè€… 
+  * @version ç‰ˆæœ¬ V1.0
+  * @date    æ—¥æœŸ 2025-08-17
+  * @brief   ç®€ä»‹ ç¨‹åºå¼‚å¸¸é€€å‡ºæ£€æµ‹
   ******************************************************************************
-  * @attention ×¢Òâ ±àÒëĞèÒª -lDbghelp Ö§³Ö
+  * @attention æ³¨æ„ ç¼–è¯‘éœ€è¦ -lDbghelp æ”¯æŒ
   *
   *
   *******************************************************************************
 */
 
-/*================== Í·ÎÄ¼ş°üº¬     =========================================*/
+/*================== å¤´æ–‡ä»¶åŒ…å«     =========================================*/
 #include "exception.h"
+
+#include <stdbool.h>
 
 #include <windows.h>
 #include <stdio.h>
@@ -26,14 +28,14 @@
 #endif
 
 
-// Ìõ¼ş±àÒë£ºÖ»ÓĞÔÚÆôÓÃ¼à¿ØÊ±²Å°üº¬ dbghelp
+// æ¡ä»¶ç¼–è¯‘ï¼šåªæœ‰åœ¨å¯ç”¨ç›‘æ§æ—¶æ‰åŒ…å« dbghelp
 #if ENABLE_EXCEPTION_MONITOR
 #include <dbghelp.h>
 #include <psapi.h>
 #endif
 
-/*================== ±¾µØºê¶¨Òå     =========================================*/
-/*================== È«¾Ö¹²Ïí±äÁ¿   =========================================*/
+/*================== æœ¬åœ°å®å®šä¹‰     =========================================*/
+/*================== å…¨å±€å…±äº«å˜é‡   =========================================*/
 static char g_LogPath[MAX_PATH] = "process_exceptions.log";
 static char g_LastExceptionInfo[8192] = {0};
 
@@ -41,9 +43,9 @@ static char g_LastExceptionInfo[8192] = {0};
 static BOOL g_SymInitialized = FALSE;
 #endif
 
-/*================== ±¾µØº¯ÊıÉùÃ÷   =========================================*/
+/*================== æœ¬åœ°å‡½æ•°å£°æ˜   =========================================*/
 
-// Ğ´ÈëÈÕÖ¾ÎÄ¼ş
+// å†™å…¥æ—¥å¿—æ–‡ä»¶
 static void outLogToFile(const char *log)
 { 
   FILE* logFile = fopen(g_LogPath, "a");
@@ -74,8 +76,8 @@ static const char *getExeName(void)
 
 #if ENABLE_EXCEPTION_MONITOR
 /******************************************************************************
- * @brief ³õÊ¼»¯·ûºÅÏµÍ³£¨ÍêÕûÄ£Ê½£©
- * @return ³õÊ¼»¯ÊÇ·ñ³É¹¦
+ * @brief åˆå§‹åŒ–ç¬¦å·ç³»ç»Ÿï¼ˆå®Œæ•´æ¨¡å¼ï¼‰
+ * @return åˆå§‹åŒ–æ˜¯å¦æˆåŠŸ
  ******************************************************************************/
 static BOOL InitializeSymbolsSimple(void)
 {
@@ -84,34 +86,34 @@ static BOOL InitializeSymbolsSimple(void)
   SymSetOptions(SYMOPT_LOAD_LINES | SYMOPT_UNDNAME | SYMOPT_DEFERRED_LOADS);
   
   if (SymInitialize(hProcess, NULL, TRUE)) { 
-    #if 0 // Ç¿ÖÆ¼ÓÔØµ±Ç°Ä£¿éµÄ·ûºÅ
+    #if 0 // å¼ºåˆ¶åŠ è½½å½“å‰æ¨¡å—çš„ç¬¦å·
     char moduleName[MAX_PATH];
     if (GetModuleFileNameA(NULL, moduleName, MAX_PATH)) {
         DWORD64 baseAddr = SymLoadModuleEx(hProcess, NULL, moduleName, NULL, 0, 0, NULL, 0);
         if (baseAddr == 0)
-            printf("¾¯¸æ: ÎŞ·¨¼ÓÔØÄ£¿é·ûºÅ£¬´íÎó: %lu\n", GetLastError());
+            printf("è­¦å‘Š: æ— æ³•åŠ è½½æ¨¡å—ç¬¦å·ï¼Œé”™è¯¯: %lu\n", GetLastError());
     }
     #endif
     g_SymInitialized = TRUE;
     return TRUE;
   }
   
-  printf("·ûºÅÏµÍ³³õÊ¼»¯Ê§°Ü£¬´íÎó: %lu\n", GetLastError());
+  printf("ç¬¦å·ç³»ç»Ÿåˆå§‹åŒ–å¤±è´¥ï¼Œé”™è¯¯: %lu\n", GetLastError());
   return FALSE;
 }
 
 /******************************************************************************
- * @brief Ö±½Ó»ñÈ¡·ûºÅĞÅÏ¢
- * @param address ÄÚ´æµØÖ·
- * @param result ½á¹û»º³åÇø
- * @param resultSize »º³åÇø´óĞ¡
+ * @brief ç›´æ¥è·å–ç¬¦å·ä¿¡æ¯
+ * @param address å†…å­˜åœ°å€
+ * @param result ç»“æœç¼“å†²åŒº
+ * @param resultSize ç¼“å†²åŒºå¤§å°
  ******************************************************************************/
 static void GetSymbolInfoDirect(DWORD64 address, char* result, size_t resultSize)
 {
   HANDLE hProcess = GetCurrentProcess();
   
   if (!g_SymInitialized) {
-    snprintf(result, resultSize, "0x%I64X [·ûºÅÎ´³õÊ¼»¯]", address);
+    snprintf(result, resultSize, "0x%I64X [ç¬¦å·æœªåˆå§‹åŒ–]", address);
     return;
   }
   
@@ -134,7 +136,7 @@ static void GetSymbolInfoDirect(DWORD64 address, char* result, size_t resultSize
       snprintf(result, resultSize, "0x%-15I64X %s+0x%I64X", 
               address, pSymbol->Name, displacement);
   } 
-  else {  // ³¢ÊÔ»ñÈ¡Ä£¿éĞÅÏ¢ 
+  else {  // å°è¯•è·å–æ¨¡å—ä¿¡æ¯ 
     HMODULE hModule = NULL;
     if (GetModuleHandleEx(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS, 
                           (LPCSTR)address, &hModule)) {
@@ -146,19 +148,19 @@ static void GetSymbolInfoDirect(DWORD64 address, char* result, size_t resultSize
               address, baseName, address - (DWORD64)hModule);
     } 
     else 
-      snprintf(result, resultSize, "0x%-15I64X [Î´ÖªµØÖ·]", address);
+      snprintf(result, resultSize, "0x%-15I64X [æœªçŸ¥åœ°å€]", address);
   }
 }
 
 /******************************************************************************
- * @brief Ê¹ÓÃÍâ²¿¹¤¾ß»ñÈ¡·ûºÅĞÅÏ¢
- * @param address ÄÚ´æµØÖ·
- * @param result ½á¹û»º³åÇø
- * @param resultSize »º³åÇø´óĞ¡
+ * @brief ä½¿ç”¨å¤–éƒ¨å·¥å…·è·å–ç¬¦å·ä¿¡æ¯
+ * @param address å†…å­˜åœ°å€
+ * @param result ç»“æœç¼“å†²åŒº
+ * @param resultSize ç¼“å†²åŒºå¤§å°
  ******************************************************************************/
 static void GetSymbolInfoWithAddr2Line(DWORD64 address, char* result, size_t resultSize)
 {
-  // ´´½¨ÁÙÊ±ÎÄ¼ş±£´æµØÖ·
+  // åˆ›å»ºä¸´æ—¶æ–‡ä»¶ä¿å­˜åœ°å€
   // char tempFile[MAX_PATH] = "temp_addr.txt";
   // FILE* f = fopen(tempFile, "w");
   // if (f) {
@@ -166,7 +168,7 @@ static void GetSymbolInfoWithAddr2Line(DWORD64 address, char* result, size_t res
   //   fclose(f);
   // }
   
-  // ¹¹½¨ addr2line ÃüÁî
+  // æ„å»º addr2line å‘½ä»¤
   // char exePath[MAX_PATH];
   // GetModuleFileNameA(NULL, exePath, MAX_PATH);
 
@@ -176,33 +178,33 @@ static void GetSymbolInfoWithAddr2Line(DWORD64 address, char* result, size_t res
             //"addr2line -e \"%s\" -f -C -p < \"%s\"", exePath, tempFile); 
             "addr2line -e \"%s\" -f -C -p 0x%I64X", exeName, address);
   
-  // Ö´ĞĞÃüÁî²¢²¶»ñÊä³ö
+  // æ‰§è¡Œå‘½ä»¤å¹¶æ•è·è¾“å‡º
   FILE* pipe = _popen(command, "r");
   if (pipe) {
     char buffer[512];
     if ( fgets(buffer, sizeof buffer, pipe) ) {
-      buffer[strcspn(buffer, "\r\n")] = 0; // ÒÆ³ı»»ĞĞ·û
+      buffer[strcspn(buffer, "\r\n")] = 0; // ç§»é™¤æ¢è¡Œç¬¦
       snprintf(result, resultSize, "%s", buffer);
     }
     else {
-      snprintf(result, resultSize, "[ÎŞ·¨»ñÈ¡·ûºÅĞÅÏ¢]£¬Çëµ½ÓĞaddr2lineÃüÁîµÄÏµÍ³Ö´ĞĞÈçÏÂÃüÁî£º\n"
+      snprintf(result, resultSize, "[æ— æ³•è·å–ç¬¦å·ä¿¡æ¯]ï¼Œè¯·åˆ°æœ‰addr2lineå‘½ä»¤çš„ç³»ç»Ÿæ‰§è¡Œå¦‚ä¸‹å‘½ä»¤ï¼š\n"
         "addr2line -e \"%s\" -f -C -p 0x%I64X\n", exeName, address);
     }
     _pclose(pipe);
   }
   else {
-    snprintf(result, resultSize, "[addr2lineÖ´ĞĞÊ§°Ü]£¬Çëµ½ÓĞaddr2lineÃüÁîµÄÏµÍ³Ö´ĞĞÈçÏÂÃüÁî£º\n"
+    snprintf(result, resultSize, "[addr2lineæ‰§è¡Œå¤±è´¥]ï¼Œè¯·åˆ°æœ‰addr2lineå‘½ä»¤çš„ç³»ç»Ÿæ‰§è¡Œå¦‚ä¸‹å‘½ä»¤ï¼š\n"
       "addr2line -e \"%s\" -f -C -p 0x%I64X\n", exeName, address);
   }
   
-  // É¾³ıÁÙÊ±ÎÄ¼ş
+  // åˆ é™¤ä¸´æ—¶æ–‡ä»¶
   //remove(tempFile);
 }
 
 /******************************************************************************
- * @brief Éú³É¶ÑÕ»¸ú×Ù£¨¼òµ¥°æ±¾£©
- * @param stackTrace ¶ÑÕ»¸ú×Ù»º³åÇø
- * @param bufferSize »º³åÇø´óĞ¡
+ * @brief ç”Ÿæˆå †æ ˆè·Ÿè¸ªï¼ˆç®€å•ç‰ˆæœ¬ï¼‰
+ * @param stackTrace å †æ ˆè·Ÿè¸ªç¼“å†²åŒº
+ * @param bufferSize ç¼“å†²åŒºå¤§å°
  ******************************************************************************/
 static const char * GenerateStackTraceSimple(void)
 {
@@ -220,56 +222,56 @@ static const char * GenerateStackTraceSimple(void)
       strcat(trace, frameInfo);
     }
 #else
-    strncpy(trace, "¶ÑÕ»¸ú×Ù: 32Î»¼Ü¹¹Ôİ²»Ö§³Ö\n", bufferSize);
+    strncpy(trace, "å †æ ˆè·Ÿè¸ª: 32ä½æ¶æ„æš‚ä¸æ”¯æŒ\n", bufferSize);
 #endif
     return trace;
 }
 
 /******************************************************************************
- * @brief »ñÈ¡Òì³£ÃèÊö
- * @param exceptionCode Òì³£´úÂë
- * @return Òì³£ÃèÊö×Ö·û´®
+ * @brief è·å–å¼‚å¸¸æè¿°
+ * @param exceptionCode å¼‚å¸¸ä»£ç 
+ * @return å¼‚å¸¸æè¿°å­—ç¬¦ä¸²
  ******************************************************************************/
 static const char* GetExceptionDescription(DWORD exceptionCode)
 {
   switch(exceptionCode) {
-    case EXCEPTION_ACCESS_VIOLATION:         return "·ÃÎÊÎ¥¹æ";
-    case EXCEPTION_ARRAY_BOUNDS_EXCEEDED:    return "Êı×éÔ½½ç";
-    case EXCEPTION_BREAKPOINT:               return "¶Ïµã";
-    case EXCEPTION_DATATYPE_MISALIGNMENT:    return "Êı¾İÎ´¶ÔÆë";
-    case EXCEPTION_FLT_DENORMAL_OPERAND:     return "¸¡µãÊıÒì³£²Ù×÷Êı";
-    case EXCEPTION_FLT_DIVIDE_BY_ZERO:       return "¸¡µãÊı³ıÁã";
-    case EXCEPTION_FLT_INEXACT_RESULT:       return "¸¡µãÊı²»¾«È·½á¹û";
-    case EXCEPTION_FLT_INVALID_OPERATION:    return "ÎŞĞ§¸¡µãÊı²Ù×÷";
-    case EXCEPTION_FLT_OVERFLOW:             return "¸¡µãÊıÉÏÒç";
-    case EXCEPTION_FLT_STACK_CHECK:          return "¸¡µãÊı¶ÑÕ»¼ì²é";
-    case EXCEPTION_FLT_UNDERFLOW:            return "¸¡µãÊıÏÂÒç";
-    case EXCEPTION_ILLEGAL_INSTRUCTION:      return "·Ç·¨Ö¸Áî";
-    case EXCEPTION_IN_PAGE_ERROR:            return "Ò³Ãæ´íÎó";
-    case EXCEPTION_INT_DIVIDE_BY_ZERO:       return "ÕûÊı³ıÁã";
-    case EXCEPTION_INT_OVERFLOW:             return "ÕûÊıÒç³ö";
-    case EXCEPTION_INVALID_DISPOSITION:      return "ÎŞĞ§´¦ÖÃ";
-    case EXCEPTION_NONCONTINUABLE_EXCEPTION: return "²»¿É¼ÌĞøÒì³£";
-    case EXCEPTION_PRIV_INSTRUCTION:         return "ÌØÈ¨Ö¸Áî";
-    case EXCEPTION_SINGLE_STEP:              return "µ¥²½Ö´ĞĞ";
-    case EXCEPTION_STACK_OVERFLOW:           return "¶ÑÕ»Òç³ö";
-    default:                                 return "Î´ÖªÒì³£";
+    case EXCEPTION_ACCESS_VIOLATION:         return "è®¿é—®è¿è§„";
+    case EXCEPTION_ARRAY_BOUNDS_EXCEEDED:    return "æ•°ç»„è¶Šç•Œ";
+    case EXCEPTION_BREAKPOINT:               return "æ–­ç‚¹";
+    case EXCEPTION_DATATYPE_MISALIGNMENT:    return "æ•°æ®æœªå¯¹é½";
+    case EXCEPTION_FLT_DENORMAL_OPERAND:     return "æµ®ç‚¹æ•°å¼‚å¸¸æ“ä½œæ•°";
+    case EXCEPTION_FLT_DIVIDE_BY_ZERO:       return "æµ®ç‚¹æ•°é™¤é›¶";
+    case EXCEPTION_FLT_INEXACT_RESULT:       return "æµ®ç‚¹æ•°ä¸ç²¾ç¡®ç»“æœ";
+    case EXCEPTION_FLT_INVALID_OPERATION:    return "æ— æ•ˆæµ®ç‚¹æ•°æ“ä½œ";
+    case EXCEPTION_FLT_OVERFLOW:             return "æµ®ç‚¹æ•°ä¸Šæº¢";
+    case EXCEPTION_FLT_STACK_CHECK:          return "æµ®ç‚¹æ•°å †æ ˆæ£€æŸ¥";
+    case EXCEPTION_FLT_UNDERFLOW:            return "æµ®ç‚¹æ•°ä¸‹æº¢";
+    case EXCEPTION_ILLEGAL_INSTRUCTION:      return "éæ³•æŒ‡ä»¤";
+    case EXCEPTION_IN_PAGE_ERROR:            return "é¡µé¢é”™è¯¯";
+    case EXCEPTION_INT_DIVIDE_BY_ZERO:       return "æ•´æ•°é™¤é›¶";
+    case EXCEPTION_INT_OVERFLOW:             return "æ•´æ•°æº¢å‡º";
+    case EXCEPTION_INVALID_DISPOSITION:      return "æ— æ•ˆå¤„ç½®";
+    case EXCEPTION_NONCONTINUABLE_EXCEPTION: return "ä¸å¯ç»§ç»­å¼‚å¸¸";
+    case EXCEPTION_PRIV_INSTRUCTION:         return "ç‰¹æƒæŒ‡ä»¤";
+    case EXCEPTION_SINGLE_STEP:              return "å•æ­¥æ‰§è¡Œ";
+    case EXCEPTION_STACK_OVERFLOW:           return "å †æ ˆæº¢å‡º";
+    default:                                 return "æœªçŸ¥å¼‚å¸¸";
   }
 }
 
 /******************************************************************************
- * @brief ¼ÇÂ¼Òì³£ĞÅÏ¢£¨ÍêÕûÄ£Ê½£©
- * @param ExceptionInfo Òì³£ĞÅÏ¢Ö¸Õë
- * @param handlerType ´¦ÀíÆ÷ÀàĞÍ
+ * @brief è®°å½•å¼‚å¸¸ä¿¡æ¯ï¼ˆå®Œæ•´æ¨¡å¼ï¼‰
+ * @param ExceptionInfo å¼‚å¸¸ä¿¡æ¯æŒ‡é’ˆ
+ * @param handlerType å¤„ç†å™¨ç±»å‹
  ******************************************************************************/
 static void LogExceptionInfo(PEXCEPTION_POINTERS ExceptionInfo, const char* handlerType)
 { 
-  printf("³ÌĞòÎª %s °æ±¾\n", ENABLE_EXCEPTION_MONITOR? "Debug":"Release");
-  // ¼ì²é·ûºÅÏµÍ³×´Ì¬
-  printf("·ûºÅÏµÍ³: %s³õÊ¼»¯ (´úÂë: %lu)\n", g_SymInitialized?"ÒÑ":"Î´", 
+  printf("ç¨‹åºä¸º %s ç‰ˆæœ¬\n", ENABLE_EXCEPTION_MONITOR? "Debug":"Release");
+  // æ£€æŸ¥ç¬¦å·ç³»ç»ŸçŠ¶æ€
+  printf("ç¬¦å·ç³»ç»Ÿ: %såˆå§‹åŒ– (ä»£ç : %lu)\n", g_SymInitialized?"å·²":"æœª", 
       g_SymInitialized? 0:GetLastError());
   if (g_SymInitialized) {
-    // ²âÊÔ·ûºÅ²éÕÒ
+    // æµ‹è¯•ç¬¦å·æŸ¥æ‰¾
     HANDLE hProcess = GetCurrentProcess();
     DWORD64 testAddr = (DWORD64)ExceptionInfo->ExceptionRecord->ExceptionAddress;
     
@@ -279,8 +281,8 @@ static void LogExceptionInfo(PEXCEPTION_POINTERS ExceptionInfo, const char* hand
     pSymbol->MaxNameLen = 256;
     DWORD64 displacement = 0;
     WINBOOL ret = SymFromAddr(hProcess, testAddr, &displacement, pSymbol); 
-    printf("·ûºÅ²éÕÒ%s£¨´úÂë%ld£©£¬±êÖ¾:%s\n", ret?"³É¹¦":"Ê§°Ü", 
-        GetLastError(), ret?pSymbol->Name:"ÎŞĞ§"); 
+    printf("ç¬¦å·æŸ¥æ‰¾%sï¼ˆä»£ç %ldï¼‰ï¼Œæ ‡å¿—:%s\n", ret?"æˆåŠŸ":"å¤±è´¥", 
+        GetLastError(), ret?pSymbol->Name:"æ— æ•ˆ"); 
   }
 
   DWORD processId = GetCurrentProcessId();
@@ -288,33 +290,33 @@ static void LogExceptionInfo(PEXCEPTION_POINTERS ExceptionInfo, const char* hand
   const char *exeName = getExeName();
   const char *timeStr = getLocalTime();
   
-  // »ñÈ¡Òì³£µØÖ·µÄ·ûºÅĞÅÏ¢
+  // è·å–å¼‚å¸¸åœ°å€çš„ç¬¦å·ä¿¡æ¯
   char exceptionSymbol[512] = {0};
   GetSymbolInfoWithAddr2Line((DWORD64)ExceptionInfo->ExceptionRecord->ExceptionAddress, 
                             exceptionSymbol, sizeof exceptionSymbol);
   
-  // Éú³É¶ÑÕ»¸ú×Ù
+  // ç”Ÿæˆå †æ ˆè·Ÿè¸ª
   const char *stackTrace = GenerateStackTraceSimple();
   
-  // ¹¹½¨Òì³£ĞÅÏ¢
+  // æ„å»ºå¼‚å¸¸ä¿¡æ¯
   snprintf(g_LastExceptionInfo, sizeof g_LastExceptionInfo,
-            "======== Òì³£²¶»ñ =========\n"
-            "Ê±¼ä    : %s\n"
-            "´¦ÀíÆ÷  : %s\n"
-            "³ÌĞòÃû³Æ: %s\n"
-            "½ø³ÌID  : %lu\n"
-            "Ïß³ÌID  : %lu\n"
-            "Òì³£Ô­Òò: 0x%08lX (%s)\n"
-            "Òì³£µØÖ·: 0x%-15I64X\n"
-            "Òì³£Î»ÖÃ: %s\n"
-            "¶ÑÕ»¸ú×Ù:\n%s\n",
+            "======== å¼‚å¸¸æ•è· =========\n"
+            "æ—¶é—´    : %s\n"
+            "å¤„ç†å™¨  : %s\n"
+            "ç¨‹åºåç§°: %s\n"
+            "è¿›ç¨‹ID  : %lu\n"
+            "çº¿ç¨‹ID  : %lu\n"
+            "å¼‚å¸¸åŸå› : 0x%08lX (%s)\n"
+            "å¼‚å¸¸åœ°å€: 0x%-15I64X\n"
+            "å¼‚å¸¸ä½ç½®: %s\n"
+            "å †æ ˆè·Ÿè¸ª:\n%s\n",
             timeStr, handlerType, exeName, processId, threadId,
             ExceptionInfo->ExceptionRecord->ExceptionCode,
             GetExceptionDescription(ExceptionInfo->ExceptionRecord->ExceptionCode),
             (DWORD64)ExceptionInfo->ExceptionRecord->ExceptionAddress, 
             exceptionSymbol, stackTrace);
   
-  // Êä³öµ½¿ØÖÆÌ¨
+  // è¾“å‡ºåˆ°æ§åˆ¶å°
   printf("\n%s\n", g_LastExceptionInfo);
   outLogToFile(g_LastExceptionInfo);
 }
@@ -322,26 +324,26 @@ static void LogExceptionInfo(PEXCEPTION_POINTERS ExceptionInfo, const char* hand
 #else
 
 /******************************************************************************
- * @brief ¼ÇÂ¼Òì³£ĞÅÏ¢£¨¾«¼òÄ£Ê½£©
- * @param ExceptionInfo Òì³£ĞÅÏ¢Ö¸Õë
- * @param handlerType ´¦ÀíÆ÷ÀàĞÍ
+ * @brief è®°å½•å¼‚å¸¸ä¿¡æ¯ï¼ˆç²¾ç®€æ¨¡å¼ï¼‰
+ * @param ExceptionInfo å¼‚å¸¸ä¿¡æ¯æŒ‡é’ˆ
+ * @param handlerType å¤„ç†å™¨ç±»å‹
  ******************************************************************************/
 static void LogExceptionInfo(PEXCEPTION_POINTERS ExceptionInfo, const char* handlerType)
 {
-  printf("³ÌĞòÎª %s °æ±¾\n", ENABLE_EXCEPTION_MONITOR? "Debug":"Release"); 
+  printf("ç¨‹åºä¸º %s ç‰ˆæœ¬\n", ENABLE_EXCEPTION_MONITOR? "Debug":"Release"); 
   DWORD processId = GetCurrentProcessId();
   DWORD threadId = GetCurrentThreadId();
   const char *exeName = getExeName();
   const char *timeStr = getLocalTime(); 
   snprintf(g_LastExceptionInfo, sizeof g_LastExceptionInfo,
-            "[Òì³£¼à¿ØÒÑ½ûÓÃ]\n"
-            "Ê±¼ä  : %s\n"
-            "½ø³Ì  : %s\n"
-            "³ÌĞòID: %lu\n"
-            "Ïß³ÌID: %lu\n"
-            "Òì³£  : 0x%08lX\n"
-            "µØÖ·  : 0x%p\n"
-            "´¦ÀíÆ÷: %s\n",
+            "[å¼‚å¸¸ç›‘æ§å·²ç¦ç”¨]\n"
+            "æ—¶é—´  : %s\n"
+            "è¿›ç¨‹  : %s\n"
+            "ç¨‹åºID: %lu\n"
+            "çº¿ç¨‹ID: %lu\n"
+            "å¼‚å¸¸  : 0x%08lX\n"
+            "åœ°å€  : 0x%p\n"
+            "å¤„ç†å™¨: %s\n",
             timeStr, exeName, processId, threadId,
             ExceptionInfo->ExceptionRecord->ExceptionCode,
             ExceptionInfo->ExceptionRecord->ExceptionAddress, handlerType);
@@ -352,9 +354,9 @@ static void LogExceptionInfo(PEXCEPTION_POINTERS ExceptionInfo, const char* hand
 #endif
 
 /******************************************************************************
- * @brief Òì³£´¦Àíº¯Êı - ÏòÁ¿Òì³£´¦Àí
- * @param ExceptionInfo Òì³£ĞÅÏ¢Ö¸Õë
- * @return Òì³£´¦Àí½á¹û
+ * @brief å¼‚å¸¸å¤„ç†å‡½æ•° - å‘é‡å¼‚å¸¸å¤„ç†
+ * @param ExceptionInfo å¼‚å¸¸ä¿¡æ¯æŒ‡é’ˆ
+ * @return å¼‚å¸¸å¤„ç†ç»“æœ
  ******************************************************************************/
 static LONG WINAPI VectoredExceptionHandler(PEXCEPTION_POINTERS ExceptionInfo)
 {
@@ -363,9 +365,9 @@ static LONG WINAPI VectoredExceptionHandler(PEXCEPTION_POINTERS ExceptionInfo)
 }
 
 /******************************************************************************
- * @brief Òì³£´¦Àíº¯Êı - Î´´¦ÀíÒì³£¹ıÂË
- * @param ExceptionInfo Òì³£ĞÅÏ¢Ö¸Õë
- * @return Òì³£´¦Àí½á¹û
+ * @brief å¼‚å¸¸å¤„ç†å‡½æ•° - æœªå¤„ç†å¼‚å¸¸è¿‡æ»¤
+ * @param ExceptionInfo å¼‚å¸¸ä¿¡æ¯æŒ‡é’ˆ
+ * @return å¼‚å¸¸å¤„ç†ç»“æœ
  ******************************************************************************/
 static LONG WINAPI UnhandledExceptionFilterA(PEXCEPTION_POINTERS ExceptionInfo)
 {
@@ -373,14 +375,14 @@ static LONG WINAPI UnhandledExceptionFilterA(PEXCEPTION_POINTERS ExceptionInfo)
     return EXCEPTION_EXECUTE_HANDLER;
 }
 
-/*================== ¹«¹²½Ó¿ÚÊµÏÖ ============================================*/
+/*================== å…¬å…±æ¥å£å®ç° ============================================*/
 
 /******************************************************************************
- * @brief ³õÊ¼»¯½ø³ÌÒì³£¼à¿Ø
+ * @brief åˆå§‹åŒ–è¿›ç¨‹å¼‚å¸¸ç›‘æ§
  ******************************************************************************/
 void InitializeProcessExceptionMonitor(void)
 {
-  //printf("Ê¹ÓÃ%sÒì³£¼à¿Ø...\n", ENABLE_EXCEPTION_MONITOR? "ÍêÕû":"¾«¼ò"); 
+  //printf("ä½¿ç”¨%så¼‚å¸¸ç›‘æ§...\n", ENABLE_EXCEPTION_MONITOR? "å®Œæ•´":"ç²¾ç®€"); 
 #if ENABLE_EXCEPTION_MONITOR 
   InitializeSymbolsSimple(); 
 #endif
@@ -389,7 +391,7 @@ void InitializeProcessExceptionMonitor(void)
 }
 
 /******************************************************************************
- * @brief ÇåÀí½ø³ÌÒì³£¼à¿Ø
+ * @brief æ¸…ç†è¿›ç¨‹å¼‚å¸¸ç›‘æ§
  ******************************************************************************/
 void CleanupProcessExceptionMonitor(void)
 {
@@ -397,12 +399,12 @@ void CleanupProcessExceptionMonitor(void)
   if (g_SymInitialized)
     SymCleanup(GetCurrentProcess());
 #endif
-  printf("Òì³£¼à¿ØÒÑÍ£Ö¹\n");
+  printf("å¼‚å¸¸ç›‘æ§å·²åœæ­¢\n");
 }
 
 /******************************************************************************
- * @brief ÉèÖÃÒì³£ÈÕÖ¾Â·¾¶
- * @param logPath ÈÕÖ¾ÎÄ¼şÂ·¾¶
+ * @brief è®¾ç½®å¼‚å¸¸æ—¥å¿—è·¯å¾„
+ * @param logPath æ—¥å¿—æ–‡ä»¶è·¯å¾„
  ******************************************************************************/
 void SetExceptionLogPath(const char* logPath)
 {
@@ -410,8 +412,8 @@ void SetExceptionLogPath(const char* logPath)
 }
 
 /******************************************************************************
- * @brief »ñÈ¡×îºóÒ»´ÎÒì³£ĞÅÏ¢
- * @return Òì³£ĞÅÏ¢×Ö·û´®
+ * @brief è·å–æœ€åä¸€æ¬¡å¼‚å¸¸ä¿¡æ¯
+ * @return å¼‚å¸¸ä¿¡æ¯å­—ç¬¦ä¸²
  ******************************************************************************/
 const char* GetLastExceptionInfo(void)
 {

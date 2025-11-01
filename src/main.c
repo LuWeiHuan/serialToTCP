@@ -1,20 +1,19 @@
  /******************************************************************************
-  * @file    ÎÄ¼ş main.c 
-  * @author  ×÷Õß 
-  * @version °æ±¾ V1.0
-  * @date    ÈÕÆÚ 2025-08-17
-  * @brief   ¼ò½é ±¾´úÂë¾ø´ó²¿·Ö¶¼ÓÉAIÍê³É£¬²¿·Ö¾­¹ıÈË¹¤ĞŞ¸Ä
+  * @file    æ–‡ä»¶ main.c 
+  * @author  ä½œè€… 
+  * @version ç‰ˆæœ¬ V1.0
+  * @date    æ—¥æœŸ 2025-08-17
+  * @brief   ç®€ä»‹ æœ¬ä»£ç ç»å¤§éƒ¨åˆ†éƒ½ç”±AIå®Œæˆï¼Œéƒ¨åˆ†ç»è¿‡äººå·¥ä¿®æ”¹
   * 
   ******************************************************************************
-  * @attention ×¢Òâ
-  * ¿ÉÄÜÒªÒª´ò¿ªÉè±¸¹ÜÀíÆ÷²ÅÄÜÊµÏÖ²åÈë°Î³ö´®¿Ú¼ì²â¹¦ÄÜ
+  * @attention æ³¨æ„
+  * 
   *
   *******************************************************************************
 */
 
-/*================== Í·ÎÄ¼ş°üº¬     =========================================*/
+/*================== å¤´æ–‡ä»¶åŒ…å«     =========================================*/
 #include <stdio.h>
-#include <time.h>
 
 #include "main.h"
 #include "Queue.h"
@@ -30,51 +29,59 @@
 #include "exception.h"
 
 
-/*================== ±¾µØºê¶¨Òå     =========================================*/
-/*================== ±¾µØ³£Á¿ÉùÃ÷    ========================================*/
-/*================== ±¾µØ±äÁ¿ÉùÃ÷    ========================================*/
+/*================== æœ¬åœ°å®å®šä¹‰     =========================================*/
+/*================== æœ¬åœ°å¸¸é‡å£°æ˜    ========================================*/
+/*================== æœ¬åœ°å˜é‡å£°æ˜    ========================================*/
 static serverInfo_t mainServer;
 
-/*================== È«¾Ö¹²Ïí±äÁ¿    ========================================*/
+/*================== å…¨å±€å…±äº«å˜é‡    ========================================*/
 const uint16_t * const mainServerPort = &mainServer.port;
 
-/*================== ±¾µØº¯ÊıÉùÃ÷    ========================================*/
+/*================== æœ¬åœ°å‡½æ•°å£°æ˜    ========================================*/
 static void microFuncCodeTest(void);
 static bool startServer(int argc, char const *argv[]);
-/*================== Íâ²¿º¯ÊıºÍ±äÁ¿ÉùÃ÷    ==================================*/
+static BOOL SetConsoleFontSize(int width, int height);
+/*================== å¤–éƒ¨å‡½æ•°å’Œå˜é‡å£°æ˜    ==================================*/
 
 /*=============================================================================
- ¹¦   ÄÜ£ºÖ÷º¯Êı
- ²Î   Êı£ºargc  ´«µİÊıÁ¿
-          argv  ´«µİÄÚÈİ
- ·µ   »Ø£ºÎŞ
- Ãè   Êö£ºÎŞ
+ åŠŸ   èƒ½ï¼šä¸»å‡½æ•°
+ å‚   æ•°ï¼šargc  ä¼ é€’æ•°é‡
+          argv  ä¼ é€’å†…å®¹
+ è¿”   å›ï¼šæ— 
+ æ   è¿°ï¼šæ— 
 =============================================================================*/
 int main(int argc, char const *argv[])
 {
   getRuningTimeMs();
+
+#ifdef _WIN32  // Windows: è®¾ç½®æ§åˆ¶å°ä¸ºUTF-8ç¼–ç 
+  SetConsoleOutputCP(65001);
+  SetConsoleCP(65001);
+  SetConsoleFontSize(8, 16);
+  InitializeWinSocket();
+#endif
+
   printBuildInfo();
   InitializeProcessExceptionMonitor();
   
   logPrintResourceInit(true);
   microFuncCodeTest();
-  InitializeWinSocket();
-  
+
   if( startServer(argc, argv) == false )
     return 1;
-  DiscoveryService(true);       // Æô¶¯·¢ÏÖ·şÎñ
+  DiscoveryService(true);       // å¯åŠ¨å‘ç°æœåŠ¡
   startAsyncFuncHandle(true);
-  startTrafficMonitor();        // Á÷Á¿Í³¼Æ
+  startTrafficMonitor();        // æµé‡ç»Ÿè®¡
   ClientResourceInit(true);
   ComPortResourceInit(true);
-  DeviceChangeMonitor(true);    // Æô¶¯Éè±¸²å°Î±ä»¯¼àÌı 
+  DeviceChangeMonitor(true);    // å¯åŠ¨è®¾å¤‡æ’æ‹”å˜åŒ–ç›‘å¬ 
   ServerConnectInit(true);
   
   int8_t listenStartRet;
   bool addRet;
   while( true ) {
     
-    // ¿´¿´ÊÇ·ñÓĞĞÂµÄ¿Í»§¶ËÁ¬½Ó
+    // çœ‹çœ‹æ˜¯å¦æœ‰æ–°çš„å®¢æˆ·ç«¯è¿æ¥
     listenStartRet = listenNewClientConnect(&mainServer);
     if( listenStartRet == -1 ) 
       break;
@@ -83,7 +90,7 @@ int main(int argc, char const *argv[])
       continue;
     }
 
-    // Ìí¼ÓĞÂ¿Í»§¶Ë
+    // æ·»åŠ æ–°å®¢æˆ·ç«¯
     addRet = addNewClient(mainServer.newSocket, mainServer.newIP);
     if( addRet == false )
       closesocket( mainServer.newSocket );
@@ -91,7 +98,7 @@ int main(int argc, char const *argv[])
 
   closesocket(mainServer.socket); 
   ServerConnectInit(false);
-  DiscoveryService(false);    // ÔÚÍË³öÇ°Í£Ö¹·¢ÏÖ·şÎñ 
+  DiscoveryService(false);
   ClientResourceInit(false);
   ComPortResourceInit(false);
   DeviceChangeMonitor(false);
@@ -103,21 +110,35 @@ int main(int argc, char const *argv[])
   return 0;
 }
 
-// Æô¶¯·şÎñÆ÷
+// å¯åŠ¨æœåŠ¡å™¨
 static bool startServer(int argc, char const *argv[])
 {
-  // ½âÎöÀ´×Ô³ÌĞò´«µİµÄ¶Ë¿ÚºÅ
+  // è§£ææ¥è‡ªç¨‹åºä¼ é€’çš„ç«¯å£å·
   uint16_t retPort = ParsePortParameter(argc, argv);
   mainServer.port = retPort == 0? DEFAULT_PORT:retPort;
   mainServer.socket = INVALID_SOCKET; 
   mainServer.newSocket = INVALID_SOCKET;
   strcpy(mainServer.newIP, "NULL"); 
   
-  // ³õÊ¼»¯·şÎñÆ÷×ÊÔ´
+  // åˆå§‹åŒ–æœåŠ¡å™¨èµ„æº
   bool serRet = serverInit(&mainServer); 
   SafePrintf("Server started %s! port: %d\n", 
     serRet? "succeed":"fail", mainServer.port);
   return serRet;
+}
+
+static BOOL SetConsoleFontSize(int width, int height) {
+    HANDLE hConsole = GetStdHandle(STD_OUTPUT_HANDLE);
+    CONSOLE_FONT_INFOEX fontInfo = {0};
+    
+    fontInfo.cbSize = sizeof fontInfo;
+    fontInfo.dwFontSize.X = width;   // å­—ä½“å®½åº¦
+    fontInfo.dwFontSize.Y = height;  // å­—ä½“é«˜åº¦
+    fontInfo.FontFamily = FF_DONTCARE;
+    fontInfo.FontWeight = FW_NORMAL;
+    wcscpy(fontInfo.FaceName, L"Consolas"); // å­—ä½“åç§°
+    
+    return SetCurrentConsoleFontEx(hConsole, FALSE, &fontInfo);
 }
 
 static void microFuncCodeTest(void)

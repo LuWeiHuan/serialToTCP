@@ -1,24 +1,23 @@
 /******************************************************************************
-  * @file    ÎÄ¼ş public.c 
-  * @author  ×÷Õß 
-  * @version °æ±¾ V1.0
-  * @date    ÈÕÆÚ 2025-08-17
-  * @brief   ¼ò½é ¹«¹²×ÊÔ´
+  * @file    æ–‡ä»¶ public.c 
+  * @author  ä½œè€… 
+  * @version ç‰ˆæœ¬ V1.0
+  * @date    æ—¥æœŸ 2025-08-17
+  * @brief   ç®€ä»‹ å…¬å…±èµ„æº
   ******************************************************************************
-  * @attention ×¢Òâ
+  * @attention æ³¨æ„
   *
   *
   *******************************************************************************
 */
 
-/*================== Í·ÎÄ¼ş°üº¬     =========================================*/
+/*================== å¤´æ–‡ä»¶åŒ…å«     =========================================*/
 
 
 #include "public.h"
 #include "main.h"
 #include "COM.h"
 #include "TrafficStats.h"
-#include "logPrint.h"
 #include "clients.h"
 
 #include <stdio.h>
@@ -29,8 +28,8 @@
  
 
 
-/*================== ±¾µØºê¶¨Òå     =========================================*/
-/*================== È«¾Ö¹²Ïí±äÁ¿    ========================================*/
+/*================== æœ¬åœ°å®å®šä¹‰     =========================================*/
+/*================== å…¨å±€å…±äº«å˜é‡    ========================================*/
 runInfo_t  runInfo = {
   .startTime = 0,
   .serverPrintData = 0,
@@ -41,12 +40,12 @@ runInfo_t  runInfo = {
   .COMrecv4Knum = (RECV_BUFFER_SIZE) - 4096 - 1,
 };
 
-/*================== ±¾µØ³£Á¿ÉùÃ÷    ========================================*/
-/*================== ±¾µØ±äÁ¿ÉùÃ÷    ========================================*/
-/*================== ±¾µØº¯ÊıÉùÃ÷    ========================================*/
-/*================== Íâ²¿º¯ÊıºÍ±äÁ¿ÉùÃ÷    ==================================*/
+/*================== æœ¬åœ°å¸¸é‡å£°æ˜    ========================================*/
+/*================== æœ¬åœ°å˜é‡å£°æ˜    ========================================*/
+/*================== æœ¬åœ°å‡½æ•°å£°æ˜    ========================================*/
+/*================== å¤–éƒ¨å‡½æ•°å’Œå˜é‡å£°æ˜    ==================================*/
 
-// »ñÈ¡´ÓÔËĞĞµ½ÏÖÔÚµÄ¼ä´Á£¨ºÁÃë£©³ÌĞòÔËĞĞÒªµ÷ÓÃÒ»´Î
+// è·å–ä»è¿è¡Œåˆ°ç°åœ¨çš„é—´æˆ³ï¼ˆæ¯«ç§’ï¼‰ç¨‹åºè¿è¡Œè¦è°ƒç”¨ä¸€æ¬¡
 uint64_t getRuningTimeMs(void) 
 {
   struct _timeb timebuffer; 
@@ -55,14 +54,14 @@ uint64_t getRuningTimeMs(void)
   static uint64_t initialTimeMs = 0;
   if( initialTimeMs == 0 ){
     initialTimeMs = timebuffer.time * 1000 + timebuffer.millitm;
-    runInfo.startTime = time(NULL);  // »ñÈ¡µ±Ç°Ê±¼ä£¨´Ó 1970-01-01 00:00:00 ¿ªÊ¼µÄÃëÊı£© 
+    runInfo.startTime = time(NULL);  // è·å–å½“å‰æ—¶é—´ï¼ˆä» 1970-01-01 00:00:00 å¼€å§‹çš„ç§’æ•°ï¼‰ 
   }
   
   uint64_t atPresent = timebuffer.time * 1000 + timebuffer.millitm;
   return atPresent - initialTimeMs;
 }
 
-// ¸üĞÂ±êÌâÀ¸ÄÚÈİ
+// æ›´æ–°æ ‡é¢˜æ å†…å®¹
 void updataConsoleTitle(const char *threadName)
 {
   time_t currentTime = time(NULL) - runInfo.startTime;
@@ -77,14 +76,14 @@ void updataConsoleTitle(const char *threadName)
   DWORD theradID = GetCurrentThreadId();
   #ifdef __TRAFFIC_STATS_H_
   if( trafficStats.run && currentTime % 6 < 3 )
-    snprintf(title, sizeof title, "´®¿Ú×ªTCP     ´®¿Ú:¡ü %s  ¡ı %s   ÍøÂç£º¡ü %s  ¡ı %s    Ïß³Ì%ld£º%s",
+    snprintf(title, sizeof title, "ä¸²å£è½¬TCP     ä¸²å£:â†‘ %s  â†“ %s   ç½‘ç»œï¼šâ†‘ %s  â†“ %s    çº¿ç¨‹%ldï¼š%s",
       trafficStats.com.recvRate, trafficStats.com.sendRate,
       trafficStats.net.sendRate, trafficStats.net.recvRate,
       theradID, threadName =! NULL? threadName:"No thread Name");
   else
   #endif
-    snprintf(title, sizeof title, "´®¿Ú×ªTCP     ·şÎñ¶Ë¿ÚºÅ£º%d   "
-      "ÒÑÔËĞĞ%dÌì£º%02d:%02d:%02d  ¿Í»§¶Ë£º%d/%d  Ïß³Ì%ld£º%s",
+    snprintf(title, sizeof title, "ä¸²å£è½¬TCP     æœåŠ¡ç«¯å£å·ï¼š%d   "
+      "å·²è¿è¡Œ%då¤©ï¼š%02d:%02d:%02d  å®¢æˆ·ç«¯ï¼š%d/%d  çº¿ç¨‹%ldï¼š%s",
         getMainServerPort(), day, hour, min, sec, getClientNum(), getMaxClient(), 
         theradID, threadName =! NULL? threadName:"No thread Name");
   
@@ -97,9 +96,9 @@ char *getCurrentTimeStringSec(void)
   static char timeStr[40];
   memset(timeStr, 0, sizeof timeStr);
   SYSTEMTIME st;
-  GetLocalTime(&st);  // »ñÈ¡±¾µØÊ±¼ä
+  GetLocalTime(&st);  // è·å–æœ¬åœ°æ—¶é—´
 
-  // ¸ñÊ½»¯Îª "YYYY-MM-DD HH:MM:SS"
+  // æ ¼å¼åŒ–ä¸º "YYYY-MM-DD HH:MM:SS"
   snprintf(timeStr, sizeof timeStr, "%04d-%02d-%02d %02d:%02d:%02d",
           st.wYear, st.wMonth, st.wDay,
           st.wHour, st.wMinute, st.wSecond);
@@ -107,28 +106,59 @@ char *getCurrentTimeStringSec(void)
 }
 
 void printBuildInfo(void) 
-{
+{ 
+  char localIPs[25][20] = {0};  
+  uint8_t ipCount;
+  GetAllLocalIPs(localIPs, &ipCount, 25);
+
   system("cls");
   printf("========================================\n");
-  printf("  Program    : %s\n", "´®¿Ú×ªTCP·şÎñ¶Ë");
+  printf("  Program    : %s\n", "ä¸²å£è½¬TCPæœåŠ¡ç«¯");
   printf("  Version    : %s\n", VERSIONS);
   printf("  Build Date : %s %s\n", __DATE__, __TIME__);
   printf("  Compiler   : GCC %d.%d.%d\n", __GNUC__, __GNUC_MINOR__, __GNUC_PATCHLEVEL__);
+  printf("  host Name  : %s\n",  getComputerFullName());
+  for (uint8_t i = 0; i < ipCount; i++) 
+    printf("  IP addr  %d : %s\n", i+1, localIPs[i]); 
   printf("========================================\n\n");
 }
 
+// è·å–æ‰€æœ‰æœ¬åœ°IPåœ°å€
+void GetAllLocalIPs(char ips[][20], uint8_t *count, uint8_t num)
+{
+    if( count == NULL )
+      return;
+
+    char hostname[256];
+    if (gethostname(hostname, sizeof hostname) == SOCKET_ERROR)
+        return;
+
+    struct hostent* hostinfo = gethostbyname(hostname);
+    if (hostinfo == NULL) 
+        return;
+    
+    *count = 0;
+    struct in_addr addr;
+    for (int i = 0; hostinfo->h_addr_list[i] != NULL && *count < num; i++) {
+        memcpy(&addr, hostinfo->h_addr_list[i], sizeof(struct in_addr));
+        if (strcmp(inet_ntoa(addr), "127.0.0.1") == 0) 
+          continue;
+        strncpy(ips[*count], inet_ntoa(addr), 16);
+        (*count)++;
+    }
+}
 
 /*
-»ñÈ¡ÊÕ·¢·½Ïò×Ö·û´®
- direct ²ÎÊıÈçÏÂÊÇÈçÏÂ×Ö·û´®
+è·å–æ”¶å‘æ–¹å‘å­—ç¬¦ä¸²
+ direct å‚æ•°å¦‚ä¸‹æ˜¯å¦‚ä¸‹å­—ç¬¦ä¸²
    [COM --> TCP]
    [TCP --> COM]
 
-  index ¿Í»§¶ËË÷ÒıºÅ
+  index å®¢æˆ·ç«¯ç´¢å¼•å·
 */
 char *getSendRecvDirectionStr(char *direct, uint8_t index)
 {
-  char *endptr;  // ÓÃÓÚ¼ì²âÎ´×ª»»µÄ×Ö·û 
+  char *endptr;  // ç”¨äºæ£€æµ‹æœªè½¬æ¢çš„å­—ç¬¦ 
   uint8_t comNum = strtol(ComPort->portName + 3, &endptr, 10);
 
   static char retStr[30];
@@ -143,7 +173,7 @@ char *getSendRecvDirectionStr(char *direct, uint8_t index)
   if( strcmp(direct, "[COM --> TCP]") == 0 ){
     memset(retStr, 0, sizeof retStr);
 
-    if( runInfo.monopolizeComRecvIndex != NULL ) // ¶ÀÕ¼´®¿ÚÊı¾İ
+    if( runInfo.monopolizeComRecvIndex != NULL ) // ç‹¬å ä¸²å£æ•°æ®
       snprintf(retStr, sizeof retStr, "COM%-3d--> TCP%-3d", 
         comNum, *runInfo.monopolizeComRecvIndex);
     else
@@ -175,39 +205,39 @@ char *getSendRecvDirectionStr(char *direct, uint8_t index)
 }
 
 /**
- * »ñÈ¡¼ÆËã»úÈ«Ãû£¨DNSÈ«Ãû£©
- * ·µ»ØÖµ£º¼ÆËã»úÃû×Ö·û´®
+ * è·å–è®¡ç®—æœºå…¨åï¼ˆDNSå…¨åï¼‰
+ * è¿”å›å€¼ï¼šè®¡ç®—æœºåå­—ç¬¦ä¸²
  */
 const char *getComputerFullName(void) 
 {
     DWORD nameLen = 0;
-    static char computerName[20]; // WinÌáÊ¾¼ÆËã»úÃû×î´ó15¸ö×Ö·û
+    static char computerName[20]; // Winæç¤ºè®¡ç®—æœºåæœ€å¤§15ä¸ªå­—ç¬¦
     memset(computerName, 0, sizeof computerName);
 
-    // µÚÒ»´Îµ÷ÓÃ»ñÈ¡ËùĞè»º³åÇø´óĞ¡
+    // ç¬¬ä¸€æ¬¡è°ƒç”¨è·å–æ‰€éœ€ç¼“å†²åŒºå¤§å°
     BOOL result = GetComputerNameEx(ComputerNameDnsFullyQualified, NULL, &nameLen);
     if (result == FALSE && GetLastError() != ERROR_MORE_DATA){ 
       snprintf(computerName, sizeof computerName, "A not name:%ld", GetLastError());
       return computerName;
     }
     
-    // µÚ¶ş´Îµ÷ÓÃ»ñÈ¡Êµ¼ÊÃû³Æ
+    // ç¬¬äºŒæ¬¡è°ƒç”¨è·å–å®é™…åç§°
     result = GetComputerNameEx(ComputerNameDnsFullyQualified, computerName, &nameLen);
     if (result == FALSE) { 
       snprintf(computerName, sizeof computerName, "B not name:%ld", GetLastError());
       return computerName;
     }
 
-    return computerName; // ³É¹¦
+    return computerName; // æˆåŠŸ
 }
 
 
-// ³õÊ¼»¯Winsock£¬WinÏµÍ³ÌØĞÔÒªÇó´´½¨µÚÒ»¸ösocketÖ®Ç°ÒªÈ·¶¨ÒªÊ¹ÓÃÄÄ¸ö°æ±¾µÄsocket¿â
+// åˆå§‹åŒ–Winsockï¼ŒWinç³»ç»Ÿç‰¹æ€§è¦æ±‚åˆ›å»ºç¬¬ä¸€ä¸ªsocketä¹‹å‰è¦ç¡®å®šè¦ä½¿ç”¨å“ªä¸ªç‰ˆæœ¬çš„socketåº“
 bool InitializeWinSocket(void)
 {
   WSADATA wsaData;
   int result = WSAStartup(MAKEWORD(2, 2), &wsaData);
-  if (result != 0)  
-      SafePrintf("WSAStartup failed: %d\n", result);
+  if (result != 0)
+      printf("WSAStartup failed: %d\n", result);
   return result == 0? true:false;
 }

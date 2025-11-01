@@ -29,10 +29,3 @@ void printHex(const uint8_t *pdata, uint16_t len, uint8_t numEnter, uint8_t endE
 #endif
 
 #endif /*__LOG_PRINT_H_*/
-
-
-
-
-
-
-

@@ -9,7 +9,7 @@
       "type": "cppdbg",
       "request": "launch",
     //"program": "输入程序名称，例如 ${workspaceFolder}/a.exe",
-      "program": "${workspaceFolder}\\bin\\com2tcp_server.exe",
+      "program": "${workspaceFolder}\\com2tcp_server.exe",
       "args": [],
       "stopAtEntry": false,
       "cwd": "${fileDirname}",

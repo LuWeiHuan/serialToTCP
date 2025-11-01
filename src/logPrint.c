@@ -11,19 +11,25 @@
   *******************************************************************************
 */
 
+/*================== 本地宏定义     =========================================*/
+//#define MAX_ASYNC_PRINTF_LEN 1024*10  // 异步队列发送
+
 /*================== 头文件包含     =========================================*/
 #include "logPrint.h"
-#include "Queue.h"
 
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <stdatomic.h>
 
+#if MAX_ASYNC_PRINTF_LEN
+#include "Queue.h"
+#endif
+
 #include <windows.h>
 
-/*================== 本地宏定义     =========================================*/
-//#define MAX_ASYNC_PRINTF_LEN 1024*10  // 异步队列发送
+
+
 /*================== 全局共享变量    ========================================*/
 /*================== 本地常量声明    ========================================*/
 static CRITICAL_SECTION g_log_cs;
@@ -31,12 +37,12 @@ static CRITICAL_SECTION g_log_cs;
 
 /*================== 本地变量声明    ========================================*/
 /*================== 本地函数声明    ========================================*/
-DWORD WINAPI ConsoleInputThread(LPVOID lpParam);
+DWORD WINAPI ConsoleInputThread(void *lpParam);
 static void DisableQuickEditMode(void);
 
 #if MAX_ASYNC_PRINTF_LEN
 static AsyncQueue_t AsyncPrintQueue;
-static void AsyncPrintfCallBack(queueData_t * queueData);
+static void AsyncPrintfCallBack(char *, uint32_t);
 #endif
 
 /*================== 外部函数和变量声明    ==================================*/
@@ -65,9 +71,9 @@ typedef struct {
     va_list args;
 } AsyncPrintfData_t;
 
-static void AsyncPrintfCallBack(queueData_t * queueData)
+static void AsyncPrintfCallBack(char *data, uint32_t len)
 { 
-  fwrite(queueData->data, 1, queueData->len, stdout);
+  fwrite(data, 1, len, stdout);
 }
 #endif
 
@@ -196,7 +202,7 @@ char *getPrintf(const char *format, ...)
 
 
 // 创建一个线程来定期处理控制台输入
-DWORD WINAPI ConsoleInputThread(LPVOID lpParam) 
+DWORD WINAPI ConsoleInputThread(void *lpParam) 
 {
   (void)lpParam;
 

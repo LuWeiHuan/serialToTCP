@@ -57,7 +57,7 @@ inline uint16_t getMaxClient(void){
 }
 #endif
 
-#endif /*__CLIENT_H_*/
+#endif /*__CLIENTS_H_*/
 
 
 

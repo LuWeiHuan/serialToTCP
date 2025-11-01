@@ -93,7 +93,7 @@ static void HandleDeviceChange(WPARAM wParam, LPARAM lParam)
 }
 
 // 设备变化通知线程
-static DWORD WINAPI DeviceChangeMonitorThread(LPVOID lpParam)
+static DWORD WINAPI DeviceChangeMonitorThread(void *lpParam)
 {
     (void)lpParam;
 

@@ -1,26 +1,26 @@
 /******************************************************************************
-  * @file    ÎÄ¼ş clients.c 
-  * @author  ×÷Õß 
-  * @version °æ±¾ V1.0
-  * @date    ÈÕÆÚ 2025-08-17
-  * @brief   ¼ò½é Á¬½ÓµÄ¿Í»§¶Ë
+  * @file    æ–‡ä»¶ clients.c 
+  * @author  ä½œè€… 
+  * @version ç‰ˆæœ¬ V1.0
+  * @date    æ—¥æœŸ 2025-08-17
+  * @brief   ç®€ä»‹ è¿æ¥çš„å®¢æˆ·ç«¯
   ******************************************************************************
-  * @attention ×¢Òâ
+  * @attention æ³¨æ„
   *
-  * ÈÕÖ¾£º2025-09-17
-  * ¿Í»§¶ËÁĞ±íÊ¹ÓÃµÄÊÇÊı×é£¬¸Ä³ÉÄÚºËÁ´Á´±í×÷Îª¿Í»§¶ËÁĞ±í£¬ĞÂ¿Í»§¶ËÌí¼Óµ½Î²£¬
-  * ÕâÑù¿Í»§¶ËÂúÁË£¬ÌŞ³ı×îÔçµÄ¿Í»§¶Ë»ù±¾¾ÍÊÇ×îÔçÌí¼ÓµÄ½Úµã¡£
-  * Éè¼ÆÒ»¸öÊµÏÖ¶¨ÒåºÃµÄ¿Í»§¶ËÊı×é£¬Á´±íµÄ½Úµã¾Í´ÓÊı×éÀïÃæÑ°ÕÒ¿ÕÏĞµÄÊı×é³ÉÔ±£¬
-  * ÕâÑù¿ÉÒÔ±ÜÃâÆµ·±µÄÉêÇëÄÚ´æ£¬´®¿Ú³öÀ´µÄÊı¾İ·¢ËÍ¸øËùÓĞ¿Í»§¶ËÒ²»áºÜ¸ßĞ§¡£
+  * æ—¥å¿—ï¼š2025-09-17
+  * å®¢æˆ·ç«¯åˆ—è¡¨ä½¿ç”¨çš„æ˜¯æ•°ç»„ï¼Œæ”¹æˆå†…æ ¸é“¾é“¾è¡¨ä½œä¸ºå®¢æˆ·ç«¯åˆ—è¡¨ï¼Œæ–°å®¢æˆ·ç«¯æ·»åŠ åˆ°å°¾ï¼Œ
+  * è¿™æ ·å®¢æˆ·ç«¯æ»¡äº†ï¼Œå‰”é™¤æœ€æ—©çš„å®¢æˆ·ç«¯åŸºæœ¬å°±æ˜¯æœ€æ—©æ·»åŠ çš„èŠ‚ç‚¹ã€‚
+  * è®¾è®¡ä¸€ä¸ªå®ç°å®šä¹‰å¥½çš„å®¢æˆ·ç«¯æ•°ç»„ï¼Œé“¾è¡¨çš„èŠ‚ç‚¹å°±ä»æ•°ç»„é‡Œé¢å¯»æ‰¾ç©ºé—²çš„æ•°ç»„æˆå‘˜ï¼Œ
+  * è¿™æ ·å¯ä»¥é¿å…é¢‘ç¹çš„ç”³è¯·å†…å­˜ï¼Œä¸²å£å‡ºæ¥çš„æ•°æ®å‘é€ç»™æ‰€æœ‰å®¢æˆ·ç«¯ä¹Ÿä¼šå¾ˆé«˜æ•ˆã€‚
   * 
-  * Èç¹ûĞèÒª½øÒ»²½ÓÅ»¯£¬¿ÉÒÔ¿¼ÂÇ£º
-  * Ê¹ÓÃË«ÏòÁ´±íÒÔ±ã¸ü¿ìµÄÉ¾³ı²Ù×÷
-  * Ìí¼ÓĞÄÌø»úÖÆ×Ô¶¯ÇåÀíËÀÁ¬½Ó
-  * Ê¹ÓÃÏß³Ì³Ø´¦Àí¿Í»§¶ËÊı¾İ£¨µ«µ±Ç°µ¥Ïß³Ì per client Ä£ĞÍ¼òµ¥¿É¿¿£©
+  * å¦‚æœéœ€è¦è¿›ä¸€æ­¥ä¼˜åŒ–ï¼Œå¯ä»¥è€ƒè™‘ï¼š
+  * ä½¿ç”¨åŒå‘é“¾è¡¨ä»¥ä¾¿æ›´å¿«çš„åˆ é™¤æ“ä½œ
+  * æ·»åŠ å¿ƒè·³æœºåˆ¶è‡ªåŠ¨æ¸…ç†æ­»è¿æ¥
+  * ä½¿ç”¨çº¿ç¨‹æ± å¤„ç†å®¢æˆ·ç«¯æ•°æ®ï¼ˆä½†å½“å‰å•çº¿ç¨‹ per client æ¨¡å‹ç®€å•å¯é ï¼‰
   *******************************************************************************
 */
 
-/*================== Í·ÎÄ¼ş°üº¬     =========================================*/
+/*================== å¤´æ–‡ä»¶åŒ…å«     =========================================*/
 #include "clients.h"
 #include "main.h"
 #include "public.h"
@@ -28,36 +28,33 @@
 #include "COM.h"
 #include "TrafficStats.h"
 #include "Command.h"
-
-#include "Queue.h"
 #include "uthash.h"
 
 #include <stdio.h>
 #include <winsock2.h>
 #include <windows.h>
 #include <process.h>
-#include <time.h>
 
 
-/*================== ±¾µØÊı¾İÀàĞÍ   =========================================*/
+/*================== æœ¬åœ°æ•°æ®ç±»å‹   =========================================*/
 typedef struct ClientNode {
   SOCKET        socket;
   HANDLE        hThread;
   DWORD         threadId;
-  uint16_t      index;          // ÔÚ¿Í»§¶Ë³ØÀïÖĞµÄË÷Òı
+  uint16_t      index;          // åœ¨å®¢æˆ·ç«¯æ± é‡Œä¸­çš„ç´¢å¼•
   char          ip[50];
   uint64_t      connectTime;
   bool          sendTempUnav;
   uint64_t      tempUnavStart;
-  volatile LONG isClosing;  // Ìí¼Ó¹Ø±Õ×´Ì¬±êÖ¾
-  UT_hash_handle hh;        // ÓÃÓÚ¹şÏ£±í
+  volatile LONG isClosing;  // æ·»åŠ å…³é—­çŠ¶æ€æ ‡å¿—
+  UT_hash_handle hh;        // ç”¨äºå“ˆå¸Œè¡¨
   struct ClientNode* next;
 } ClientNode_t;
 
 typedef struct {
   ClientNode_t* head;
   ClientNode_t* tail;
-  ClientsNum_t  num;  // ¿Í»§¶ËÊıÁ¿
+  ClientsNum_t  num;  // å®¢æˆ·ç«¯æ•°é‡
 } ClientList_t;
 
 typedef struct {
@@ -68,17 +65,17 @@ typedef struct {
   char          reason[256];
 } asyncRequest_t;
 
-/*================== ±¾µØºê¶¨Òå     =========================================*/
-/*================== ±¾µØ³£Á¿ÉùÃ÷    ========================================*/
-/*================== ±¾µØ±äÁ¿ÉùÃ÷    ========================================*/
+/*================== æœ¬åœ°å®å®šä¹‰     =========================================*/
+/*================== æœ¬åœ°å¸¸é‡å£°æ˜    ========================================*/
+/*================== æœ¬åœ°å˜é‡å£°æ˜    ========================================*/
 static CRITICAL_SECTION csClient; 
 static ClientNode_t *clientPool = NULL, *socketHashTable = NULL;
 static ClientList_t clientList = { .num.max = MAX_CLIENTS };
 
-/*================== È«¾Ö¹²Ïí±äÁ¿    ========================================*/
+/*================== å…¨å±€å…±äº«å˜é‡    ========================================*/
 ClientsNum_t const * const g_clientsNum = &clientList.num;
 
-/*================== ±¾µØº¯ÊıÉùÃ÷    ========================================*/
+/*================== æœ¬åœ°å‡½æ•°å£°æ˜    ========================================*/
 static void ClientList_Init(void);
 static void ClientList_Add(ClientNode_t* node);
 static void ClientList_Remove(ClientNode_t* node);
@@ -91,7 +88,7 @@ static void CloseClient(ClientNode_t* node, const char *reason);
 static bool sendMonopolizeExamine(ClientNode_t* clientInfo);
 
 
-/*================== Íâ²¿º¯ÊıºÍ±äÁ¿ÉùÃ÷    ==================================*/
+/*================== å¤–éƒ¨å‡½æ•°å’Œå˜é‡å£°æ˜    ==================================*/
 
 const char *getClientIP(uint16_t index)
 {
@@ -105,7 +102,7 @@ const SOCKET *getClientSocket(uint16_t index)
   return clientPool[index].socket != INVALID_SOCKET? &clientPool[index].socket:NULL;
 }
 
-// Í¨¹ıÌ×½Ó×Ö»ñÈ¡¿Í»§¶ËË÷Òı£¬·µ»ØÕæ´ú±íÕâ¸öË÷ÒıÓĞĞ§
+// é€šè¿‡å¥—æ¥å­—è·å–å®¢æˆ·ç«¯ç´¢å¼•ï¼Œè¿”å›çœŸä»£è¡¨è¿™ä¸ªç´¢å¼•æœ‰æ•ˆ
 bool getClientIndex(const SOCKET *Socket, uint16_t *retIndex)
 { 
   if( Socket == NULL )
@@ -120,13 +117,13 @@ bool getClientIndex(const SOCKET *Socket, uint16_t *retIndex)
 }
 
  
-// Ê¹ÓÃÌ×½Ó×ÖµÄ·½Ê½¹Ø±Õ¿Í»§¶Ë£¬ÓĞËÑË÷¹ı³Ì£¬¾¡Á¿ÉÙÓÃ
+// ä½¿ç”¨å¥—æ¥å­—çš„æ–¹å¼å…³é—­å®¢æˆ·ç«¯ï¼Œä¼ ç»Ÿæœç´¢è¿‡ç¨‹æ•ˆç‡ä½
 void CloseClientSocket(const SOCKET *socket, const char *reason)
 { 
   EnterCriticalSection(&csClient); 
-  ClientNode_t* nodeAddr = FindClientBySocket(socket, true); // ±£´æ¿Í»§¶Ë½Úµã¸±±¾ 
-  char *socketCloseInfo = getPrintf("¹Ø±ÕÌ×½Ó×Ö£¬½Úµã%s£¬%s",
-      nodeAddr? "´æÔÚ":"Ã»ÓĞ", reason? reason:"Î´Öª"); 
+  ClientNode_t* nodeAddr = FindClientBySocket(socket, true); // ä¿å­˜å®¢æˆ·ç«¯èŠ‚ç‚¹å‰¯æœ¬ 
+  char *socketCloseInfo = getPrintf("å…³é—­å¥—æ¥å­—ï¼ŒèŠ‚ç‚¹%sï¼Œ%s",
+      nodeAddr? "å­˜åœ¨":"æ²¡æœ‰", reason? reason:"æœªçŸ¥"); 
   LeaveCriticalSection(&csClient);
   CloseClient(nodeAddr, socketCloseInfo);
 }
@@ -147,7 +144,7 @@ void ClientResourceInit(bool start)
     InitializeCriticalSection(&csClient); 
   } 
   else {
-    KickAllClients("×ÊÔ´ÊÍ·Å");
+    KickAllClients("èµ„æºé‡Šæ”¾");
     if (clientPool != LocalStaticClientPool && clientPool != NULL)
       free(clientPool);
     clientPool = NULL;
@@ -156,7 +153,7 @@ void ClientResourceInit(bool start)
   }
 }
 
-// »ñÈ¡×îÔçµÄ¿Í»§¶Ë
+// è·å–æœ€æ—©çš„å®¢æˆ·ç«¯
 static ClientNode_t* ClientList_GetOldest(void) 
 {
   ClientNode_t* oldest = NULL; 
@@ -171,7 +168,7 @@ static ClientNode_t* ClientPool_Alloc(void)
   for (uint16_t i = 0; i < clientList.num.max; i++) 
     if (clientPool[i].socket == INVALID_SOCKET) 
       return &clientPool[i];
-  return NULL; // ³ØÂú
+  return NULL; // æ± æ»¡
 }
 
 static void ClientPool_Free(ClientNode_t* node) 
@@ -180,7 +177,7 @@ static void ClientPool_Free(ClientNode_t* node)
     node->socket = INVALID_SOCKET;
     node->hThread = NULL;
     node->sendTempUnav = 0;
-    node->tempUnavStart = 0;  // ÖØÖÃÊ±¼ä¼ÆÊıÆ÷
+    node->tempUnavStart = 0;  // é‡ç½®æ—¶é—´è®¡æ•°å™¨
   //memset(node->ip, 0, sizeof node->ip);
   }
 }
@@ -224,9 +221,9 @@ static void ClientList_Remove(ClientNode_t* node)
   ClientPool_Free(node);
 }
 
-// Í¨¹ıSocket²éÕÒ½Úµã
-// isHASH ´«ÈëÕæ¿ìËÙËÑË÷£¬´æÔÚ¿Í»§¶ËÁĞ±íµÄÌ×½Ó×Ö£¬²»Ò»¶¨ÄÜËÑË÷µ½
-// isHASH ´«Èë¼ÙÆÕÍ¨ËÑË÷£¬´æÔÚ¿Í»§¶ËÁĞ±íµÄÌ×½Ó×Ö£¬»ù±¾¶¼ÄÜËÑË÷µ½
+// é€šè¿‡SocketæŸ¥æ‰¾èŠ‚ç‚¹
+// isHASH ä¼ å…¥çœŸå¿«é€Ÿæœç´¢ï¼Œå­˜åœ¨å®¢æˆ·ç«¯åˆ—è¡¨çš„å¥—æ¥å­—ï¼Œä¸ä¸€å®šèƒ½æœç´¢åˆ°
+// isHASH ä¼ å…¥å‡æ™®é€šæœç´¢ï¼Œå­˜åœ¨å®¢æˆ·ç«¯åˆ—è¡¨çš„å¥—æ¥å­—ï¼ŒåŸºæœ¬éƒ½èƒ½æœç´¢åˆ°
 static ClientNode_t* FindClientBySocket(const SOCKET *socket, bool isHASH)
 {
   if( socket == NULL )
@@ -243,7 +240,7 @@ static ClientNode_t* FindClientBySocket(const SOCKET *socket, bool isHASH)
   return found;
 }
 
-// ³õÊ¼»¯¿ÕÏĞ³Ø
+// åˆå§‹åŒ–ç©ºé—²æ± 
 static void ClientList_Init(void) {
   clientList.head = NULL;
   clientList.tail = NULL;
@@ -258,7 +255,7 @@ static void ClientList_Init(void) {
 }
 
 
-static DWORD WINAPI ClientRecvDataThread(LPVOID param) 
+static DWORD WINAPI ClientRecvDataThread(void * param) 
 //static unsigned __stdcall ClientRecvDataThread(void *param)
 {
   if (param == NULL) { 
@@ -277,21 +274,21 @@ static DWORD WINAPI ClientRecvDataThread(LPVOID param)
   memset(titleString, 0, sizeof titleString);
   snprintf(titleString, sizeof titleString, "client %d", clientInfo->index);
 
-  // ÉèÖÃsocketÎª·Ç×èÈûÄ£Ê½
-  u_long mode = 1;  // 1±íÊ¾·Ç×èÈû£¬0±íÊ¾×èÈû
+  // è®¾ç½®socketä¸ºéé˜»å¡æ¨¡å¼
+  u_long mode = 1;  // 1è¡¨ç¤ºéé˜»å¡ï¼Œ0è¡¨ç¤ºé˜»å¡
   int block = ioctlsocket(clientInfo->socket, FIONBIO, &mode);
   if (block != 0)
-    threadExitInfo = getPrintf("Ïß³ÌÍË³ö£¬ÉèÖÃ·Ç×èÈûÊ§°Ü£¬WAS´úÂë£º:%d ", WSAGetLastError()); 
+    threadExitInfo = getPrintf("çº¿ç¨‹é€€å‡ºï¼Œè®¾ç½®éé˜»å¡å¤±è´¥ï¼ŒWASä»£ç ï¼š:%d ", WSAGetLastError()); 
   
-  // ·¢ËÍÁ¬½Ó³É¹¦ÏûÏ¢
+  // å‘é€è¿æ¥æˆåŠŸæ¶ˆæ¯
   printfSend(&clientInfo->socket, "%s! your index %d\n", block==0?"OK":"Fail", clientInfo->index);
-  sendComPortsListToClient( &clientInfo->socket, true );  // Ïò¸Ã¿Í»§¶Ë·¢ËÍ¿ÉÓÃ¶Ë¿ÚºÅ
+  sendComPortsListToClient( &clientInfo->socket, true );  // å‘è¯¥å®¢æˆ·ç«¯å‘é€å¯ç”¨ç«¯å£å·
   
   while ( block == 0 ) {
-    // ¼ì²é¿Í»§¶ËsocketÊÇ·ñÈÔÈ»ÓĞĞ§
+    // æ£€æŸ¥å®¢æˆ·ç«¯socketæ˜¯å¦ä»ç„¶æœ‰æ•ˆ
     if (clientInfo->socket == INVALID_SOCKET){
       WSAerror = WSAGetLastError(); 
-      threadExitInfo = getPrintf("Ïß³ÌÍË³ö£¬Ì×½Ó×ÖÎŞĞ§£¬WSA´úÂë£º%d£¬½ÓÊÕ£º%d", 
+      threadExitInfo = getPrintf("çº¿ç¨‹é€€å‡ºï¼Œå¥—æ¥å­—æ— æ•ˆï¼ŒWSAä»£ç ï¼š%dï¼Œæ¥æ”¶ï¼š%d", 
           WSAerror, bytesReceived);
       break;
     }
@@ -299,50 +296,50 @@ static DWORD WINAPI ClientRecvDataThread(LPVOID param)
     FD_ZERO(&readSet);
     FD_SET(clientInfo->socket, &readSet);
 
-    // ÉèÖÃ³¬Ê±Ê±¼äÎª1Ãë
+    // è®¾ç½®è¶…æ—¶æ—¶é—´ä¸º1ç§’
     timeout.tv_sec = 1;
-    timeout.tv_usec = 0; // 100ºÁÃë
+    timeout.tv_usec = 0; // 100æ¯«ç§’
 
     retSelect = select(0, &readSet, NULL, NULL, &timeout);
     if (retSelect == SOCKET_ERROR) { 
       WSAerror = WSAGetLastError(); 
-      threadExitInfo = getPrintf("Ïß³ÌÍË³ö£¬Ñ¡Ôñ´íÎó£¬½ÓÊÕ£º%d£¬WAS´úÂë£º:%d ", 
+      threadExitInfo = getPrintf("çº¿ç¨‹é€€å‡ºï¼Œé€‰æ‹©é”™è¯¯ï¼Œæ¥æ”¶ï¼š%dï¼ŒWASä»£ç ï¼š:%d ", 
           bytesReceived, WSAerror);
       break;
     }
-    else if (retSelect == 0) {  // ³¬Ê±£¬Ã»ÓĞÊı¾İ¿É¶Á£¬¼ÌĞøÑ­»· 
+    else if (retSelect == 0) {  // è¶…æ—¶ï¼Œæ²¡æœ‰æ•°æ®å¯è¯»ï¼Œç»§ç»­å¾ªç¯ 
       updataConsoleTitle(titleString);
       continue;
     }
 
-    // ½ÓÊÕÊı¾İ
+    // æ¥æ”¶æ•°æ®
     bytesReceived = recv(clientInfo->socket, tcpRecvBuffer, sizeof tcpRecvBuffer - 1, 0);
-    if (bytesReceived == 0) { // ¿Í»§¶ËÕı³£¹Ø±ÕÁ¬½Ó 
+    if (bytesReceived == 0) { // å®¢æˆ·ç«¯æ­£å¸¸å…³é—­è¿æ¥ 
       WSAerror = WSAGetLastError();
-      threadExitInfo = getPrintf("Ïß³ÌÍË³ö£¬ÓÅÑÅµØ¶Ï¿ªÁ¬½Ó£¬WSA´úÂë£º%d£¬½ÓÊÕ£º%d", 
+      threadExitInfo = getPrintf("çº¿ç¨‹é€€å‡ºï¼Œä¼˜é›…åœ°æ–­å¼€è¿æ¥ï¼ŒWSAä»£ç ï¼š%dï¼Œæ¥æ”¶ï¼š%d", 
           WSAerror, bytesReceived);
       break;
     }
     else if (bytesReceived <= SOCKET_ERROR) {
       WSAerror = WSAGetLastError();
       if (WSAerror == WSAEWOULDBLOCK) 
-        continue;       // ·Ç×èÈûÄ£Ê½ÏÂÃ»ÓĞÊı¾İÊÇÕı³£Çé¿ö 
+        continue;       // éé˜»å¡æ¨¡å¼ä¸‹æ²¡æœ‰æ•°æ®æ˜¯æ­£å¸¸æƒ…å†µ 
       else if (WSAerror == WSAECONNRESET || WSAerror == WSAECONNABORTED) { 
-        threadExitInfo = getPrintf( "Ïß³ÌÍË³ö£¬Á¬½Ó±»ÖØÖÃ£¨°ÎÍøÏß£©£¬WSA´úÂë£º%d£¬½ÓÊÕ£º%d", 
+        threadExitInfo = getPrintf( "çº¿ç¨‹é€€å‡ºï¼Œè¿æ¥è¢«é‡ç½®ï¼ˆæ‹”ç½‘çº¿ï¼‰ï¼ŒWSAä»£ç ï¼š%dï¼Œæ¥æ”¶ï¼š%d", 
             WSAerror, bytesReceived);
         break;
       }
-      else { // ÆäËû´íÎó£¬¶Ï¿ªÁ¬½Ó
-        threadExitInfo = getPrintf("Ïß³ÌÍË³ö£¬½ÓÊÕ´íÎó£¬WSA´úÂë£º%d£¬½ÓÊÕ£º%d", 
+      else { // å…¶ä»–é”™è¯¯ï¼Œæ–­å¼€è¿æ¥
+        threadExitInfo = getPrintf("çº¿ç¨‹é€€å‡ºï¼Œæ¥æ”¶é”™è¯¯ï¼ŒWSAä»£ç ï¼š%dï¼Œæ¥æ”¶ï¼š%d", 
             WSAerror, bytesReceived);
         break;
       }
     }
 
-    // Õı³£½ÓÊÕµ½Êı¾İ
-    tcpRecvBuffer[bytesReceived] = '\0';  // ·ÀÖ¹ÃüÁî½âÎöÒì³£
+    // æ­£å¸¸æ¥æ”¶åˆ°æ•°æ®
+    tcpRecvBuffer[bytesReceived] = '\0';  // é˜²æ­¢å‘½ä»¤è§£æå¼‚å¸¸
 
-    // ¼ì²éÊÇ·ñÊÇ¿ØÖÆÃüÁî
+    // æ£€æŸ¥æ˜¯å¦æ˜¯æ§åˆ¶å‘½ä»¤
     if (strnicmp(tcpRecvBuffer, CTRL_HEADER, strlen(CTRL_HEADER)) == 0) {
       if (runInfo.serverPrintData == 3) 
         SafePrintf("Client [%-2d]IP:%s len:%d cmd: %-60s\n", 
@@ -352,17 +349,17 @@ static DWORD WINAPI ClientRecvDataThread(LPVOID param)
       continue;
     }
     
-    // ÅĞ¶Ï´®¿ÚÊÇ·ñÒÑ¾­´ò¿ª
+    // åˆ¤æ–­ä¸²å£æ˜¯å¦å·²ç»æ‰“å¼€
     if (ComPort->isOpen == FALSE) {
       printfSend(&clientInfo->socket, "COM not open !\n");
       continue;
     }
 
-    // ·¢ËÍ¶ÀÕ¼¼ì²é
+    // å‘é€ç‹¬å æ£€æŸ¥
     if( sendMonopolizeExamine(clientInfo) )
         continue;
         
-    // ÆÕÍ¨Êı¾İ£¬·¢ËÍµ½´®¿Ú
+    // æ™®é€šæ•°æ®ï¼Œå‘é€åˆ°ä¸²å£
     DWORD getError = 0;
     bytesWritten = ComPortSendData(tcpRecvBuffer, bytesReceived, &getError);
     if( bytesWritten != bytesReceived )
@@ -383,7 +380,7 @@ static DWORD WINAPI ClientRecvDataThread(LPVOID param)
         printHex((uint8_t*)tcpRecvBuffer, bytesReceived, 40, 2);
     }
     
-    #ifdef __TRAFFIC_STATS_H_ // Á÷Á¿Í³¼Æ
+    #ifdef __TRAFFIC_STATS_H_ // æµé‡ç»Ÿè®¡
     trafficStats.net.totalBytesReceived += bytesReceived;
     trafficStats.com.totalBytesSent += bytesWritten;
     #endif
@@ -393,14 +390,14 @@ static DWORD WINAPI ClientRecvDataThread(LPVOID param)
   return 0;
 }
 
-// ¿Í»§¶ËÊı¾İ¸ø´®¿Ú¶ÀÕ¼¼ì²é
-// ·µ»Ø£ºÕæ Çë½áÊøÑ­»·²»Òª·¢¸ø´®¿Ú£¬¼Ù ·ÅĞĞ¼ÌĞø
+// å®¢æˆ·ç«¯æ•°æ®ç»™ä¸²å£ç‹¬å æ£€æŸ¥
+// è¿”å›ï¼šçœŸ è¯·ç»“æŸå¾ªç¯ä¸è¦å‘ç»™ä¸²å£ï¼Œå‡ æ”¾è¡Œç»§ç»­
 static bool sendMonopolizeExamine(ClientNode_t* client)
 {
   if( client == NULL )
     return false;
   
-  // ´®¿Ú·¢ÉÏÀ´µÄÊı¾İÊÇ·ñ±»¶ÀÕ¼¡£
+  // ä¸²å£å‘ä¸Šæ¥çš„æ•°æ®æ˜¯å¦è¢«ç‹¬å ã€‚
   if( runInfo.monopolizeComRecvIndex && *runInfo.monopolizeComRecvIndex != client->index){ 
     const char *ClientIP = getClientIP(*runInfo.monopolizeComRecvIndex);
     if( ClientIP != NULL && runInfo.monopolizeComSendIndex == NULL)
@@ -411,7 +408,7 @@ static bool sendMonopolizeExamine(ClientNode_t* client)
       runInfo.monopolizeComRecvIndex = NULL;
   }
   
-  // ·¢ËÍ¸ø´®¿ÚµÄÊı¾İÊÇ·ñ±»Ö¸¶¨¿Í»§¶Ë¶ÀÕ¼
+  // å‘é€ç»™ä¸²å£çš„æ•°æ®æ˜¯å¦è¢«æŒ‡å®šå®¢æˆ·ç«¯ç‹¬å 
   if( runInfo.monopolizeComSendIndex && *runInfo.monopolizeComSendIndex != client->index){ 
     const char *ClientIP = getClientIP(*runInfo.monopolizeComSendIndex);
     if( ClientIP != NULL ) {
@@ -433,12 +430,12 @@ bool addNewClient(SOCKET socket, const char *ip)
   EnterCriticalSection(&csClient);
   
   ClientNode_t* newNode = ClientPool_Alloc();
-  if (!newNode) { // ³ØÂú£¬Ìßµô×îÀÏµÄ 
+  if (!newNode) { // æ± æ»¡ï¼Œè¸¢æ‰æœ€è€çš„ 
     newNode = ClientList_GetOldest();
     if (newNode) {
       printfSend(&newNode->socket, "You are kicked due to server full! "
         "Your index %d\n", newNode->index);
-      CloseClient(newNode, "¿Í»§¶ËÊıÁ¿ÒÑÂú");
+      CloseClient(newNode, "å®¢æˆ·ç«¯æ•°é‡å·²æ»¡");
     }
   }
 
@@ -455,7 +452,7 @@ bool addNewClient(SOCKET socket, const char *ip)
   ClientList_Add(newNode);
   InterlockedExchange(&newNode->isClosing, 0);
 
-  // ´´½¨Ïß³Ì
+  // åˆ›å»ºçº¿ç¨‹
   newNode->hThread = CreateThread(NULL, 0, ClientRecvDataThread, newNode, 0, &newNode->threadId);
   //newNode->hThread = (HANDLE)_beginthreadex(NULL, 0, ClientRecvDataThread, newNode, 0, (unsigned*)&newNode->threadId);
   if (newNode->hThread) {
@@ -471,7 +468,7 @@ bool addNewClient(SOCKET socket, const char *ip)
 }
 
 
-// »ñÈ¡ËùÓĞ¿Í»§¶ËIPºÍË÷Òı
+// è·å–æ‰€æœ‰å®¢æˆ·ç«¯IPå’Œç´¢å¼•
 void getAllClientIPandIndexInfo(char *retStr, uint16_t len) 
 {
   if(retStr == NULL || len == 0)
@@ -502,24 +499,24 @@ static void CloseClient(ClientNode_t* node, const char *reason)
 { 
   if (!node){
     SafePrintf("Client [-1]IP:0.0.0.0          Closed NO node,"
-      " reason: %s\n", reason? reason:"Î´Öª");
+      " reason: %s\n", reason? reason:"æœªçŸ¥");
     return;
   }
 
   EnterCriticalSection(&csClient); 
   BOOL isSelfCall = node->threadId == GetCurrentThreadId()? true:false;
 
-  // Ê¹ÓÃÔ­×Ó²Ù×÷È·±£Ö»ÓĞÒ»¸öÏß³ÌÖ´ĞĞ¹Ø±Õ
+  // ä½¿ç”¨åŸå­æ“ä½œç¡®ä¿åªæœ‰ä¸€ä¸ªçº¿ç¨‹æ‰§è¡Œå…³é—­
   if (InterlockedCompareExchange(&node->isClosing, 1, 0)) {
     SafePrintf("Client [%-2d]IP:%-16s Closed [SelfCall %s] is Already, reason: %s%s", 
         node->index, node->ip, isSelfCall? "YES":"NO ",
-        reason? reason:"Î´Öª", g_clientsNum->count == 0 ? "\n\n":"\n");
+        reason? reason:"æœªçŸ¥", g_clientsNum->count == 0 ? "\n\n":"\n");
     LeaveCriticalSection(&csClient);
     return;
   }
 
-  HANDLE closeThread = node->hThread; // Ôİ´æÏß³Ì¸±±¾
-  //ÏÈ¹Ø±ÕÌ×½Ó×Ö£¬´ÙÊ¹¿Í»§¶Ë½ÓÊÕÏß³ÌÍË³ö£¬Òì²½¹Ø±ÕµÄ»°Òª¾¡¿ì´ÙÊ¹Ïß³ÌÍË³ö
+  HANDLE closeThread = node->hThread; // æš‚å­˜çº¿ç¨‹å‰¯æœ¬
+  //å…ˆå…³é—­å¥—æ¥å­—ï¼Œä¿ƒä½¿å®¢æˆ·ç«¯æ¥æ”¶çº¿ç¨‹é€€å‡ºï¼Œå¼‚æ­¥å…³é—­çš„è¯è¦å°½å¿«ä¿ƒä½¿çº¿ç¨‹é€€å‡º
   int closeSocketRet = -1;
   if (node->socket != INVALID_SOCKET)
     closeSocketRet = closesocket( node->socket ); 
@@ -529,9 +526,9 @@ static void CloseClient(ClientNode_t* node, const char *reason)
   
   const char *CloseInfo = " ";
 
-  // Èç¹ûÊÇÏß³Ì×Ô¼ºµ÷ÓÃµÄ¹Ø±Õ£¬²»µÈ´ıÒ²²»Á¢¼´¹Ø±Õ¾ä±ú
+  // å¦‚æœæ˜¯çº¿ç¨‹è‡ªå·±è°ƒç”¨çš„å…³é—­ï¼Œä¸ç­‰å¾…ä¹Ÿä¸ç«‹å³å…³é—­å¥æŸ„
   if (closeThread && isSelfCall == false) {
-    // Íâ²¿µ÷ÓÃ£¬µÈ´ıÏß³ÌÍË³ö
+    // å¤–éƒ¨è°ƒç”¨ï¼Œç­‰å¾…çº¿ç¨‹é€€å‡º
     DWORD waitResult = WaitForSingleObject(closeThread, 1000); 
     if (waitResult == WAIT_TIMEOUT) {
       DWORD exitCode;
@@ -553,7 +550,7 @@ static void CloseClient(ClientNode_t* node, const char *reason)
  
 
 
-// sendDataToClients ×¨ÓÃ´íÎó´¦Àíº¯Êı²»¿ÉÍâÓÃ
+// sendDataToClients ä¸“ç”¨é”™è¯¯å¤„ç†å‡½æ•°ä¸å¯å¤–ç”¨
 static void sendFailErrorHandle(bool wide, ClientNode_t *ClientInfo, int error, 
   uint16_t *closeCount, int *errorList, ClientNode_t **clientsToClose, 
   uint64_t *retCurrentTime, int sendRet, int sendLen)
@@ -567,19 +564,19 @@ static void sendFailErrorHandle(bool wide, ClientNode_t *ClientInfo, int error,
   if( timeDiffIsChange != timeDiff/200){
     timeDiffIsChange = timeDiff/200;
 
-    SafePrintf("%s²¥·¢ËÍ ´íÎó:%6d£¬³¬Ê±:%4I64d ms ==> %-2d %-16s]  %-6d/%-6d Byte (%s : %d)     \n",
-        wide? "¹ã":"µ¥", error, timeDiff, ClientInfo? ClientInfo->index:-1, 
+    SafePrintf("%sæ’­å‘é€ é”™è¯¯:%6dï¼Œè¶…æ—¶:%4I64d ms ==> %-2d %-16s]  %-6d/%-6d Byte (%s : %d)     \n",
+        wide? "å¹¿":"å•", error, timeDiff, ClientInfo? ClientInfo->index:-1, 
         ClientInfo? ClientInfo->ip:"Unknown IP", 
         sendRet, sendLen, sendRet - sendLen == 0? "OK":"Fail", sendRet - sendLen );
   }
 
-  // Ã»ÓĞ¶ÔÓ¦½Úµã¾Í²»´¦Àí
+  // æ²¡æœ‰å¯¹åº”èŠ‚ç‚¹å°±ä¸å¤„ç†
   if (ClientInfo == NULL) 
     return;
   
-  // ×ÊÔ´ÔİÊ±²»¿ÉÓÃ£¬¶Ï¿ªWIFIµÄÊ±ºò»á³öÏÖ»òÍøÂç»·¾³²»ºÃµÄÇé¿öÏÂ»á³öÏÖ
+  // èµ„æºæš‚æ—¶ä¸å¯ç”¨ï¼Œæ–­å¼€WIFIçš„æ—¶å€™ä¼šå‡ºç°æˆ–ç½‘ç»œç¯å¢ƒä¸å¥½çš„æƒ…å†µä¸‹ä¼šå‡ºç°
   if (error == WSAEWOULDBLOCK ) {
-      // µÚÒ»´ÎÓöµ½×ÊÔ´ÔİÊ±²»¿ÉÓÃ£¬¼ÇÂ¼¿ªÊ¼Ê±¼ä
+      // ç¬¬ä¸€æ¬¡é‡åˆ°èµ„æºæš‚æ—¶ä¸å¯ç”¨ï¼Œè®°å½•å¼€å§‹æ—¶é—´
       if( ClientInfo->sendTempUnav == false ){
         ClientInfo->tempUnavStart = *retCurrentTime;
         ClientInfo->sendTempUnav = true; 
@@ -590,26 +587,26 @@ static void sendFailErrorHandle(bool wide, ClientNode_t *ClientInfo, int error,
   
   if( error == WSAECONNRESET || error == WSAECONNABORTED || 
       (ClientInfo->sendTempUnav && (*retCurrentTime - ClientInfo->tempUnavStart) >= 1000) ) { 
-      // Á¬½ÓÖØÖÃ»òÖĞÖ¹£¬Á¢¼´¹Ø±Õ
+      // è¿æ¥é‡ç½®æˆ–ä¸­æ­¢ï¼Œç«‹å³å…³é—­
       errorList[*closeCount] = error;
       clientsToClose[(*closeCount)++] = ClientInfo;
       ClientInfo->sendTempUnav = false; 
   }
 }
 
-// Socket Èç¹ûÎª¿Õ¾Í»á·¢ËÍ¸øËùÓĞ¿Í»§¶Ë£¬²»Îª¿ÕÇÒÓĞĞ§µÄ»°¾Í»áÖ»·¢ËÍ¸øÖ¸¶¨µÄ¿Í»§¶Ë
+// Socket å¦‚æœä¸ºç©ºå°±ä¼šå‘é€ç»™æ‰€æœ‰å®¢æˆ·ç«¯ï¼Œä¸ä¸ºç©ºä¸”æœ‰æ•ˆçš„è¯å°±ä¼šåªå‘é€ç»™æŒ‡å®šçš„å®¢æˆ·ç«¯
 int sendDataToClients(const SOCKET *socket, const char* buff, int len) 
 {
   EnterCriticalSection(&csClient);
   int sendRet = 0, error = 0; 
   uint64_t currentTime = 0; 
   
-  // ÊÕ¼¯ĞèÒª¹Ø±ÕµÄ¿Í»§¶Ë£¬ÔÚÁÙ½çÇøÍâ´¦Àí
+  // æ”¶é›†éœ€è¦å…³é—­çš„å®¢æˆ·ç«¯ï¼Œåœ¨ä¸´ç•ŒåŒºå¤–å¤„ç†
   uint16_t closeCount = 0;
   static int errorList[ MAX_CLIENTS ] = {0};
   static ClientNode_t *clientsToClose[ MAX_CLIENTS ] = {0};
 
-  if (socket && *socket != INVALID_SOCKET) {  // µ¥²¥ ·¢ËÍ¸øÖ¸¶¨¿Í»§¶Ë
+  if (socket && *socket != INVALID_SOCKET) {  // å•æ’­ å‘é€ç»™æŒ‡å®šå®¢æˆ·ç«¯
     do {
       sendRet = send(*socket, buff, len, 0);
       if ( sendRet > 0 ) 
@@ -617,13 +614,13 @@ int sendDataToClients(const SOCKET *socket, const char* buff, int len)
       
       error = WSAGetLastError();
 
-      // Ê¹ÓÃ¾²Ì¬±äÁ¿»º´æÉÏ´ÎÕÒµ½µÄ¿Í»§¶Ë½Úµã
+      // ä½¿ç”¨é™æ€å˜é‡ç¼“å­˜ä¸Šæ¬¡æ‰¾åˆ°çš„å®¢æˆ·ç«¯èŠ‚ç‚¹
       static ClientNode_t *lastFoundClient = NULL;
       ClientNode_t *targetClient = NULL;
-      // Ê×ÏÈ¼ì²éÊÇ·ñÊÇÉÏ´ÎÕÒµ½µÄ¿Í»§¶Ë
+      // é¦–å…ˆæ£€æŸ¥æ˜¯å¦æ˜¯ä¸Šæ¬¡æ‰¾åˆ°çš„å®¢æˆ·ç«¯
       if (lastFoundClient && lastFoundClient->socket == *socket) 
         targetClient = lastFoundClient;
-      else  // Èç¹û²»ÊÇÉÏ´ÎµÄ¿Í»§¶Ë£¬ÖØĞÂËÑË÷
+      else  // å¦‚æœä¸æ˜¯ä¸Šæ¬¡çš„å®¢æˆ·ç«¯ï¼Œé‡æ–°æœç´¢
         targetClient = lastFoundClient = FindClientBySocket(socket, true);
 
       sendFailErrorHandle(false, targetClient, error, &closeCount, 
@@ -631,14 +628,14 @@ int sendDataToClients(const SOCKET *socket, const char* buff, int len)
       if( closeCount && targetClient == lastFoundClient )
         lastFoundClient = NULL;
     } while (0);
-  }     // ¹ã²¥ ·¢ËÍ¸øËùÓĞ¿Í»§¶Ë
+  }     // å¹¿æ’­ å‘é€ç»™æ‰€æœ‰å®¢æˆ·ç«¯
   else for (ClientNode_t *next, *curr = clientList.head; curr; curr = next ) {
-    next = curr->next; // ÏÈ±£´æÏÂÒ»¸ö½Úµã£¬ÒòÎªcurr¿ÉÄÜÔÚÑ­»·ÖĞ±»É¾³ı 
+    next = curr->next; // å…ˆä¿å­˜ä¸‹ä¸€ä¸ªèŠ‚ç‚¹ï¼Œå› ä¸ºcurrå¯èƒ½åœ¨å¾ªç¯ä¸­è¢«åˆ é™¤ 
     if( curr->socket == INVALID_SOCKET ) 
       continue;
     
     int ret = send(curr->socket, buff, len, 0);
-    if (ret > 0) {  // ·¢ËÍ³É¹¦£¬ÖØÖÃ¼ÆÊıÆ÷ 
+    if (ret > 0) {  // å‘é€æˆåŠŸï¼Œé‡ç½®è®¡æ•°å™¨ 
       curr->tempUnavStart = curr->sendTempUnav = false;
       sendRet += ret;
       continue;
@@ -655,10 +652,10 @@ int sendDataToClients(const SOCKET *socket, const char* buff, int len)
 
   LeaveCriticalSection(&csClient);
   
-  // ÔÚÁÙ½çÇøÍâ´¦Àí¹Ø±Õ¿Í»§¶ËµÄÇëÇó
+  // åœ¨ä¸´ç•ŒåŒºå¤–å¤„ç†å…³é—­å®¢æˆ·ç«¯çš„è¯·æ±‚
   for (uint16_t i = 0; i < closeCount; i++) {
-    char *sendFailInfo = getPrintf("%s²¥·¢ËÍÊ§°Ü£¬³ÖĞø²»¿ÉÓÃÊ±¼ä£º%I64d ms£¬WSA´úÂë£º%d",
-        socket? "µ¥" : "¹ã", currentTime - clientsToClose[i]->tempUnavStart, errorList[i]);
+    char *sendFailInfo = getPrintf("%sæ’­å‘é€å¤±è´¥ï¼ŒæŒç»­ä¸å¯ç”¨æ—¶é—´ï¼š%I64d msï¼ŒWSAä»£ç ï¼š%d",
+        socket? "å•" : "å¹¿", currentTime - clientsToClose[i]->tempUnavStart, errorList[i]);
     CloseClient(clientsToClose[i], sendFailInfo); 
   }
 
@@ -666,15 +663,15 @@ int sendDataToClients(const SOCKET *socket, const char* buff, int len)
 }
 
 /**
- * @brief  Ì×½Ó×Ö·¢ËÍ×Ö·û´®£¬Ê¹ÓÃÀàËÆÓÚprintfº¯Êı
+ * @brief  å¥—æ¥å­—å‘é€å­—ç¬¦ä¸²ï¼Œä½¿ç”¨ç±»ä¼¼äºprintfå‡½æ•°
  * @param 
- *		@arg Socket£ºÖ¸¶¨·¢¸ø¿Í»§¶ËÌ×½Ó×ÖÖ¸Õë£¬Èç¹ûÎª¿×¾Í²»Ö¸¶¨¿Í»§¶Ë·¢ËÍ¸øËùÓĞ¿Í»§¶Ë
- *		@arg fmt: printf ¸ñÊ½
+ *		@arg Socketï¼šæŒ‡å®šå‘ç»™å®¢æˆ·ç«¯å¥—æ¥å­—æŒ‡é’ˆï¼Œå¦‚æœä¸ºå­”å°±ä¸æŒ‡å®šå®¢æˆ·ç«¯å‘é€ç»™æ‰€æœ‰å®¢æˆ·ç«¯
+ *		@arg fmt: printf æ ¼å¼
  * @retval 
  */
 int printfSend(const SOCKET *Socket, const char *fmt, ...)
 {
-    static __thread char stringBuff[1024 * 4 + sizeof(uint32_t)]; // ×Ö·û´®»º³åÇø
+    static __thread char stringBuff[1024 * 4 + sizeof(uint32_t)]; // å­—ç¬¦ä¸²ç¼“å†²åŒº
     strcpy(stringBuff, CTRL_HEADER);
     static uint8_t ctrlHeaderLen = strlen(CTRL_HEADER);
 
@@ -684,11 +681,11 @@ int printfSend(const SOCKET *Socket, const char *fmt, ...)
           sizeof stringBuff - ctrlHeaderLen - sizeof(uint32_t), fmt, args);
     va_end(args);
 
-    // ÔÚ×Ö·û´®ºóÌí¼Ó¶à¸ö¿Õ×Ö·û×÷ÎªÖÕÖ¹·û£¬°ïÖú½ÓÊÕ·½Ê¶±ğÏûÏ¢±ß½ç
+    // åœ¨å­—ç¬¦ä¸²åæ·»åŠ å¤šä¸ªç©ºå­—ç¬¦ä½œä¸ºç»ˆæ­¢ç¬¦ï¼Œå¸®åŠ©æ¥æ”¶æ–¹è¯†åˆ«æ¶ˆæ¯è¾¹ç•Œ
     uint32_t totalLength = ctrlHeaderLen + retLen;
-    uint8_t paddingZeros = sizeof(uint64_t); // Ôö¼Ó¿Õ×Ö·ûÊıÁ¿£¬ÀıÈçÊ¹ÓÃ8¸ö¿Õ×Ö·û
+    uint8_t paddingZeros = sizeof(uint64_t); // å¢åŠ ç©ºå­—ç¬¦æ•°é‡ï¼Œä¾‹å¦‚ä½¿ç”¨8ä¸ªç©ºå­—ç¬¦
     
-    // È·±£²»³¬³ö»º³åÇø
+    // ç¡®ä¿ä¸è¶…å‡ºç¼“å†²åŒº
     if (totalLength + paddingZeros > sizeof stringBuff)
         paddingZeros = sizeof stringBuff - totalLength;
     
@@ -698,23 +695,23 @@ int printfSend(const SOCKET *Socket, const char *fmt, ...)
 }
 
 /**
- * @brief ÌßµôËùÓĞÒÑÁ¬½ÓµÄ¿Í»§¶Ë¡£
- * @param reason Ìßµô¿Í»§¶ËµÄÔ­Òò£¨¿ÉÑ¡£¬¿ÉÎªNULL£©
- * @attention ²»ÄÜÍ¬²½µ÷ÓÃ£¬Ò²¾ÍÊÇ²»ÄÜÓÉÈÎºÎ¿Í»§¶Ë·¢Æğ£¬
- *  Èç¹ûÒªÓÃ¡£±ØĞëÒì²½µ÷ÓÃ»òÕßÓÉ²»ÔÚ¿Í»§¶ËÁĞ±íÀïµÄ³ÉÔ±·¢Æğ£¬±ÈÈçUDPËÑË÷·şÎñ¡£
+ * @brief è¸¢æ‰æ‰€æœ‰å·²è¿æ¥çš„å®¢æˆ·ç«¯ã€‚
+ * @param reason è¸¢æ‰å®¢æˆ·ç«¯çš„åŸå› ï¼ˆå¯é€‰ï¼Œå¯ä¸ºNULLï¼‰
+ * @attention ä¸èƒ½åŒæ­¥è°ƒç”¨ï¼Œä¹Ÿå°±æ˜¯ä¸èƒ½ç”±ä»»ä½•å®¢æˆ·ç«¯å‘èµ·ï¼Œ
+ *  å¦‚æœè¦ç”¨ã€‚å¿…é¡»å¼‚æ­¥è°ƒç”¨æˆ–è€…ç”±ä¸åœ¨å®¢æˆ·ç«¯åˆ—è¡¨é‡Œçš„æˆå‘˜å‘èµ·ï¼Œæ¯”å¦‚UDPæœç´¢æœåŠ¡ã€‚
  */
 void KickAllClients(const char* reason)
 {
   const char* kickReason = reason? reason : "NULL";
   char allExitInfoChs[100];
-  snprintf(allExitInfoChs, sizeof allExitInfoChs, "ËùÓĞ¿Í»§¶ËÏÂÏß %s", kickReason);
+  snprintf(allExitInfoChs, sizeof allExitInfoChs, "æ‰€æœ‰å®¢æˆ·ç«¯ä¸‹çº¿ %s", kickReason);
   printfSend(NULL, "Kicking all clients, reason:%s\n", kickReason);
   for (ClientNode_t* next, *curr = clientList.head; curr; curr = next) {
     next = curr->next;
     CloseClient(curr, allExitInfoChs);
   }
   
-  // ÖØÖÃ¼ÆÊıºÍ×´Ì¬
+  // é‡ç½®è®¡æ•°å’ŒçŠ¶æ€
   clientList.num.count = 0;
   runInfo.monopolizeComSendIndex = NULL;
   runInfo.monopolizeComRecvIndex = NULL;

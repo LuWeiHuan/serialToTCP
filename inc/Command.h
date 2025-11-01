@@ -7,7 +7,6 @@ extern "C" {
 #endif
 
 /*================== 头文件包含			=========================================*/
-#include <stdint.h>
 #include <stdbool.h>
 #include <winsock2.h>
 

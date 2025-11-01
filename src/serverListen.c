@@ -1,17 +1,17 @@
  /******************************************************************************
-  * @file    ÎÄ¼ş serverListen.c 
-  * @author  ×÷Õß 
-  * @version °æ±¾ V1.0
-  * @date    ÈÕÆÚ 2025-08-17
-  * @brief   ¼ò½é ·şÎñÆ÷¼àÌı£¬½ÓÊÕÆäËû¿Í»§¶ËÁ¬½Ó
+  * @file    æ–‡ä»¶ serverListen.c 
+  * @author  ä½œè€… 
+  * @version ç‰ˆæœ¬ V1.0
+  * @date    æ—¥æœŸ 2025-08-17
+  * @brief   ç®€ä»‹ æœåŠ¡å™¨ç›‘å¬ï¼Œæ¥æ”¶å…¶ä»–å®¢æˆ·ç«¯è¿æ¥
   ******************************************************************************
-  * @attention ×¢Òâ
+  * @attention æ³¨æ„
   *
   *
   *******************************************************************************
 */
 
-/*================== Í·ÎÄ¼ş°üº¬     =========================================*/
+/*================== å¤´æ–‡ä»¶åŒ…å«     =========================================*/
 #include <stdio.h>
 #include <stdint.h>
 #include <stdbool.h>
@@ -20,18 +20,16 @@
 
 #include "main.h"
 #include "logPrint.h"
-#include "public.h"
-#include "clients.h"
 #include "serverListen.h"
 
-/*================== ±¾µØºê¶¨Òå     =========================================*/
-/*================== È«¾Ö¹²Ïí±äÁ¿    ========================================*/
-/*================== ±¾µØ³£Á¿ÉùÃ÷    ========================================*/
-/*================== ±¾µØ±äÁ¿ÉùÃ÷    ========================================*/
-/*================== ±¾µØº¯ÊıÉùÃ÷    ========================================*/
+/*================== æœ¬åœ°å®å®šä¹‰     =========================================*/
+/*================== å…¨å±€å…±äº«å˜é‡    ========================================*/
+/*================== æœ¬åœ°å¸¸é‡å£°æ˜    ========================================*/
+/*================== æœ¬åœ°å˜é‡å£°æ˜    ========================================*/
+/*================== æœ¬åœ°å‡½æ•°å£°æ˜    ========================================*/
 static uint16_t FindAvailablePort(uint16_t startPort);
 
-/*================== Íâ²¿º¯ÊıºÍ±äÁ¿ÉùÃ÷    ==================================*/
+/*================== å¤–éƒ¨å‡½æ•°å’Œå˜é‡å£°æ˜    ==================================*/
 
 bool serverInit(serverInfo_t *server)
 {
@@ -39,23 +37,23 @@ bool serverInit(serverInfo_t *server)
     return 0;
 
 
-  // ²éÕÒ¿ÉÓÃ¶Ë¿Ú
+  // æŸ¥æ‰¾å¯ç”¨ç«¯å£
   server->port = FindAvailablePort(server->port);
   if (server->port == 0) {
     SafePrintf("No available port found\n");
     return false;
   }
 
-  // ´´½¨·şÎñÆ÷Ì×½Ó×Ö
+  // åˆ›å»ºæœåŠ¡å™¨å¥—æ¥å­—
   server->socket = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
   if (server->socket == INVALID_SOCKET) {
       SafePrintf("Error at socket(): %d\n", WSAGetLastError());
       return false;
   }
 
-  // ½ûÓÃNagleËã·¨
+  // ç¦ç”¨Nagleç®—æ³•
   char nagleStatus = 0;
-  int result = setsockopt(server->socket, //socketµÄÎÄ¼şÃèÊö·û
+  int result = setsockopt(server->socket, //socketçš„æ–‡ä»¶æè¿°ç¬¦
                           IPPROTO_TCP,
                           TCP_NODELAY,
                           &nagleStatus, 
@@ -63,7 +61,7 @@ bool serverInit(serverInfo_t *server)
   if (result < 0)
     SafePrintf("disable Nagle failed : %d\n", result);
 
-  // °ó¶¨Ì×½Ó×Ö
+  // ç»‘å®šå¥—æ¥å­—
   struct sockaddr_in service;
   service.sin_family = AF_INET;
   service.sin_addr.s_addr = INADDR_ANY;
@@ -75,7 +73,7 @@ bool serverInit(serverInfo_t *server)
       return false;
   }
 
-  // ¼àÌı
+  // ç›‘å¬
   if (listen(server->socket, SOMAXCONN) == SOCKET_ERROR) {
       SafePrintf("listen failed with error: %d\n", WSAGetLastError());
       closesocket(server->socket);
@@ -86,15 +84,15 @@ bool serverInit(serverInfo_t *server)
 }
 
 /*=============================================================================
- ¹¦   ÄÜ£º¼àÌıĞÂ¿Í»§¶ËÁ¬½Ó
- ²Î   Êı£ºServerSocket  --> ·şÎñ¶ËÌ×½Ó×Ö
-					retSocket		  --> ÓĞĞÂµÄ¿Í»§¶ËÁ¬½ÓÕâÀï»á·µ»Ø¿Í»§¶ËÌ×½Ó×Ö
-					retIP 	      --> ÓĞĞÂµÄ¿Í»§¶ËÁ¬½ÓÕâÀï»á·µ»Ø¿Í»§¶ËIP 
- ·µ   »Ø£º-2  Çë´«µİÓĞĞ§µÄ·şÎñ¶Ë½á¹¹Ìå
-          -1  Õâ¸ö·şÎñ¶ËÌ×½Ó×ÖÊÇÎŞĞ§µÄ£¬½¨ÒéÖØĞÂ´´½¨·şÎñ¶ËÌ×½Ó×Ö
-           0  ÔòÊÇÓĞĞÂµÄ¿Í»§¶ËÁ¬½Ó
-      ´óÓÚ 0  µÄ»°ÇëÖØĞÂ¼àÌı
- Ãè   Êö£ºÎŞ
+ åŠŸ   èƒ½ï¼šç›‘å¬æ–°å®¢æˆ·ç«¯è¿æ¥
+ å‚   æ•°ï¼šServerSocket  --> æœåŠ¡ç«¯å¥—æ¥å­—
+					retSocket		  --> æœ‰æ–°çš„å®¢æˆ·ç«¯è¿æ¥è¿™é‡Œä¼šè¿”å›å®¢æˆ·ç«¯å¥—æ¥å­—
+					retIP 	      --> æœ‰æ–°çš„å®¢æˆ·ç«¯è¿æ¥è¿™é‡Œä¼šè¿”å›å®¢æˆ·ç«¯IP 
+ è¿”   å›ï¼š-2  è¯·ä¼ é€’æœ‰æ•ˆçš„æœåŠ¡ç«¯ç»“æ„ä½“
+          -1  è¿™ä¸ªæœåŠ¡ç«¯å¥—æ¥å­—æ˜¯æ— æ•ˆçš„ï¼Œå»ºè®®é‡æ–°åˆ›å»ºæœåŠ¡ç«¯å¥—æ¥å­—
+           0  åˆ™æ˜¯æœ‰æ–°çš„å®¢æˆ·ç«¯è¿æ¥
+      å¤§äº 0  çš„è¯è¯·é‡æ–°ç›‘å¬
+ æ   è¿°ï¼šæ— 
 =============================================================================*/
 int8_t listenNewClientConnect(serverInfo_t *server)
 {    
@@ -111,30 +109,30 @@ int8_t listenNewClientConnect(serverInfo_t *server)
 
   int selRet = select(0, &readSet, NULL, NULL, &timeout);
   if (selRet == 0) 
-      return 1; // ¼ÌĞø¼àÌı
+      return 1; // ç»§ç»­ç›‘å¬
   else if (selRet == SOCKET_ERROR) {
     SafePrintf("select failed, error=%d\n", WSAGetLastError());
-    return -1;  // ÎŞĞ§µÄ·şÎñÆ÷Ì×½Ó×Ö
+    return -1;  // æ— æ•ˆçš„æœåŠ¡å™¨å¥—æ¥å­—
   }
 
   if (!FD_ISSET(server->socket, &readSet)) 
-    return 2; // ¼ÌĞø¼àÌı
+    return 2; // ç»§ç»­ç›‘å¬
 
-  // ½ÓÊÜ¿Í»§¶ËÁ¬½Ó
+  // æ¥å—å®¢æˆ·ç«¯è¿æ¥
   struct sockaddr_in clientAddr;
   int addrLen = sizeof clientAddr;
   SOCKET clientSocket = accept(server->socket, (struct sockaddr*)&clientAddr, &addrLen);
   if (clientSocket == INVALID_SOCKET) {
       SafePrintf("accept failed, error=%d\n", WSAGetLastError());
-      return 3; // ¼ÌĞø¼àÌı
+      return 3; // ç»§ç»­ç›‘å¬
   }
 
-  // »ñÈ¡¿Í»§¶ËIPµØÖ·
+  // è·å–å®¢æˆ·ç«¯IPåœ°å€
   char *clientIP = inet_ntoa( clientAddr.sin_addr );
   memset(server->newIP, 0, sizeof server->newIP);
   strcpy(server->newIP, clientIP? clientIP:"Unknown");
   server->newSocket = clientSocket;
-  return 0; // ÓĞĞÂµÄ¿Í»§¶ËÁ¬½Ó
+  return 0; // æœ‰æ–°çš„å®¢æˆ·ç«¯è¿æ¥
 }
 
 
@@ -144,42 +142,42 @@ int8_t listenNewClientConnect(serverInfo_t *server)
 #define MIN_USER_PORT   1024
 #define MAX_PORT        65535
 
-// ½âÎöÃüÁîĞĞ²ÎÊı»ñÈ¡¶Ë¿ÚºÅ
-// ²ÎÊı: argc - ²ÎÊı¸öÊı, argv - ²ÎÊıÊı×é, defaultPort - Ä¬ÈÏ¶Ë¿ÚºÅ
-// ·µ»ØÖµ: ½âÎö³É¹¦µÄ¶Ë¿ÚºÅ£¬Èç¹ûÎŞĞ§Ôò·µ»Ø0
+// è§£æå‘½ä»¤è¡Œå‚æ•°è·å–ç«¯å£å·
+// å‚æ•°: argc - å‚æ•°ä¸ªæ•°, argv - å‚æ•°æ•°ç»„, defaultPort - é»˜è®¤ç«¯å£å·
+// è¿”å›å€¼: è§£ææˆåŠŸçš„ç«¯å£å·ï¼Œå¦‚æœæ— æ•ˆåˆ™è¿”å›0
 uint16_t ParsePortParameter(int argc, char const* argv[]) 
 {
   for (int i = 1; i < argc; i++) {
-      // ¼ì²é²ÎÊıÊÇ·ñÒÔ-p»ò-P¿ªÍ·
+      // æ£€æŸ¥å‚æ•°æ˜¯å¦ä»¥-pæˆ–-På¼€å¤´
       if ((argv[i][0] == '-' || argv[i][0] == '/') && 
           tolower(argv[i][1]) == 'p' && 
           argv[i][2] != '\0') {
           
-          // »ñÈ¡¶Ë¿ÚºÅ²¿·Ö
+          // è·å–ç«¯å£å·éƒ¨åˆ†
           char const * portStr = &argv[i][2];
           char* endPtr;
           long port = strtol(portStr, &endPtr, 10);
           
-          // ÑéÖ¤×ª»»ÊÇ·ñ³É¹¦
+          // éªŒè¯è½¬æ¢æ˜¯å¦æˆåŠŸ
           if (*endPtr != '\0') {
-              fprintf(stderr, "´íÎó: ¶Ë¿ÚºÅ '%s' °üº¬·ÇÊı×Ö×Ö·û\n", portStr);
+              fprintf(stderr, "é”™è¯¯: ç«¯å£å· '%s' åŒ…å«éæ•°å­—å­—ç¬¦\n", portStr);
               return 0;
           }
           
-          // ¼ì²é¶Ë¿Ú·¶Î§
+          // æ£€æŸ¥ç«¯å£èŒƒå›´
           if (port <= MIN_USER_PORT) {
-              fprintf(stderr, "´íÎó: ¶Ë¿ÚºÅ±ØĞë´óÓÚ %d (µ±Ç°: %ld)\n", MIN_USER_PORT, port);
+              fprintf(stderr, "é”™è¯¯: ç«¯å£å·å¿…é¡»å¤§äº %d (å½“å‰: %ld)\n", MIN_USER_PORT, port);
               return 0;
           }
           
           if (port > MAX_PORT) {
-              fprintf(stderr, "´íÎó: ¶Ë¿ÚºÅ²»ÄÜ³¬¹ı %d (µ±Ç°: %ld)\n", MAX_PORT, port);
+              fprintf(stderr, "é”™è¯¯: ç«¯å£å·ä¸èƒ½è¶…è¿‡ %d (å½“å‰: %ld)\n", MAX_PORT, port);
               return 0;
           }
           
           return (uint16_t)port;
       }
-      // Ö§³Ö¸ñÊ½: -p 5000 (´ø¿Õ¸ñ)
+      // æ”¯æŒæ ¼å¼: -p 5000 (å¸¦ç©ºæ ¼)
       else if ((argv[i][0] == '-' || argv[i][0] == '/') && 
                 tolower(argv[i][1]) == 'p' && 
                 argv[i][2] == '\0' && 
@@ -190,17 +188,17 @@ uint16_t ParsePortParameter(int argc, char const* argv[])
           long port = strtol(portStr, &endPtr, 10);
           
           if (*endPtr != '\0') {
-              fprintf(stderr, "´íÎó: ¶Ë¿ÚºÅ '%s' °üº¬·ÇÊı×Ö×Ö·û\n", portStr);
+              fprintf(stderr, "é”™è¯¯: ç«¯å£å· '%s' åŒ…å«éæ•°å­—å­—ç¬¦\n", portStr);
               return 0;
           }
           
           if (port <= MIN_USER_PORT) {
-              fprintf(stderr, "´íÎó: ¶Ë¿ÚºÅ±ØĞë´óÓÚ %d (µ±Ç°: %ld)\n", MIN_USER_PORT, port);
+              fprintf(stderr, "é”™è¯¯: ç«¯å£å·å¿…é¡»å¤§äº %d (å½“å‰: %ld)\n", MIN_USER_PORT, port);
               return 0;
           }
           
           if (port > MAX_PORT) {
-              fprintf(stderr, "´íÎó: ¶Ë¿ÚºÅ²»ÄÜ³¬¹ı %d (µ±Ç°: %ld)\n", MAX_PORT, port);
+              fprintf(stderr, "é”™è¯¯: ç«¯å£å·ä¸èƒ½è¶…è¿‡ %d (å½“å‰: %ld)\n", MAX_PORT, port);
               return 0;
           }
           
@@ -208,11 +206,11 @@ uint16_t ParsePortParameter(int argc, char const* argv[])
       }
   }
   
-  // Ã»ÓĞÖ¸¶¨-p²ÎÊı£¬·µ»ØÄ¬ÈÏ¶Ë¿Ú
+  // æ²¡æœ‰æŒ‡å®š-på‚æ•°ï¼Œè¿”å›é»˜è®¤ç«¯å£
   return DEFAULT_PORT;
 }
 
-// ´ÓÖ¸¶¨¶Ë¿Ú¿ªÊ¼²éÕÒ100¸ö¿ÉÓÃ¶Ë¿Ú£¬·µ»Ø0ÊÇÎŞĞ§¶Ë¿Ú
+// ä»æŒ‡å®šç«¯å£å¼€å§‹æŸ¥æ‰¾100ä¸ªå¯ç”¨ç«¯å£ï¼Œè¿”å›0æ˜¯æ— æ•ˆç«¯å£
 static uint16_t FindAvailablePort(uint16_t startPort) 
 {
   int bindRet;

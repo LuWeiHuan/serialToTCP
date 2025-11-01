@@ -1,19 +1,19 @@
 /******************************************************************************
-  * @file    ÎÄ¼ş discovery.c 
-  * @author  ×÷Õß 
-  * @version °æ±¾ V1.0
-  * @date    ÈÕÆÚ 2025-08-17
-  * @brief   ¼ò½é UDP·şÎñ·¢ÏÖ¹¦ÄÜ
+  * @file    æ–‡ä»¶ discovery.c 
+  * @author  ä½œè€… 
+  * @version ç‰ˆæœ¬ V1.0
+  * @date    æ—¥æœŸ 2025-08-17
+  * @brief   ç®€ä»‹ UDPæœåŠ¡å‘ç°åŠŸèƒ½
   ******************************************************************************
-  * @attention ×¢Òâ
+  * @attention æ³¨æ„
   *
   *
   *******************************************************************************
 */
 
-/*================== Í·ÎÄ¼ş°üº¬     =========================================*/
-// ±ØĞëÔÚ°üº¬Í·ÎÄ¼şÖ®Ç°¶¨Òå Windows °æ±¾
-#define _WIN32_WINNT 0x0600  // Windows Vista »ò¸ü¸ß°æ±¾
+/*================== å¤´æ–‡ä»¶åŒ…å«     =========================================*/
+// å¿…é¡»åœ¨åŒ…å«å¤´æ–‡ä»¶ä¹‹å‰å®šä¹‰ Windows ç‰ˆæœ¬
+#define _WIN32_WINNT 0x0600  // Windows Vista æˆ–æ›´é«˜ç‰ˆæœ¬
 
 #include "discovery.h"
 #include "main.h"
@@ -28,16 +28,16 @@
 #include <winsock2.h>
 #include <ws2tcpip.h>
 #include <windows.h>
-#include <ws2tcpip.h>  // Ìí¼ÓÓÃÓÚÓòÃû½âÎöµÄÍ·ÎÄ¼ş
+#include <ws2tcpip.h>  // æ·»åŠ ç”¨äºåŸŸåè§£æçš„å¤´æ–‡ä»¶
 
-/*================== ±¾µØÊı¾İÀàĞÍ   =========================================*/
-/*================== ±¾µØºê¶¨Òå     =========================================*/
-#define DISCOVERY_INTERVAL_MS  1000        // ·¢ÏÖÇëÇó¼ì²é¼ä¸ô
-#define RESPONSE_BUFFER_SIZE   256         // ÏìÓ¦»º³åÇø´óĞ¡
+/*================== æœ¬åœ°æ•°æ®ç±»å‹   =========================================*/
+/*================== æœ¬åœ°å®å®šä¹‰     =========================================*/
+#define DISCOVERY_INTERVAL_MS  1000        // å‘ç°è¯·æ±‚æ£€æŸ¥é—´éš”
+#define RESPONSE_BUFFER_SIZE   256         // å“åº”ç¼“å†²åŒºå¤§å°
 
-/*================== È«¾Ö¹²Ïí±äÁ¿    ========================================*/
-/*================== ±¾µØ³£Á¿ÉùÃ÷    ========================================*/
-/*================== ±¾µØ±äÁ¿ÉùÃ÷    ========================================*/
+/*================== å…¨å±€å…±äº«å˜é‡    ========================================*/
+/*================== æœ¬åœ°å¸¸é‡å£°æ˜    ========================================*/
+/*================== æœ¬åœ°å˜é‡å£°æ˜    ========================================*/
 static volatile BOOL discoveryRunning = FALSE;
 static HANDLE hDiscoveryThread = NULL;
 static SOCKET discoverySocket = INVALID_SOCKET;
@@ -45,16 +45,16 @@ static CRITICAL_SECTION csDiscovery;
 static struct sockaddr_in newClientInfo;
 
  
-/*================== ±¾µØº¯ÊıÉùÃ÷    ========================================*/
+/*================== æœ¬åœ°å‡½æ•°å£°æ˜    ========================================*/
 static void DiscoveryServiceStart(void);
 static void DiscoveryServiceStop(void);
 
-static DWORD WINAPI DiscoveryThread(LPVOID lpParam);
+static DWORD WINAPI DiscoveryThread(void *lpParam);
 static BOOL InitializeDiscoverySocket(void);
 static void SendDiscoveryResponse(struct sockaddr_in* clientAddr);
 
 
-/*================== Íâ²¿º¯ÊıºÍ±äÁ¿ÉùÃ÷    ==================================*/
+/*================== å¤–éƒ¨å‡½æ•°å’Œå˜é‡å£°æ˜    ==================================*/
 
 void DiscoveryService(bool start)
 {
@@ -82,7 +82,7 @@ uint16_t getDiscoveryNewClientPort(void)
   return  ntohs(newClientInfo.sin_port);
 }
 
-// Æô¶¯·¢ÏÖ·şÎñ
+// å¯åŠ¨å‘ç°æœåŠ¡
 static void DiscoveryServiceStart(void)
 {
   if (discoveryRunning) 
@@ -104,14 +104,14 @@ static void DiscoveryServiceStart(void)
   }
 }
 
-// Í£Ö¹·¢ÏÖ·şÎñ
+// åœæ­¢å‘ç°æœåŠ¡
 static void DiscoveryServiceStop(void)
 {
   if (!discoveryRunning)
     return;
   discoveryRunning = FALSE;
 
-  // ¹Ø±ÕÌ×½Ó×Ö´ÙÊ¹Ïß³ÌÍË³ö
+  // å…³é—­å¥—æ¥å­—ä¿ƒä½¿çº¿ç¨‹é€€å‡º
   if (discoverySocket != INVALID_SOCKET) {
     closesocket(discoverySocket);
     discoverySocket = INVALID_SOCKET;
@@ -128,7 +128,7 @@ static void DiscoveryServiceStop(void)
 }
 
 
-// ³õÊ¼»¯·¢ÏÖSocket
+// åˆå§‹åŒ–å‘ç°Socket
 static BOOL InitializeDiscoverySocket(void)
 { 
   discoverySocket = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
@@ -137,7 +137,7 @@ static BOOL InitializeDiscoverySocket(void)
     return FALSE;
   }
 
-  // ÉèÖÃSocketÑ¡Ïî£ºÔÊĞí¹ã²¥ºÍµØÖ·ÖØÓÃ
+  // è®¾ç½®Socketé€‰é¡¹ï¼šå…è®¸å¹¿æ’­å’Œåœ°å€é‡ç”¨
   BOOL broadcast = TRUE;
   if (setsockopt(discoverySocket, SOL_SOCKET, SO_BROADCAST, 
                 (char*)&broadcast, sizeof(broadcast)) == SOCKET_ERROR) {
@@ -153,7 +153,7 @@ static BOOL InitializeDiscoverySocket(void)
     SafePrintf("Set SO_REUSEADDR failed: %d\n", WSAGetLastError());
   }
 
-  // °ó¶¨µ½·¢ÏÖ¶Ë¿Ú
+  // ç»‘å®šåˆ°å‘ç°ç«¯å£
   struct sockaddr_in serverAddr;
   memset(&serverAddr, 0, sizeof(serverAddr));
   serverAddr.sin_family = AF_INET;
@@ -167,7 +167,7 @@ static BOOL InitializeDiscoverySocket(void)
     return FALSE;
   }
 
-  // ÉèÖÃ·Ç×èÈûÄ£Ê½
+  // è®¾ç½®éé˜»å¡æ¨¡å¼
   u_long nonBlocking = 1;
   if (ioctlsocket(discoverySocket, FIONBIO, &nonBlocking) == SOCKET_ERROR) {
     SafePrintf("Set non-blocking failed: %d\n", WSAGetLastError());
@@ -179,8 +179,8 @@ static BOOL InitializeDiscoverySocket(void)
   return TRUE;
 }
 
-// ·¢ÏÖ·şÎñÏß³Ì
-static DWORD WINAPI DiscoveryThread(LPVOID lpParam)
+// å‘ç°æœåŠ¡çº¿ç¨‹
+static DWORD WINAPI DiscoveryThread(void *lpParam)
 {
   (void)lpParam; 
   int clientAddrLen = sizeof newClientInfo;
@@ -197,14 +197,14 @@ static DWORD WINAPI DiscoveryThread(LPVOID lpParam)
   SafePrintf("Discovery service thread started on UDP port %d\n", DISCOVERY_PORT);
   
   while (discoveryRunning) {
-    // ¸üĞÂ¿ØÖÆÌ¨±êÌâÏÔÊ¾·¢ÏÖ·şÎñ×´Ì¬
+    // æ›´æ–°æ§åˆ¶å°æ ‡é¢˜æ˜¾ç¤ºå‘ç°æœåŠ¡çŠ¶æ€
     updataConsoleTitle(DiscoveryServerString);
 
     FD_ZERO(&readSet);
     FD_SET(discoverySocket, &readSet);
 
     timeout.tv_sec = 0;
-    timeout.tv_usec = DISCOVERY_INTERVAL_MS * 1000; // ×ª»»ÎªÎ¢Ãë
+    timeout.tv_usec = DISCOVERY_INTERVAL_MS * 1000; // è½¬æ¢ä¸ºå¾®ç§’
 
     selectResult = select(0, &readSet, NULL, NULL, &timeout);
     if (selectResult == SOCKET_ERROR) {
@@ -216,7 +216,7 @@ static DWORD WINAPI DiscoveryThread(LPVOID lpParam)
     if (selectResult == 0 || FD_ISSET(discoverySocket, &readSet) == 0)
       continue;
 
-    // ½ÓÊÕ·¢ÏÖÇëÇó
+    // æ¥æ”¶å‘ç°è¯·æ±‚
     bytesReceived = recvfrom(discoverySocket, recvBuffer, sizeof(recvBuffer)
                     - 1, 0, (struct sockaddr*)&newClientInfo, &clientAddrLen);
     
@@ -224,24 +224,26 @@ static DWORD WINAPI DiscoveryThread(LPVOID lpParam)
       continue;
     recvBuffer[bytesReceived] = '\0';
     
-    // ¼ì²éÊÇ·ñÊÇÓĞĞ§µÄ·¢ÏÖÇëÇó
+    // æ£€æŸ¥æ˜¯å¦æ˜¯æœ‰æ•ˆçš„å‘ç°è¯·æ±‚
     if (strnicmp(recvBuffer, "discover_com2tcp_server", strlen("discover_com2tcp_server")) == 0){
-      SendDiscoveryResponse(&newClientInfo); // ·¢ËÍÏìÓ¦
+      SendDiscoveryResponse(&newClientInfo); // å‘é€å“åº”
     }
     else if (strnicmp(recvBuffer, CTRL_HEADER, strlen(CTRL_HEADER)) == 0){
       if (runInfo.serverPrintData == 3)
         SafePrintf("UDP [%s]:%d CMD: %-60s\n", inet_ntoa(newClientInfo.sin_addr), 
                 ntohs(newClientInfo.sin_port), recvBuffer);
       
-      // Á¬½ÓUDPÌ×½Ó×Öµ½ÌØ¶¨·şÎñÆ÷£¬·½±ãÊ¹ÓÃsend·¢ËÍÊı¾İ
-      connect(discoverySocket, (struct sockaddr*)&newClientInfo, sizeof newClientInfo); 
+      // è¿æ¥UDPå¥—æ¥å­—åˆ°ç‰¹å®šæœåŠ¡å™¨ï¼Œæ–¹ä¾¿ä½¿ç”¨sendå‘é€æ•°æ®
+      int connectRet = connect(discoverySocket, (struct sockaddr*)&newClientInfo, sizeof newClientInfo);
+      if( connectRet != 0 )
+        SafePrintf("Discovery UDP connect Error! code :%d\n", connectRet);
       HandleClientCommand(&discoverySocket, recvBuffer + strlen(CTRL_HEADER));
 
-      // ÕâÀïÊÇ½øĞĞ³ÌĞòÒì³£ÍË³ö²¶»ñ²âÊÔµÄÎ»ÖÃ£¬ÓÃÓÚ³ÌĞò×ÔÎÒ´íÎó¶¨Î»
+      // è¿™é‡Œæ˜¯è¿›è¡Œç¨‹åºå¼‚å¸¸é€€å‡ºæ•è·æµ‹è¯•çš„ä½ç½®ï¼Œç”¨äºç¨‹åºè‡ªæˆ‘é”™è¯¯å®šä½
       #if 0
       if( strnicmp(recvBuffer, CTRL_HEADER"errorTest", strlen(CTRL_HEADER"errorTest")) == 0 )
         for( int8_t i = -2; i < 2; i++)
-          SafePrintf("¿ªÊ¼Òì³£³ı·¨ÔËËã 8 / %d = %d\n", i, 8/i);
+          SafePrintf("å¼€å§‹å¼‚å¸¸é™¤æ³•è¿ç®— 8 / %d = %d\n", i, 8/i);
       #endif
     }
   }
@@ -257,14 +259,14 @@ static void SendDiscoveryResponse(struct sockaddr_in* clientAddr)
   static uint16_t count = 0;
   EnterCriticalSection(&csDiscovery);
   
-  static bool getIPmethod = true;   // »ñÈ¡IPµÄ·½·¨
+  static bool getIPmethod = true;   // è·å–IPçš„æ–¹æ³•
   const char *getServerIP = "NULL IP"; 
-  if( getIPmethod == true )   // ·½·¨1£ºÊ¹ÓÃsocketÁ¬½Ó·½Ê½»ñÈ¡ÕıÈ·IP£¨¸ü¿É¿¿£©
+  if( getIPmethod == true )   // æ–¹æ³•1ï¼šä½¿ç”¨socketè¿æ¥æ–¹å¼è·å–æ­£ç¡®IPï¼ˆæ›´å¯é ï¼‰
     getServerIP = GetMatchingSubnetIP(clientAddr);
-  else                        // ·½·¨2£º»òÕßÊ¹ÓÃÍø¶ÎÆ¥ÅäËã·¨
-    getServerIP = SelectMatchingSubnetIP(clientAddr);
+  else                        // æ–¹æ³•2ï¼šæˆ–è€…ä½¿ç”¨ç½‘æ®µåŒ¹é…ç®—æ³•
+    getServerIP = SelectMatchingSubnetIP( inet_ntoa(clientAddr->sin_addr) );
   
-  // ¹¹½¨ÏìÓ¦ÏûÏ¢
+  // æ„å»ºå“åº”æ¶ˆæ¯
   const char *ComputerFullName = getComputerFullName();
   char responseBuffer[RESPONSE_BUFFER_SIZE]; 
   snprintf(responseBuffer, sizeof responseBuffer, "%s|%-15s|%-15s|%d|%u|%u\n",
@@ -273,7 +275,7 @@ static void SendDiscoveryResponse(struct sockaddr_in* clientAddr)
   
   LeaveCriticalSection(&csDiscovery);
 
-  // ·¢ËÍÏìÓ¦µ½¿Í»§¶Ë
+  // å‘é€å“åº”åˆ°å®¢æˆ·ç«¯
   int sendResult = sendto(discoverySocket, responseBuffer, strlen(responseBuffer), 
                 0, (struct sockaddr*)clientAddr, sizeof *clientAddr);
 

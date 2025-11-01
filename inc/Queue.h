@@ -9,8 +9,7 @@ extern "C" {
 #include <stdint.h>
 #include <stdbool.h>
 
-#include <ws2tcpip.h>
-#include <windows.h>
+#include <windef.h>
 
 /*================== 宏定义声明			=========================================*/
 #define MIN_QUEUE_SIZE          10    // 最少队列长度
@@ -19,18 +18,15 @@ extern "C" {
 
 /*================== 数据类型声明		=========================================*/
 // struct enum union
-
-
-
 typedef struct {
   uint32_t len;            // 数据实际大小
   char *data;              // 数据内容指针
 } queueData_t;
 
-typedef void(*outDataCallBack_t)(queueData_t *);
+typedef void(*outDataCallBack_t)(char *data, uint32_t len);
 
 typedef struct {
-  volatile BOOL running;    // 线程运行标志
+  volatile bool running;    // 线程运行标志
   uint16_t capacity;        // 队列容量
   uint32_t elementSize;     // 每个元素的最大大小
   int front;                // 队列头指针
@@ -50,16 +46,16 @@ typedef struct {
 
 /*================== 外部函数声明		=========================================*/
 
-BOOL startAsyncQueue(AsyncQueue_t *queue, outDataCallBack_t CallBack, 
+bool startAsyncQueue(AsyncQueue_t *queue, outDataCallBack_t CallBack, 
       uint16_t queueSize, uint32_t elementSize, const char *queueName);
-BOOL AddDataToAsyncQueue(AsyncQueue_t *queue, const char *data, uint32_t len);
+bool AddDataToAsyncQueue(AsyncQueue_t *queue, const char *data, uint32_t len);
 void FreeAsyncQueue(AsyncQueue_t *queue);
 
 int GetAsyncQueueRemainingSpace(AsyncQueue_t *queue);
 int GetAsyncQueueCurrentSize(AsyncQueue_t *queue);
 
-BOOL startAsyncFuncHandle(bool start);
-BOOL addAsyncFuncHandle(void(*CallBack)(void*) , void *arg);
+bool startAsyncFuncHandle(bool start);
+bool addAsyncFuncHandle(void(*CallBack)(void*) , void *arg);
 
 #ifdef __cplusplus
 }

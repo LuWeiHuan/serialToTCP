@@ -38,6 +38,7 @@ void updataConsoleTitle(const char *threadName);
 char *getSendRecvDirectionStr(char *direct, uint8_t index);
 const char *getComputerFullName(void);
 bool InitializeWinSocket(void);
+void GetAllLocalIPs(char ips[][20], uint8_t *count, uint8_t num);
 #ifdef __cplusplus
 }
 #endif

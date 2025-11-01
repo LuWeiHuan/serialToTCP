@@ -17,6 +17,7 @@
 
 #include "hostConnect.h"
 #include "logPrint.h"
+#include "public.h"
 
 #include <string.h>
 #include <winsock2.h>
@@ -197,7 +198,7 @@ bool startConnectToServer(const char* host, uint16_t port,
 
 
 // 获取与客户端相同网段的IP地址
-const char * GetMatchingSubnetIP(struct sockaddr_in* clientAddr )
+const char *GetMatchingSubnetIP(struct sockaddr_in* clientAddr)
 {
   struct sockaddr_in tempAddr;
   int tempAddrLen = sizeof tempAddr;
@@ -208,8 +209,7 @@ const char * GetMatchingSubnetIP(struct sockaddr_in* clientAddr )
       return "127.0.0.1";
 
   // 连接到客户端地址，系统会自动选择正确的本地接口
-  if (connect(tempSocket, (struct sockaddr*)clientAddr, 
-            sizeof(*clientAddr)) == SOCKET_ERROR) {
+  if (connect(tempSocket, (struct sockaddr*)clientAddr, sizeof(*clientAddr)) == SOCKET_ERROR) {
       closesocket(tempSocket);
       return "127.0.0.1";
   }
@@ -230,40 +230,17 @@ const char * GetMatchingSubnetIP(struct sockaddr_in* clientAddr )
 
 
 
-// 获取所有本地IP地址
-static void GetAllLocalIPs(char ips[][20], int *count)
-{
-    if( count == NULL )
-      return;
 
-    char hostname[256];
-    if (gethostname(hostname, sizeof hostname) == SOCKET_ERROR)
-        return;
-
-    struct hostent* hostinfo = gethostbyname(hostname);
-    if (hostinfo == NULL) 
-        return;
-
-    *count = 0;
-     struct in_addr addr;
-    for (int i = 0; hostinfo->h_addr_list[i] != NULL && *count < 10; i++) {
-        memcpy(&addr, hostinfo->h_addr_list[i], sizeof(struct in_addr));
-        if (strcmp(inet_ntoa(addr), "127.0.0.1") == 0) 
-          continue;
-        strncpy(ips[*count], inet_ntoa(addr), 16);
-        (*count)++;
-    }
-}
 
 // 选择与客户端相同网段的IP
-const char * SelectMatchingSubnetIP(struct sockaddr_in* clientAddr)
+const char *SelectMatchingSubnetIP(const char *clientAddr)
 {
-  char localIPs[10][20] = {0};
-  int ipCount = 0;
+  char localIPs[25][20] = {0};
+  uint8_t ipCount = 0;
   static char retMyIP[20];
   memset(retMyIP, 0, sizeof retMyIP);
 
-  GetAllLocalIPs(localIPs, &ipCount);
+  GetAllLocalIPs(localIPs, &ipCount, 25);
   
   if (ipCount == 0) 
       return "127.0.0.1" ;  
@@ -276,16 +253,14 @@ const char * SelectMatchingSubnetIP(struct sockaddr_in* clientAddr)
   
   // 获取客户端IP的网段
   char clientIP[16];
-  strcpy(clientIP, inet_ntoa(clientAddr->sin_addr));
+  strcpy(clientIP, clientAddr);
   
   // 提取客户端IP的前三段（网段）
   char clientSubnet[16] = {0};
   char* dot = strrchr(clientIP, '.');
   if (dot) 
-      strncpy(clientSubnet, clientIP, dot - clientIP);
-
-
-
+    strncpy(clientSubnet, clientIP, dot - clientIP);
+  
   // 寻找匹配网段的本地IP
   for (int i = 0; i < ipCount; i++) {
       char localSubnet[16] = {0};
@@ -305,6 +280,9 @@ const char * SelectMatchingSubnetIP(struct sockaddr_in* clientAddr)
 
   return retMyIP;
 }
+
+
+
 
 // INET6_ADDRSTRLEN
 bool getSockfdPeerInfo(int sockfd, char *retIPstr, uint16_t *retPort) 
