@@ -1,3 +1,6 @@
 [submodule "openSrc/uthash"]
 	path = openSrc/uthash
 	url = https://github.com/troydhanson/uthash
+[submodule "inc/uthash"]
+	path = inc/uthash
+	url = https://github.com/troydhanson/uthash
