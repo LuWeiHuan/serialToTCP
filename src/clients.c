@@ -478,7 +478,7 @@ void getAllClientIPandIndexInfo(char *retStr, uint16_t len)
 
   uint16_t strLen = 0;
   memset(retStr, 0, len);
-  char clientInfo[40];
+  char clientInfo[100];
   
   for (ClientNode_t* curr = clientList.head; curr && strLen < len; curr = curr->next) {
     memset(clientInfo, 0, sizeof clientInfo);

@@ -1,5 +1,5 @@
 ## 快速使用方法：
-1. 选择一台Win电脑运行 com2tcp_server.exe
+1. 选择一台x86架构运行WinPC运行 com2tcp_server.exe 或 x86架构 LinuxPC 运行 com2tcp_server 
 2. 进入到"测试工具"文件夹运行 NetAssist.exe 网络调试助手，点击 快捷指令
 3. 快捷指令里的 获取串口列表和打开串口是常用功能，其它的可以慢慢摸索
 
@@ -9,9 +9,10 @@
 搜索局域网内的服务端请直接进入 【局域网搜索服务端】文件夹，里面有完成的使用方法
 
 AI 平台：DeepSeek
-运行系统：Windows
-编译工具：MinGW
-工程管理：make
+运行系统：Win_x86 Linux_x86
+编译工具：MinGW GCC
+工程管理：Cmake
+Linux引用库：libudev-dev
 引用外部开源代码：uthash
 
 实现将串口数据转到TCP收发的能力
@@ -112,6 +113,42 @@ Win操作系统接收串口数据最大4Kbyte后就会通过网络发送给客�
 
 
 ## 编译
-在inc文件夹引用了开源 uthash 库进行哈希值计算，需要您手动拉取一下。
-确保已安装MinGW和make工具。
-make 直接编译。
+在 openSrc 文件夹引用了开源 uthash 库进行哈希值计算，可能需要您手动拉取一下。
+确保系统已安装make、Cmake工具，Win系统还要安装MinGW
+执行对应平台的 mk 脚本直接编译。
+Linux环境还需要安装libudev开发包，实现PVID获取、设备插拔检测功能
+sudo apt-get install libudev-dev
+
+
+
+## ============== 基础构建命令
+./mk.sh               # 默认调试构建 信号处理+符号解析（日常开发 性能较好）
+./mk.sh debug         # 完整调试（内存检测，比较吃性能）仅Linux支持，Win还是符号解析
+./mk.sh asan          # ASAN版本（同 debug 内存检测）
+./mk.sh release       # 发布版本（生产环境） 
+
+## ============== 平台特定构建
+./mk.sh arm                     # ARM平台交叉编译
+./mk.sh x86                     # x86平台本地编译
+./mk.sh arm release             # ARM平台发布版本
+./mk.sh x86 release             # x86平台发布版本
+
+## ============== 清理和管理命令
+./mk.sh rm                  # 删除构建目录
+./mk.sh clean               # 清理构建（保留目录）
+./mk.sh cleanBuild debug    # 清理并构建调试版本
+
+## ============== 更多参数组合 
+./mk.sh arm clean debug           # ARM清理构建并构建完整调试版本
+./mk.sh x86 cleanBuild            # x86平台清理并构建开发版本
+./mk.sh arm cleanBuild debug      # ARM平台清理并构建调试版本
+./mk.sh x86 cleanBuild debug      # x86删除构建并构建调试版本
+./mk.sh x86 cleanBuild release    # x86平台清理并构建发布版本
+
+## ============== 任意顺序组合，Win下面还不能实现构建ARM版本
+./mk.sh x86 debug cleanBuild      # 平台→类型→清理
+./mk.sh cleanBuild x86 debug      # 清理→平台→类型
+./mk.sh debug cleanBuild x86      # 类型→清理→平台
+./mk.sh x86 cleanBuild debug      # 平台→清理→类型
+
+ 

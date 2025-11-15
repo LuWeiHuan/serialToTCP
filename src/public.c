@@ -70,7 +70,7 @@ void updataConsoleTitle(const char *threadName)
   uint8_t min  = currentTime / 60 % 60;
   uint8_t sec  = currentTime % 60;
 
-  char title[100];
+  char title[150];
   memset(title, 0, sizeof title); 
 
   DWORD theradID = GetCurrentThreadId();
@@ -161,7 +161,7 @@ char *getSendRecvDirectionStr(char *direct, uint8_t index)
   char *endptr;  // 用于检测未转换的字符 
   uint8_t comNum = strtol(ComPort->portName + 3, &endptr, 10);
 
-  static char retStr[30];
+  static char retStr[50];
   memset(retStr, 0, sizeof retStr);
   strcpy(retStr, "    -->    ");
 #if 0

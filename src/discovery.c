@@ -240,7 +240,7 @@ static DWORD WINAPI DiscoveryThread(void *lpParam)
       HandleClientCommand(&discoverySocket, recvBuffer + strlen(CTRL_HEADER));
 
       // 这里是进行程序异常退出捕获测试的位置，用于程序自我错误定位
-      #if 0
+      #if 1
       if( strnicmp(recvBuffer, CTRL_HEADER"errorTest", strlen(CTRL_HEADER"errorTest")) == 0 )
         for( int8_t i = -2; i < 2; i++)
           SafePrintf("开始异常除法运算 8 / %d = %d\n", i, 8/i);

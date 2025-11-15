@@ -113,7 +113,7 @@ static void GetSymbolInfoDirect(DWORD64 address, char* result, size_t resultSize
   HANDLE hProcess = GetCurrentProcess();
   
   if (!g_SymInitialized) {
-    snprintf(result, resultSize, "0x%I64X [符号未初始化]", address);
+    snprintf(result, resultSize, "0x%llX [符号未初始化]", address);
     return;
   }
   
@@ -130,10 +130,10 @@ static void GetSymbolInfoDirect(DWORD64 address, char* result, size_t resultSize
     DWORD lineDisplacement = 0;
     
     if (SymGetLineFromAddr64(hProcess, address, &lineDisplacement, &line))
-      snprintf(result, resultSize, "0x%-15I64X %s [%s:%ld]", 
+      snprintf(result, resultSize, "0x%-15llX %s [%s:%ld]", 
               address, pSymbol->Name, line.FileName, line.LineNumber);
     else
-      snprintf(result, resultSize, "0x%-15I64X %s+0x%I64X", 
+      snprintf(result, resultSize, "0x%-15llX %s+0x%llX", 
               address, pSymbol->Name, displacement);
   } 
   else {  // 尝试获取模块信息 
@@ -144,11 +144,11 @@ static void GetSymbolInfoDirect(DWORD64 address, char* result, size_t resultSize
       GetModuleFileNameA(hModule, moduleName, MAX_PATH);
       char* baseName = strrchr(moduleName, '\\');
       if (baseName) baseName++; else baseName = moduleName;
-      snprintf(result, resultSize, "0x%-15I64X %s+0x%I64X", 
+      snprintf(result, resultSize, "0x%-15llX %s+0x%llX", 
               address, baseName, address - (DWORD64)hModule);
     } 
     else 
-      snprintf(result, resultSize, "0x%-15I64X [未知地址]", address);
+      snprintf(result, resultSize, "0x%-15llX [未知地址]", address);
   }
 }
 
@@ -164,7 +164,7 @@ static void GetSymbolInfoWithAddr2Line(DWORD64 address, char* result, size_t res
   // char tempFile[MAX_PATH] = "temp_addr.txt";
   // FILE* f = fopen(tempFile, "w");
   // if (f) {
-  //   fprintf(f, "0x%I64X\n", address);
+  //   fprintf(f, "0x%llX\n", address);
   //   fclose(f);
   // }
   
@@ -176,7 +176,7 @@ static void GetSymbolInfoWithAddr2Line(DWORD64 address, char* result, size_t res
   char command[1024];
   snprintf(command, sizeof(command), 
             //"addr2line -e \"%s\" -f -C -p < \"%s\"", exePath, tempFile); 
-            "addr2line -e \"%s\" -f -C -p 0x%I64X", exeName, address);
+            "addr2line -e \"%s\" -f -C -p 0x%llX", exeName, address);
   
   // 执行命令并捕获输出
   FILE* pipe = _popen(command, "r");
@@ -188,13 +188,13 @@ static void GetSymbolInfoWithAddr2Line(DWORD64 address, char* result, size_t res
     }
     else {
       snprintf(result, resultSize, "[无法获取符号信息]，请到有addr2line命令的系统执行如下命令：\n"
-        "addr2line -e \"%s\" -f -C -p 0x%I64X\n", exeName, address);
+        "addr2line -e \"%s\" -f -C -p 0x%llX\n", exeName, address);
     }
     _pclose(pipe);
   }
   else {
     snprintf(result, resultSize, "[addr2line执行失败]，请到有addr2line命令的系统执行如下命令：\n"
-      "addr2line -e \"%s\" -f -C -p 0x%I64X\n", exeName, address);
+      "addr2line -e \"%s\" -f -C -p 0x%llX\n", exeName, address);
   }
   
   // 删除临时文件
@@ -215,7 +215,7 @@ static const char * GenerateStackTraceSimple(void)
     static char trace[1024];
     memset(trace, 0, sizeof trace);
     for (USHORT i = 0; i < frameCount; i++) {
-      char frameInfo[256], symbolInfo[512];
+      char frameInfo[512], symbolInfo[256];
       GetSymbolInfoDirect((DWORD64)frames[i], symbolInfo, sizeof(symbolInfo));
       memset(frameInfo, 0, sizeof frameInfo);
       snprintf(frameInfo, sizeof frameInfo, "#%02d %s\n", i, symbolInfo);
@@ -307,7 +307,7 @@ static void LogExceptionInfo(PEXCEPTION_POINTERS ExceptionInfo, const char* hand
             "进程ID  : %lu\n"
             "线程ID  : %lu\n"
             "异常原因: 0x%08lX (%s)\n"
-            "异常地址: 0x%-15I64X\n"
+            "异常地址: 0x%-15llX\n"
             "异常位置: %s\n"
             "堆栈跟踪:\n%s\n",
             timeStr, handlerType, exeName, processId, threadId,

@@ -1,2 +1,0 @@
-github.com/troydhanson/uthash
-github.com/OpenMiniServer/openthread
