@@ -12,16 +12,26 @@
 */
 
 /*================== 头文件包含     =========================================*/
-// 必须在包含头文件之前定义 Windows 版本
-#define _WIN32_WINNT 0x0600  // Windows Vista 或更高版本
-
 #include "hostConnect.h"
 #include "logPrint.h"
 #include "public.h"
 
+
 #include <string.h>
-#include <winsock2.h>
-#include <ws2tcpip.h>  // 添加用于域名解析的头文件
+
+#ifdef _WIN32
+// 必须在包含头文件之前定义 Windows 版本
+#define _WIN32_WINNT 0x0600  // Windows Vista 或更高版本
+#include <ws2tcpip.h>
+#else
+#include <errno.h>
+#include <netinet/in.h>
+#include <arpa/inet.h>
+#include <unistd.h>
+#include <ifaddrs.h>
+#include <netdb.h>
+#include <fcntl.h>
+#endif
 
 /*================== 本地数据类型   =========================================*/
 /*================== 本地宏定义     =========================================*/
@@ -29,7 +39,6 @@
 /*================== 本地常量声明   =========================================*/
 /*================== 本地变量声明   =========================================*/
 /*================== 本地函数声明   =========================================*/
-
 /*================== 外部函数声明   =========================================*/
 /*================== 外部变量声明   =========================================*/
 
@@ -108,20 +117,8 @@ int8_t resolveHostname(const char* hostname, char* ipBuffer, uint8_t bufferSize,
   return -2;
 }
 
-
-
-/**
- * @brief 开始以阻塞状态连接到服务器
- * @param host 主机名或IP地址
- * @param port 端口号
- * @param timeoutMs 连接超时时间，单位 ms
- * @param retSocket 成功后这里会返回套接字
- * @param retIP     成功后这里会返回具体IP地址
- * @return 成功返回真，失败返回假。
- * @attention 一旦发起连接就会有阻塞，直到超时结束
- */
 bool startConnectToServer(const char* host, uint16_t port, 
-        uint16_t timeoutMs, SOCKET *retSocket, char *retIP)
+        uint16_t timeoutMs, socket_t *retSocket, char *retIP)
 {
   char resolvedIP[46] = {0};
 
@@ -134,17 +131,22 @@ bool startConnectToServer(const char* host, uint16_t port,
   
   // 创建socket
   *retSocket = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
-  if (*retSocket == INVALID_SOCKET) { 
-      SafePrintf("Socket creation failed: %d\n", WSAGetLastError());
+  if (*retSocket == INVALID_SOCKET_VALUE) { 
+      SafePrintf("Socket creation failed: %ld\n", GetLastError());
       return false;
   }
   
   // 设置非阻塞模式
+#ifdef _WIN32
   u_long mode = 1;
   if (ioctlsocket(*retSocket, FIONBIO, &mode) != 0) {
-      SafePrintf("Set non-blocking failed: %d\n", WSAGetLastError());
-      closesocket(*retSocket);
-      *retSocket = INVALID_SOCKET;
+#else
+  int flags = fcntl(*retSocket, F_GETFL, 0);
+  if (fcntl(*retSocket, F_SETFL, flags | O_NONBLOCK) == -1) {
+#endif
+      SafePrintf("Set non-blocking failed: %ld\n", GetLastError());
+      closeSocket(*retSocket);
+      *retSocket = INVALID_SOCKET_VALUE;
       return false;
   }
   
@@ -156,11 +158,18 @@ bool startConnectToServer(const char* host, uint16_t port,
   
   // 连接服务器
   int connectRet = connect(*retSocket, (struct sockaddr*)&server_addr, sizeof server_addr);
-  if ( connectRet == SOCKET_ERROR && WSAGetLastError() != WSAEWOULDBLOCK) {
-    SafePrintf("Connect failed: %d\n", WSAGetLastError());
-    closesocket(*retSocket);
-    *retSocket = INVALID_SOCKET;
-    return false;
+  if ( connectRet == SOCKET_ERROR ) {
+      int error = GetLastError();
+#ifdef _WIN32
+      if (error != WSAEWOULDBLOCK) {
+#else
+      if (error != EINPROGRESS) {
+#endif
+        SafePrintf("Connect failed: %d\n", error);
+        closeSocket(*retSocket);
+        *retSocket = INVALID_SOCKET_VALUE;
+        return false;
+      }
   }
 
   // 处理非阻塞连接
@@ -172,21 +181,22 @@ bool startConnectToServer(const char* host, uint16_t port,
   timeout.tv_sec = timeoutMs / 1000;
   timeout.tv_usec = (timeoutMs % 1000) * 1000;
   
-  int selectResult = select(0, NULL, &writefds, NULL, &timeout);
+  int selectResult = select(*retSocket + 1, NULL, &writefds, NULL, &timeout);
   if (selectResult <= 0) {
       SafePrintf("\rConnection timeout or error: %-5d", selectResult);
-      closesocket(*retSocket);
-      *retSocket = INVALID_SOCKET;
+      closeSocket(*retSocket);
+      *retSocket = INVALID_SOCKET_VALUE;
       return false;
   }
   
   // 检查socket是否真的连接成功
-  int error = 0, errorLen = sizeof error;
+  int error = 0;
+  socklen_t errorLen = sizeof error;
   int retSockopt = getsockopt(*retSocket, SOL_SOCKET, SO_ERROR, (char*)&error, &errorLen);
   if (retSockopt == SOCKET_ERROR || error != 0) {
       SafePrintf("\rConnection failed: %-5d", error);
-      closesocket(*retSocket);
-      *retSocket = INVALID_SOCKET;
+      closeSocket(*retSocket);
+      *retSocket = INVALID_SOCKET_VALUE;
       return false;
   }
   
@@ -194,23 +204,20 @@ bool startConnectToServer(const char* host, uint16_t port,
   return true;
 }
 
-
-
-
 // 获取与客户端相同网段的IP地址
 const char *GetMatchingSubnetIP(struct sockaddr_in* clientAddr)
 {
   struct sockaddr_in tempAddr;
-  int tempAddrLen = sizeof tempAddr;
+  socklen_t tempAddrLen = sizeof tempAddr;
   
   // 创建一个临时socket来获取本地接口信息
-  SOCKET tempSocket = socket(AF_INET, SOCK_DGRAM, 0);
-  if (tempSocket == INVALID_SOCKET)
+  socket_t tempSocket = socket(AF_INET, SOCK_DGRAM, 0);
+  if (tempSocket == INVALID_SOCKET_VALUE)
       return "127.0.0.1";
 
   // 连接到客户端地址，系统会自动选择正确的本地接口
   if (connect(tempSocket, (struct sockaddr*)clientAddr, sizeof(*clientAddr)) == SOCKET_ERROR) {
-      closesocket(tempSocket);
+      closeSocket(tempSocket);
       return "127.0.0.1";
   }
   
@@ -221,23 +228,17 @@ const char *GetMatchingSubnetIP(struct sockaddr_in* clientAddr)
   memset(retMyIP, 0, sizeof retMyIP);
   strcpy(retMyIP, ret == 0? inet_ntoa(tempAddr.sin_addr): "127.0.0.1");
 
-  closesocket(tempSocket);
+  closeSocket(tempSocket);
   return retMyIP; 
 }
 
-
-
-
-
-
-
-
 // 选择与客户端相同网段的IP
 const char *SelectMatchingSubnetIP(const char *clientAddr)
-{
-  char localIPs[25][20] = {0};
+{ 
   uint8_t ipCount = 0;
+  char localIPs[25][20];
   static char retMyIP[20];
+  memset(localIPs, 0, sizeof localIPs);
   memset(retMyIP, 0, sizeof retMyIP);
 
   GetAllLocalIPs(localIPs, &ipCount, 25);
@@ -281,19 +282,15 @@ const char *SelectMatchingSubnetIP(const char *clientAddr)
   return retMyIP;
 }
 
-
-
-
-// INET6_ADDRSTRLEN
 bool getSockfdPeerInfo(int sockfd, char *retIPstr, uint16_t *retPort) 
 {
   struct sockaddr_in peer_addr;
   socklen_t addr_len = sizeof(peer_addr);
   int ret = getpeername(sockfd, (struct sockaddr*)&peer_addr, &addr_len);
  
- if( ret == 0 && retIPstr)
+  if( ret == 0 && retIPstr)
     inet_ntop(AF_INET, &peer_addr.sin_addr, retIPstr, INET6_ADDRSTRLEN);
- if( ret == 0 && retPort)
+  if( ret == 0 && retPort)
     *retPort = ntohs(peer_addr.sin_port);
   return ret == 0? true:false;
 }

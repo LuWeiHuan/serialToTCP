@@ -1,9 +1,9 @@
- /******************************************************************************
+/******************************************************************************
   * @file    文件 serverListen.c 
   * @author  作者 
   * @version 版本 V1.0
   * @date    日期 2025-08-17
-  * @brief   简介 服务器监听，接收其他客户端连接
+  * @brief   简介 服务器监听，接受其他客户端连接
   ******************************************************************************
   * @attention 注意
   *
@@ -15,27 +15,70 @@
 #include <stdio.h>
 #include <stdint.h>
 #include <stdbool.h>
+#include <string.h>
+#include <ctype.h>
+#include <stdlib.h>
+
+#ifdef _WIN32
 #include <winsock2.h>
 #include <windows.h>
+#else
+#include <netinet/tcp.h>
+#include <unistd.h>
+#include <arpa/inet.h>
+#include <fcntl.h>
+#endif
 
 #include "main.h"
 #include "logPrint.h"
 #include "serverListen.h"
 
 /*================== 本地宏定义     =========================================*/
+#ifdef _WIN32
+typedef int socklen_t;
+#endif
+
+/*================== 本地宏定义     =========================================*/
+#define MIN_USER_PORT   1024
+#define MAX_PORT        65535
+
 /*================== 全局共享变量    ========================================*/
 /*================== 本地常量声明    ========================================*/
 /*================== 本地变量声明    ========================================*/
 /*================== 本地函数声明    ========================================*/
 static uint16_t FindAvailablePort(uint16_t startPort);
 
-/*================== 外部函数和变量声明    ==================================*/
+
+
+// 新增：服务器资源清理函数
+// 服务器资源清理函数 - 专门解决Linux端口占用问题
+void serverCleanup(serverInfo_t *server)
+{
+    if (server == NULL || server->socket == INVALID_SOCKET_VALUE || server->socket == 0)
+      return;
+
+    // 只处理服务器监听socket，不管newSocket（由其他地方管理） 
+    SafePrintf("Closing server Port %d ", server->port);
+        
+#ifndef _WIN32
+    // Linux下确保TCP连接完全终止
+    shutdown(server->socket, SHUT_RDWR);
+    
+    // 设置非阻塞模式，确保close立即返回
+    int flags = fcntl(server->socket, F_GETFL, 0);
+    fcntl(server->socket, F_SETFL, flags | O_NONBLOCK);
+#endif
+    // 关闭socket
+    closeSocket(server->socket);
+    server->socket = INVALID_SOCKET_VALUE;
+    server->port = 0;   // 重置服务器端口信息
+    SafePrintf(" has been released\n");
+}
 
 bool serverInit(serverInfo_t *server)
 {
   if( server == NULL )
-    return 0;
-
+    return false;
 
   // 查找可用端口
   server->port = FindAvailablePort(server->port);
@@ -46,20 +89,34 @@ bool serverInit(serverInfo_t *server)
 
   // 创建服务器套接字
   server->socket = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
-  if (server->socket == INVALID_SOCKET) {
-      SafePrintf("Error at socket(): %d\n", WSAGetLastError());
+  if (server->socket == INVALID_SOCKET_VALUE) {
+      SafePrintf("Error at socket(): %ld\n", GetLastError());
       return false;
   }
 
-  // 禁用Nagle算法
-  char nagleStatus = 0;
-  int result = setsockopt(server->socket, //socket的文件描述符
-                          IPPROTO_TCP,
-                          TCP_NODELAY,
-                          &nagleStatus, 
-                          sizeof(int));    // 1 - on, 0 - off
-  if (result < 0)
-    SafePrintf("disable Nagle failed : %d\n", result);
+  // 关键修复：在绑定前设置SO_REUSEADDR
+  int reuse = 1;
+  if (setsockopt(server->socket, SOL_SOCKET, SO_REUSEADDR, 
+                (char*)&reuse, sizeof(reuse)) == SOCKET_ERROR) {
+      SafePrintf("Set SO_REUSEADDR failed: %ld\n", GetLastError());
+      // 不要立即返回，继续尝试
+  }
+  
+  // 对于Linux，设置SO_LINGER确保快速释放端口
+#ifndef _WIN32
+  struct linger ling = {1, 0};  // 立即关闭，不等待
+  if (setsockopt(server->socket, SOL_SOCKET, SO_LINGER, 
+                &ling, sizeof(ling)) == SOCKET_ERROR) {
+      SafePrintf("Set SO_LINGER failed: %ld\n", GetLastError());
+  }
+#endif
+
+  int nagleStatus = true;   // 禁用Nagle算法
+  int result = setsockopt(server->socket, IPPROTO_TCP, TCP_NODELAY,
+                          (char*)&nagleStatus, sizeof nagleStatus);      
+  if( result < 0 ) 
+    SafePrintf("Disable Nagle Failed, result %d, error: %ld, nagleStatus %d\n", 
+      result, GetLastError(), nagleStatus);
 
   // 绑定套接字
   struct sockaddr_in service;
@@ -67,33 +124,22 @@ bool serverInit(serverInfo_t *server)
   service.sin_addr.s_addr = INADDR_ANY;
   service.sin_port = htons(server->port);
 
-  if (bind(server->socket, (SOCKADDR*)&service, sizeof(service)) == SOCKET_ERROR) {
-      SafePrintf("bind failed with error: %d\n", WSAGetLastError());
-      closesocket(server->socket);
+  if (bind(server->socket, (struct sockaddr*)&service, sizeof(service)) == SOCKET_ERROR) {
+      SafePrintf("bind failed with error: %ld\n", GetLastError());
+      closeSocket(server->socket);
       return false;
   }
 
   // 监听
   if (listen(server->socket, SOMAXCONN) == SOCKET_ERROR) {
-      SafePrintf("listen failed with error: %d\n", WSAGetLastError());
-      closesocket(server->socket);
+      SafePrintf("listen failed with error: %ld\n", GetLastError());
+      closeSocket(server->socket);
       return false;
   }
 
   return true;
 }
 
-/*=============================================================================
- 功   能：监听新客户端连接
- 参   数：ServerSocket  --> 服务端套接字
-					retSocket		  --> 有新的客户端连接这里会返回客户端套接字
-					retIP 	      --> 有新的客户端连接这里会返回客户端IP 
- 返   回：-2  请传递有效的服务端结构体
-          -1  这个服务端套接字是无效的，建议重新创建服务端套接字
-           0  则是有新的客户端连接
-      大于 0  的话请重新监听
- 描   述：无
-=============================================================================*/
 int8_t listenNewClientConnect(serverInfo_t *server)
 {    
   if( server == NULL ) 
@@ -107,11 +153,11 @@ int8_t listenNewClientConnect(serverInfo_t *server)
   timeout.tv_sec = 2;
   timeout.tv_usec = 0;
 
-  int selRet = select(0, &readSet, NULL, NULL, &timeout);
+  int selRet = select(server->socket + 1, &readSet, NULL, NULL, &timeout);
   if (selRet == 0) 
       return 1; // 继续监听
   else if (selRet == SOCKET_ERROR) {
-    SafePrintf("select failed, error=%d\n", WSAGetLastError());
+    SafePrintf("select failed, error=%ld\n", GetLastError());
     return -1;  // 无效的服务器套接字
   }
 
@@ -120,10 +166,10 @@ int8_t listenNewClientConnect(serverInfo_t *server)
 
   // 接受客户端连接
   struct sockaddr_in clientAddr;
-  int addrLen = sizeof clientAddr;
-  SOCKET clientSocket = accept(server->socket, (struct sockaddr*)&clientAddr, &addrLen);
-  if (clientSocket == INVALID_SOCKET) {
-      SafePrintf("accept failed, error=%d\n", WSAGetLastError());
+  socklen_t addrLen = sizeof clientAddr;
+  socket_t clientSocket = accept(server->socket, (struct sockaddr*)&clientAddr, &addrLen);
+  if (clientSocket == INVALID_SOCKET_VALUE) {
+      SafePrintf("accept failed, error=%ld\n", GetLastError());
       return 3; // 继续监听
   }
 
@@ -135,16 +181,6 @@ int8_t listenNewClientConnect(serverInfo_t *server)
   return 0; // 有新的客户端连接
 }
 
-
-
-
-
-#define MIN_USER_PORT   1024
-#define MAX_PORT        65535
-
-// 解析命令行参数获取端口号
-// 参数: argc - 参数个数, argv - 参数数组, defaultPort - 默认端口号
-// 返回值: 解析成功的端口号，如果无效则返回0
 uint16_t ParsePortParameter(int argc, char const* argv[]) 
 {
   for (int i = 1; i < argc; i++) {
@@ -216,20 +252,25 @@ static uint16_t FindAvailablePort(uint16_t startPort)
   int bindRet;
   struct sockaddr_in service;
   uint16_t port = startPort;
+  
   for (port = startPort; port < startPort + 100; port++) {
-    SOCKET testSocket = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
-    if (testSocket == INVALID_SOCKET)
+    socket_t testSocket = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
+    if (testSocket == INVALID_SOCKET_VALUE)
       break;
+
+    // 关键：在测试socket上也设置SO_REUSEADDR
+    int reuse = 1;
+    setsockopt(testSocket, SOL_SOCKET, SO_REUSEADDR, (char*)&reuse, sizeof(reuse));
 
     service.sin_family = AF_INET;
     service.sin_addr.s_addr = INADDR_ANY;
     service.sin_port = htons(port);
 
-    bindRet = bind(testSocket, (SOCKADDR*)&service, sizeof(service));
-    closesocket(testSocket);
+    bindRet = bind(testSocket, (struct sockaddr*)&service, sizeof(service));
+    closeSocket(testSocket);
+    
     if( bindRet != SOCKET_ERROR)
       return port;
-    
   }
 
   return 0;

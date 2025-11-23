@@ -23,101 +23,90 @@
 #include "ServerConnect.h"
 #include "logPrint.h"
 #include "public.h"
+
 #include "clients.h"
 #include "hostConnect.h"
 
 #include <string.h>
-#include <winsock2.h>
-#include <windows.h>
 
-#include <ws2tcpip.h>  // 添加用于域名解析的头文件
+#ifdef _WIN32
+#include <ws2tcpip.h>
+#else
+#include <netdb.h>
+#include <netinet/in.h>
+#include <arpa/inet.h>
+#include <unistd.h>
+#include <fcntl.h>
+#endif
 
 /*================== 本地数据类型   =========================================*/
 typedef struct {
   ConnectState_t  state;
   uint64_t        startTimeMs;
-  SOCKET          socket;
+  socket_t     socket;
   char            serverIP[46];    // 支持IPv6的最大长度
   uint16_t        serverPort;
-  HANDLE          thread;
+  thread_t   thread;
   char            hsot[256];
   connectResultCallback Callback;
   void            *arg;
-}connectServer_t;
+} connectServer_t;
 
-/*================== 本地宏定义     =========================================*/
-/*================== 全局共享变量   =========================================*/
-/*================== 本地常量声明   =========================================*/
 /*================== 本地变量声明   =========================================*/
-
 static connectServer_t client = {
   .state = CONNECT_STATE_FAILURE_DISCONNECTED,
   .startTimeMs = 0,
-  .socket = INVALID_SOCKET,
+  .socket = INVALID_SOCKET_VALUE,
   .serverIP = {0},
-  .thread = NULL,
+  .thread = (thread_t)0,
   .hsot = {0},
   .Callback = NULL, 
   .arg = NULL, 
 };
 
-static CRITICAL_SECTION csClient;
+static mutex_type csClient;
 
 /*================== 本地函数声明   =========================================*/
-static DWORD WINAPI ConnectServerThread(void *lpParam);
-
-/*================== 外部函数声明   =========================================*/
-/*================== 外部变量声明   =========================================*/
+threadRet WINAPI ConnectServerThread(void * lpParam);
 
 void ServerConnectInit(bool start)
 {
-  if( start ) // 初始化临界区（在程序启动时调用）
-    InitializeCriticalSection(&csClient);
-  else        // 清理资源（在程序退出时调用）
-    DeleteCriticalSection(&csClient);
+  if( start )
+    InitializeCriticalSection_Wrapper(&csClient);
+  else
+    DeleteCriticalSection_Wrapper(&csClient);
 }
 
 // 如果之前连结过服务器就断开之前的连接
 static void DisconnectingServer(void)
 { 
-  EnterCriticalSection(&csClient);
+  EnterCriticalSection_Wrapper(&csClient);
 
   bool ret = getClientIndex(&client.socket, NULL);
   const char* DisconnectServerInfo = getPrintf("断开之前连接的服务器，套接字：%s%s效", 
-      ret? "存在":"没有", client.socket == INVALID_SOCKET? "无":"有"); 
-  if (ret == false || client.socket == INVALID_SOCKET) {
-    // SafePrintf("%s\n", DisconnectServerInfo);
-    LeaveCriticalSection(&csClient);
+      ret? "存在":"没有", client.socket == INVALID_SOCKET_VALUE? "无":"有"); 
+  if (ret == false || client.socket == INVALID_SOCKET_VALUE) {
+    LeaveCriticalSection_Wrapper(&csClient);
     return;
   }
 
   printfSend(&client.socket, "Connect New Server, You are Disconnect!\n" ); 
   CloseClientSocket( &client.socket, DisconnectServerInfo);
-  // closesocket(client.socket);
-  client.socket = INVALID_SOCKET;
-  LeaveCriticalSection(&csClient);
+  client.socket = INVALID_SOCKET_VALUE;
+  LeaveCriticalSection_Wrapper(&csClient);
 }
 
-/**
- * @brief 连接到服务器
- * @param host 主机名或IP地址，当主机名为 "disconnect" 或空 表示断开服务器连接
- * @param port 端口号          当端口号为 0 表示断开服务器连接
- * @param ResultCallback 连接结果通知回调
- * @param arg   连接结果通知回调 携带的参数
- * @return 无
- * @attention 连接新服务器之前，如果之前已经连接会断开
- */
 void ConnectToServer(const char* host, uint16_t port, 
           connectResultCallback ResultCallback, void *arg)
 { 
-  EnterCriticalSection(&csClient);  
+  EnterCriticalSection_Wrapper(&csClient);  
 
   // 防止重复调用连接服务器
   if (client.state == CONNECT_STATE_CONNECTING || client.thread ) {
       if( ResultCallback )
         ResultCallback(client.state, arg, client.hsot, client.serverPort, 
           CONNECT_TIMEOUT_MS - (getRuningTimeMs() - client.startTimeMs));
-      LeaveCriticalSection(&csClient);
+      LeaveCriticalSection_Wrapper(&csClient);
       return;
   }
   
@@ -128,18 +117,18 @@ void ConnectToServer(const char* host, uint16_t port,
   client.arg = arg;
 
   // 启动连接其它服务器线程
-  client.thread = CreateThread(NULL, 0, ConnectServerThread, &client, 0, NULL);
-  if (client.thread == NULL) {
+  client.thread = threadCreate(NULL, ConnectServerThread, &client);
+  if (client.thread == (thread_t)0) {
     SafePrintf("Failed to create Connect Server thread\n");
     client.state = CONNECT_STATE_FAILURE_DISCONNECTED;
     if( ResultCallback )
       ResultCallback(client.state, arg, client.hsot, client.serverPort, 0);
   }
 
-  LeaveCriticalSection(&csClient);
+  LeaveCriticalSection_Wrapper(&csClient);
 }
 
-static DWORD WINAPI ConnectServerThread(void *lpParam)
+threadRet WINAPI ConnectServerThread(void * lpParam)
 { 
   DisconnectingServer();  // 如果已经连接，先断开
   connectServer_t* clientInfo = (connectServer_t*)lpParam; 
@@ -147,8 +136,8 @@ static DWORD WINAPI ConnectServerThread(void *lpParam)
   if( strnicmp(clientInfo->hsot, "disconnect", strlen("disconnect")) == 0 ||
      clientInfo->serverPort == 0 ){
     client.state = CONNECT_STATE_FAILURE_DISCONNECTED;
-    clientInfo->thread = NULL;
-    return 0;
+    clientInfo->thread = (thread_t)0;
+    return (threadRet)0;
   }
 
   clientInfo->startTimeMs = getRuningTimeMs();
@@ -156,16 +145,16 @@ static DWORD WINAPI ConnectServerThread(void *lpParam)
       clientInfo->serverPort, CONNECT_TIMEOUT_MS, 
       &clientInfo->socket, clientInfo->serverIP);
 
- if( ConnectRet ){  // 连接成功将连接交给clients.c管理
+  if( ConnectRet ){  // 连接成功将连接交给clients.c管理
     ConnectRet = addNewClient(clientInfo->socket, clientInfo->serverIP);
     if (ConnectRet == false) {
       SafePrintf("Failed to add client to management\n");
-      closesocket(clientInfo->socket);
-      clientInfo->socket = INVALID_SOCKET; 
+      closeSocket(clientInfo->socket);
+      clientInfo->socket = INVALID_SOCKET_VALUE; 
     }
- }
+  }
 
-  EnterCriticalSection(&csClient); 
+  EnterCriticalSection_Wrapper(&csClient); 
   clientInfo->state = ConnectRet? 
       CONNECT_STATE_CONNECTED : CONNECT_STATE_FAILURE_DISCONNECTED;
   
@@ -173,9 +162,9 @@ static DWORD WINAPI ConnectServerThread(void *lpParam)
     clientInfo->Callback(clientInfo->state, clientInfo->arg, 
               clientInfo->hsot, clientInfo->serverPort, 0);
   
-  LeaveCriticalSection(&csClient);
-  clientInfo->thread = NULL;
-  return 0;
+  LeaveCriticalSection_Wrapper(&csClient);
+  clientInfo->thread = (thread_t)0;
+  return (threadRet)0;
 }
 
 // 域名解析

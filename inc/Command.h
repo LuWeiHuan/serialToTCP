@@ -8,7 +8,7 @@ extern "C" {
 
 /*================== 头文件包含			=========================================*/
 #include <stdbool.h>
-#include <winsock2.h>
+#include "platform.h"
 
 /*================== 宏定义声明			=========================================*/
 #define CTRL_HEADER         "ctrlInfo:"
@@ -17,7 +17,7 @@ extern "C" {
 //struct enum union
 /*================== 外部变量声明		=========================================*/
 /*================== 外部函数声明		=========================================*/
-void HandleClientCommand(SOCKET *Socket, const char* command);
+void HandleClientCommand(socket_t *Socket, const char* command);
 
 #ifdef __cplusplus
 }

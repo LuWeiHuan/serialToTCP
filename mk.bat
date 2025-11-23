@@ -47,21 +47,21 @@ if "%1"=="debug" goto do_debug
 goto do_development
 
 :do_release
-set BUILD_FLAGS=-DCMAKE_BUILD_TYPE=Release -DENABLE_MONITOR=OFF
+set BUILD_FLAGS=-DCMAKE_BUILD_TYPE=Release -DENABLE_MONITOR=OFF -DBUILD_STATIC=ON
 set BUILD_TYPE=Release
 echo.
 echo [RELEASE] Building RELEASE version (最优性能，无调试信息)...
 goto do_build
 
 :do_debug
-set BUILD_FLAGS=-DCMAKE_BUILD_TYPE=Debug -DENABLE_MONITOR=ON
+set BUILD_FLAGS=-DCMAKE_BUILD_TYPE=Debug -DENABLE_MONITOR=ON -DBUILD_STATIC=ON
 set BUILD_TYPE=Debug
 echo.
 echo [DEBUG] Building DEBUG version (信号处理+符号解析)...
 goto do_build
 
 :do_development
-set BUILD_FLAGS=-DCMAKE_BUILD_TYPE=Debug -DENABLE_MONITOR=ON
+set BUILD_FLAGS=-DCMAKE_BUILD_TYPE=Debug -DENABLE_MONITOR=ON -DBUILD_STATIC=ON
 set BUILD_TYPE=Development
 echo.
 echo [DEVELOPMENT] Building DEVELOPMENT version (信号处理+符号解析)...

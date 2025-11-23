@@ -25,6 +25,7 @@ extern "C" {
 
 /*================== 外部变量声明		=========================================*/
 /*================== 外部函数声明		=========================================*/
+void voluntaryWithdrawal(const char *reason );
 static inline uint16_t getMainServerPort(void)
 {
   extern const uint16_t * const mainServerPort;

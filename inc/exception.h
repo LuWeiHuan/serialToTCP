@@ -21,7 +21,7 @@ extern "C" {
 /**
  * @brief 初始化进程异常监控
  */
-void InitializeProcessExceptionMonitor(void);
+void ProcessExceptionMonitorInit(void);
 
 /**
  * @brief 清理进程异常监控

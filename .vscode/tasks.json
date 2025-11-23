@@ -1,38 +1,51 @@
 {
-  "tasks": [
-    {
-      "label": "CMake Build",
-      "type": "shell",
-      "command": "cmake",
-      "args": [
-        "--build",
-        "${workspaceFolder}/build",
-        "--config",
-        "Debug"
-      ],
-      "group": {
-        "kind": "build",
-        "isDefault": true
-      },
-      "problemMatcher": [
-        "$gcc"
-      ],
-      "detail": "使用CMake构建项目"
-    },
-    {
-      "label": "CMake Configure",
-      "type": "shell",
-      "command": "cmake",
-      "args": [
-        "-G",
-        "MinGW Makefiles",
-        "-B",
-        "${workspaceFolder}/build",
-        "-S",
-        "${workspaceFolder}"
-      ],
-      "group": "build"
-    }
-  ],
-  "version": "2.0.0"
+    "version": "2.0.0",
+    "tasks": [
+        {
+            "label": "CMake Build",
+            "type": "shell",
+            "command": "cmake",
+            "args": [
+                "--build",
+                "${workspaceFolder}/build",
+                "--config",
+                "${command:cmake.buildType}"
+            ],
+            "group": {
+                "kind": "build",
+                "isDefault": true
+            },
+            "problemMatcher": [
+                "$gcc"
+            ],
+            "detail": "使用CMake构建项目"
+        },
+        {
+            "label": "CMake Configure",
+            "type": "shell",
+            "command": "cmake",
+            "args": [
+                "-B",
+                "${workspaceFolder}/build",
+                "-S",
+                "${workspaceFolder}",
+                "-DCMAKE_BUILD_TYPE=${command:cmake.buildType}"
+            ],
+            "group": "build",
+            "problemMatcher": []
+        },
+        {
+            "label": "Clean Build",
+            "type": "shell",
+            "command": "cmake",
+            "args": [
+                "--build",
+                "${workspaceFolder}/build",
+                "--config",
+                "${command:cmake.buildType}",
+                "--clean-first"
+            ],
+            "group": "build"
+        }
+    ]
 }

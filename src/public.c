@@ -22,105 +22,168 @@
 
 #include <stdio.h>
 #include <time.h>
-
 #include <string.h>
+
+#ifdef _WIN32
 #include <winsock2.h>
- 
+#include <wchar.h>
+#include <windows.h>
+#else
+#include <unistd.h>
+#include <ifaddrs.h>
+#include <netdb.h>
+#include <stdlib.h>
+#include <arpa/inet.h>
+#endif
 
 
-/*================== 本地宏定义     =========================================*/
+
 /*================== 全局共享变量    ========================================*/
 runInfo_t  runInfo = {
   .startTime = 0,
   .serverPrintData = 0,
   .monopolizeComRecvIndex = NULL,
   .monopolizeComSendIndex = NULL,
-  .COMsendPoll = false,
-  .COMrecvPoll = false,
+  .COMsendPoll = true,
+  .COMrecvPoll = true,
   .COMrecv4Knum = (RECV_BUFFER_SIZE) - 4096 - 1,
 };
 
-/*================== 本地常量声明    ========================================*/
-/*================== 本地变量声明    ========================================*/
-/*================== 本地函数声明    ========================================*/
-/*================== 外部函数和变量声明    ==================================*/
-
 // 获取从运行到现在的间戳（毫秒）程序运行要调用一次
-uint64_t getRuningTimeMs(void) 
+// 这个函数会由于 mian 函数之前执行
+__attribute__((constructor)) uint64_t getRuningTimeMs(void) 
 {
-  struct _timeb timebuffer; 
-  _ftime_s(&timebuffer);
-
-  static uint64_t initialTimeMs = 0;
-  if( initialTimeMs == 0 ){
-    initialTimeMs = timebuffer.time * 1000 + timebuffer.millitm;
-    runInfo.startTime = time(NULL);  // 获取当前时间（从 1970-01-01 00:00:00 开始的秒数） 
-  }
-  
-  uint64_t atPresent = timebuffer.time * 1000 + timebuffer.millitm;
-  return atPresent - initialTimeMs;
+  static uint64_t initialTimeMs = 0; 
+#ifdef _WIN32
+    struct _timeb timebuffer; 
+    _ftime_s(&timebuffer);
+ 
+    if( initialTimeMs == 0 ){
+        initialTimeMs = timebuffer.time * 1000 + timebuffer.millitm;
+        runInfo.startTime = time(NULL);
+    }
+    
+    uint64_t atPresent = timebuffer.time * 1000 + timebuffer.millitm;
+    return atPresent - initialTimeMs;
+#else
+    struct timespec ts; 
+    clock_gettime(CLOCK_MONOTONIC, &ts);
+    uint64_t currentTimeMs = ts.tv_sec * 1000 + ts.tv_nsec / 1000000;
+    
+    if (initialTimeMs == 0) {
+        initialTimeMs = currentTimeMs;
+        runInfo.startTime = time(NULL);
+    }
+    
+    return currentTimeMs - initialTimeMs;
+#endif
 }
 
 // 更新标题栏内容
 void updataConsoleTitle(const char *threadName)
 {
-  time_t currentTime = time(NULL) - runInfo.startTime;
-  uint16_t day = currentTime / 86400;
-  uint8_t hour = currentTime / 3600 % 24;
-  uint8_t min  = currentTime / 60 % 60;
-  uint8_t sec  = currentTime % 60;
+#ifdef _WIN32
+    time_t currentTime = time(NULL) - runInfo.startTime;
+    uint16_t day = currentTime / 86400;
+    uint8_t hour = currentTime / 3600 % 24;
+    uint8_t min  = currentTime / 60 % 60;
+    uint8_t sec  = currentTime % 60;
 
-  char title[150];
-  memset(title, 0, sizeof title); 
+    char title[150];
+    memset(title, 0, sizeof title); 
 
-  DWORD theradID = GetCurrentThreadId();
-  #ifdef __TRAFFIC_STATS_H_
-  if( trafficStats.run && currentTime % 6 < 3 )
-    snprintf(title, sizeof title, "串口转TCP     串口:↑ %s  ↓ %s   网络：↑ %s  ↓ %s    线程%ld：%s",
-      trafficStats.com.recvRate, trafficStats.com.sendRate,
-      trafficStats.net.sendRate, trafficStats.net.recvRate,
-      theradID, threadName =! NULL? threadName:"No thread Name");
-  else
-  #endif
-    snprintf(title, sizeof title, "串口转TCP     服务端口号：%d   "
-      "已运行%d天：%02d:%02d:%02d  客户端：%d/%d  线程%ld：%s",
-        getMainServerPort(), day, hour, min, sec, getClientNum(), getMaxClient(), 
-        theradID, threadName =! NULL? threadName:"No thread Name");
-  
-  SetConsoleTitleA( title );
+    DWORD theradID = GetCurrentThreadId_Wrapper();
+#ifdef __TRAFFIC_STATS_H_
+    if( trafficStats.run && currentTime % 6 < 3 )
+        snprintf(title, sizeof title, "串口转TCP     串口:↑ %s  ↓ %s   网络：↑ %s  ↓ %s    线程%ld：%s",
+            trafficStats.com.recvRate, trafficStats.com.sendRate,
+            trafficStats.net.sendRate, trafficStats.net.recvRate,
+            theradID, threadName != NULL ? threadName : "No thread Name");
+    else
+#endif
+        snprintf(title, sizeof title, "串口转TCP     服务端口号：%d   "
+            "已运行%d天：%02d:%02d:%02d  客户端：%d/%d  线程%ld：%s",
+            getMainServerPort(), day, hour, min, sec, getClientNum(), getMaxClient(), 
+            theradID, threadName != NULL ? threadName : "No thread Name");
+    
+    SetConsoleTitleA( title );
+#else
+    static uint64_t lastUpdate = 0;
+    uint64_t currentTime = getRuningTimeMs();
+    
+    if (currentTime - lastUpdate > 5000) { // 每5秒更新一次
+        time_t uptime = time(NULL) - runInfo.startTime;
+        uint16_t day = uptime / 86400;
+        uint8_t hour = uptime / 3600 % 24;
+        uint8_t min  = uptime / 60 % 60;
+        uint8_t sec  = uptime % 60;
+        
+        char title[200];
+        snprintf(title, sizeof(title), 
+                "串口转TCP - 端口:%d - 运行:%d天%02d:%02d:%02d - 客户端:%d/%d - 线程:%s", 
+                getMainServerPort(), day, hour, min, sec,
+                getClientNum(), getMaxClient(),
+                threadName ? threadName : "Unknown");
+        
+        // 设置终端标题 (支持xterm等)
+        printf("\033]0;%s\007", title);
+        fflush(stdout);
+        lastUpdate = currentTime;
+    }
+#endif
 }
-
 
 char *getCurrentTimeStringSec(void) 
 {
-  static char timeStr[40];
-  memset(timeStr, 0, sizeof timeStr);
-  SYSTEMTIME st;
-  GetLocalTime(&st);  // 获取本地时间
-
-  // 格式化为 "YYYY-MM-DD HH:MM:SS"
-  snprintf(timeStr, sizeof timeStr, "%04d-%02d-%02d %02d:%02d:%02d",
-          st.wYear, st.wMonth, st.wDay,
-          st.wHour, st.wMinute, st.wSecond);
-  return timeStr;
+    static char timeStr[40];
+    memset(timeStr, 0, sizeof timeStr);
+    
+#ifdef _WIN32
+    SYSTEMTIME st;
+    GetLocalTime(&st);
+    snprintf(timeStr, sizeof timeStr, "%04d-%02d-%02d %02d:%02d:%02d",
+            st.wYear, st.wMonth, st.wDay,
+            st.wHour, st.wMinute, st.wSecond);
+#else
+    time_t now = time(NULL);
+    struct tm *t = localtime(&now);
+    snprintf(timeStr, sizeof timeStr, "%04d-%02d-%02d %02d:%02d:%02d",
+            t->tm_year + 1900, t->tm_mon + 1, t->tm_mday,
+            t->tm_hour, t->tm_min, t->tm_sec);
+#endif
+    return timeStr;
 }
 
 void printBuildInfo(void) 
 { 
-  char localIPs[25][20] = {0};  
-  uint8_t ipCount;
-  GetAllLocalIPs(localIPs, &ipCount, 25);
+    uint8_t ipCount;
+    char localIPs[25][20];  
+    memset(localIPs, 0, sizeof localIPs); 
+    GetAllLocalIPs(localIPs, &ipCount, 25);
+    
+    printf("========================================\n");
+    printf("  Program    : %s\n", "串口转TCP服务端");
+#ifndef CLOSE_EXCEPTION_MONITOR
+    printf("  Version    : %s  Debug\n", VERSIONS);
+#else
+    printf("  Version    : %s  Release\n", VERSIONS);
+#endif
 
-  system("cls");
-  printf("========================================\n");
-  printf("  Program    : %s\n", "串口转TCP服务端");
-  printf("  Version    : %s\n", VERSIONS);
-  printf("  Build Date : %s %s\n", __DATE__, __TIME__);
-  printf("  Compiler   : GCC %d.%d.%d\n", __GNUC__, __GNUC_MINOR__, __GNUC_PATCHLEVEL__);
-  printf("  host Name  : %s\n",  getComputerFullName());
-  for (uint8_t i = 0; i < ipCount; i++) 
-    printf("  IP addr  %d : %s\n", i+1, localIPs[i]); 
-  printf("========================================\n\n");
+    printf("  Build Date : %s %s\n", __DATE__, __TIME__);
+#ifdef __GNUC__
+    printf("  Compiler   : GCC %d.%d.%d\n", __GNUC__, __GNUC_MINOR__, __GNUC_PATCHLEVEL__);
+#endif
+    
+#ifdef _WIN32
+    printf("  Platform   : Windows\n" );
+#else
+    printf("  Platform   : Linux\n");
+#endif
+    printf("  UUID       : %s\n", GetSystemUniqueIdentifier()); 
+    printf("  host Name  : %s\n", getComputerFullName());
+    for (uint8_t i = 0; i < ipCount; i++) 
+        printf("  IP addr  %d : %s\n", i+1, localIPs[i]); 
+    printf("========================================\n\n");
 }
 
 // 获取所有本地IP地址
@@ -129,6 +192,9 @@ void GetAllLocalIPs(char ips[][20], uint8_t *count, uint8_t num)
     if( count == NULL )
       return;
 
+    *count = 0;
+
+#ifdef _WIN32
     char hostname[256];
     if (gethostname(hostname, sizeof hostname) == SOCKET_ERROR)
         return;
@@ -137,15 +203,36 @@ void GetAllLocalIPs(char ips[][20], uint8_t *count, uint8_t num)
     if (hostinfo == NULL) 
         return;
     
-    *count = 0;
     struct in_addr addr;
-    for (int i = 0; hostinfo->h_addr_list[i] != NULL && *count < num; i++) {
-        memcpy(&addr, hostinfo->h_addr_list[i], sizeof(struct in_addr));
-        if (strcmp(inet_ntoa(addr), "127.0.0.1") == 0) 
-          continue;
-        strncpy(ips[*count], inet_ntoa(addr), 16);
-        (*count)++;
+    for (uint8_t i = 0; hostinfo->h_addr_list[i] != NULL && *count < num; i++) {
+      memcpy(&addr, hostinfo->h_addr_list[i], sizeof(struct in_addr));
+      if (strcmp(inet_ntoa(addr), "127.0.0.1") == 0) 
+        continue;
+      strncpy(ips[*count], inet_ntoa(addr), 16);
+      (*count)++;
     }
+#else
+    struct ifaddrs *ifaddr, *ifa;
+    
+    if (getifaddrs(&ifaddr) == -1) 
+        return;
+    
+    for (ifa = ifaddr; ifa != NULL && *count < num; ifa = ifa->ifa_next) {
+        if (ifa->ifa_addr == NULL) continue;
+        
+        if (ifa->ifa_addr->sa_family == AF_INET) { // IPv4
+            struct sockaddr_in *sa = (struct sockaddr_in *)ifa->ifa_addr;
+            char *ip = inet_ntoa(sa->sin_addr);
+            
+            if (strcmp(ip, "127.0.0.1") != 0) {
+                strncpy(ips[*count], ip, 16);
+                (*count)++;
+            }
+        }
+    }
+    
+    freeifaddrs(ifaddr);
+#endif
 }
 
 /*
@@ -158,50 +245,46 @@ void GetAllLocalIPs(char ips[][20], uint8_t *count, uint8_t num)
 */
 char *getSendRecvDirectionStr(char *direct, uint8_t index)
 {
-  char *endptr;  // 用于检测未转换的字符 
-  uint8_t comNum = strtol(ComPort->portName + 3, &endptr, 10);
+    char *endptr;
+    uint8_t comNum = 0;
+    const char *portName = getComName();
+    if ( portName[0] != '\0') {
+        if (strncmp(portName, "COM", 3) == 0) {
+            comNum = strtol(portName + 3, &endptr, 10);
+        } else if (strncmp(portName, "tty", 3) == 0) {
+            // Linux 串口名如 ttyS0, ttyUSB0
+            if (strncmp(portName, "ttyS", 4) == 0) {
+                comNum = strtol(portName + 4, &endptr, 10);
+            } else if (strncmp(portName, "ttyUSB", 6) == 0) {
+                comNum = strtol(portName + 6, &endptr, 10);
+            }
+        }
+    }
 
-  static char retStr[50];
-  memset(retStr, 0, sizeof retStr);
-  strcpy(retStr, "    -->    ");
-#if 0
-  if( strcmp(direct, "[TCP --> COM]") == 0 ){
+    static char retStr[50];
     memset(retStr, 0, sizeof retStr);
-    snprintf(retStr, sizeof retStr, "TCP%-3d--> COM%-3d" , index, comNum);
-  }
+    
+    if( strcmp(direct, "[TCP --> COM]") == 0 ){
+        snprintf(retStr, sizeof retStr, "%-2d:%-16s==> COM%-3d", index, getClientIP(index), comNum);
+    }
+    else if( strcmp(direct, "[COM --> TCP]") == 0 ){
+        static char clientString[32] = {0};
+        memset(clientString, 0, sizeof clientString);
+        if (runInfo.monopolizeComRecvIndex != NULL) 
+            snprintf(clientString, sizeof clientString, "%-2d %s", 
+                *runInfo.monopolizeComRecvIndex, getClientIP(*runInfo.monopolizeComRecvIndex));
+        else if (getClientNum() == 0) 
+            snprintf(clientString, sizeof clientString, " No client");
+        else 
+            snprintf(clientString, sizeof clientString, "All client %d", getClientNum());
 
-  if( strcmp(direct, "[COM --> TCP]") == 0 ){
-    memset(retStr, 0, sizeof retStr);
-
-    if( runInfo.monopolizeComRecvIndex != NULL ) // 独占串口数据
-      snprintf(retStr, sizeof retStr, "COM%-3d--> TCP%-3d", 
-        comNum, *runInfo.monopolizeComRecvIndex);
-    else
-      snprintf(retStr, sizeof retStr, "COM%-3d--> TCP%3d",
-        comNum, getClientNum() );
-  }
-#else
-  if( strcmp(direct, "[TCP --> COM]") == 0 ){
-    memset(retStr, 0, sizeof retStr);
-    snprintf(retStr, sizeof retStr, "%-2d:%-16s==> COM%-3d" , index, getClientIP(index), comNum);
-  }
-
-  if( strcmp(direct, "[COM --> TCP]") == 0 ){
-    memset(retStr, 0, sizeof retStr);
-    static char clientString[32] = {0};
-    memset(clientString, 0, sizeof clientString);
-    if (runInfo.monopolizeComRecvIndex != NULL) 
-      snprintf(clientString, sizeof clientString, "%-2d %s", 
-        *runInfo.monopolizeComRecvIndex, getClientIP(*runInfo.monopolizeComRecvIndex) );
-    else if (getClientNum() == 0) 
-      snprintf(clientString, sizeof clientString, " No client");
-    else 
-      snprintf(clientString, sizeof clientString, "All client %d", getClientNum());
-
-    snprintf(retStr, sizeof(retStr), "COM%-3d==> %-19s", comNum, clientString);
-  }
-#endif
-  return retStr;
+        snprintf(retStr, sizeof(retStr), "COM%-3d==> %-19s", comNum, clientString);
+    }
+    else {
+        strcpy(retStr, direct);
+    }
+    
+    return retStr;
 }
 
 /**
@@ -210,34 +293,153 @@ char *getSendRecvDirectionStr(char *direct, uint8_t index)
  */
 const char *getComputerFullName(void) 
 {
-    DWORD nameLen = 0;
-    static char computerName[20]; // Win提示计算机名最大15个字符
+    static char computerName[256];
     memset(computerName, 0, sizeof computerName);
+
+#ifdef _WIN32
+    DWORD nameLen = 0;
 
     // 第一次调用获取所需缓冲区大小
     BOOL result = GetComputerNameEx(ComputerNameDnsFullyQualified, NULL, &nameLen);
-    if (result == FALSE && GetLastError() != ERROR_MORE_DATA){ 
-      snprintf(computerName, sizeof computerName, "A not name:%ld", GetLastError());
-      return computerName;
+    if (result == false && GetLastError() != ERROR_MORE_DATA){ 
+        snprintf(computerName, sizeof computerName, "Unknown-Win");
+        return computerName;
     }
     
     // 第二次调用获取实际名称
     result = GetComputerNameEx(ComputerNameDnsFullyQualified, computerName, &nameLen);
-    if (result == FALSE) { 
-      snprintf(computerName, sizeof computerName, "B not name:%ld", GetLastError());
-      return computerName;
+    if (result == false) { 
+        snprintf(computerName, sizeof computerName, "Unknown-Win-Error");
+        return computerName;
     }
 
-    return computerName; // 成功
+    return computerName;
+#else
+    if (gethostname(computerName, sizeof computerName - 1) == 0)
+        return computerName; 
+    return "Unknown-Linux";
+#endif
 }
 
 
-// 初始化Winsock，Win系统特性要求创建第一个socket之前要确定要使用哪个版本的socket库
-bool InitializeWinSocket(void)
+
+#ifdef _WIN32
+#include <wchar.h>
+#ifndef ENABLE_VIRTUAL_TERMINAL_PROCESSING
+#define ENABLE_VIRTUAL_TERMINAL_PROCESSING 0x0004
+#endif
+
+// Windows 控制台字体设置
+bool SetConsoleFontSize(int width, int height) {
+    HANDLE hConsole = GetStdHandle(STD_OUTPUT_HANDLE);
+    CONSOLE_FONT_INFOEX fontInfo = {0};
+    
+    fontInfo.cbSize = sizeof fontInfo;
+    fontInfo.dwFontSize.X = width;   // 字体宽度
+    fontInfo.dwFontSize.Y = height;  // 字体高度
+    fontInfo.FontFamily = FF_DONTCARE;
+    fontInfo.FontWeight = FW_NORMAL;
+    wcscpy(fontInfo.FaceName, L"Consolas"); // 字体名称
+    
+    return SetCurrentConsoleFontEx(hConsole, false, &fontInfo);
+}
+
+// 启用Windows 10 VT模式（支持ANSI转义序列）
+bool EnableVTMode(void) {
+    HANDLE hOut = GetStdHandle(STD_OUTPUT_HANDLE);
+    if (hOut == INVALID_HANDLE_VALUE)
+        return false;
+    
+    DWORD dwMode = 0;
+    if (!GetConsoleMode(hOut, &dwMode))
+        return false;
+    
+    dwMode |= ENABLE_VIRTUAL_TERMINAL_PROCESSING;
+    if (!SetConsoleMode(hOut, dwMode))
+        return false;
+    
+    return true;
+}
+#endif
+
+
+// 这里是进行程序异常退出捕获测试的位置，用于程序自我错误定位测试
+void ErrorCodeTest(void)
 {
-  WSADATA wsaData;
-  int result = WSAStartup(MAKEWORD(2, 2), &wsaData);
-  if (result != 0)
-      printf("WSAStartup failed: %d\n", result);
-  return result == 0? true:false;
+  #if 0 || defined CLOSE_EXCEPTION_MONITOR 
+  for( int8_t i = -2; i < 2; i++)
+    printf("开始异常除法运算 8 / %d = %d\n", i, 8/i);
+  int *ptr = NULL;
+  *ptr = 42;  // 这里会导致段错误
+  #endif
+}
+
+
+// 获取系统唯一识别特征信息
+const char* GetSystemUniqueIdentifier(void)
+{
+    static char systemUniqueID[128] = {0};  // 存储系统唯一标识符
+    static bool initialized = false;
+    
+    if (initialized) 
+        return systemUniqueID;
+
+    memset(systemUniqueID, 0, sizeof systemUniqueID);
+    
+#ifdef _WIN32
+    /* Windows 平台实现 */
+    
+    // 方法1: 尝试获取机器GUID (更可靠)
+    HKEY hKey;
+    DWORD dwType = REG_SZ;
+    char buffer[128] = {0};
+    DWORD bufferSize = sizeof(buffer);
+    
+    if (RegOpenKeyExA(HKEY_LOCAL_MACHINE, 
+                     "SOFTWARE\\Microsoft\\Cryptography", 
+                     0, KEY_READ, &hKey) == ERROR_SUCCESS) {
+        initialized = RegQueryValueExA(hKey, "MachineGuid", NULL, &dwType, 
+                           (LPBYTE)buffer, &bufferSize) == ERROR_SUCCESS;
+        RegCloseKey(hKey); 
+        if ( initialized ) {
+            for(uint8_t j=0,i=0; i < strlen(buffer) && i< sizeof(systemUniqueID) - 1; i++ )
+              if(buffer[i] != '-')
+                systemUniqueID[j++] = buffer[i]; 
+            return systemUniqueID;
+        }
+    }
+    
+#else
+    /* Linux/Unix 平台实现 */
+    
+    // 方法1: 读取机器ID (适用于大多数Linux系统)
+    FILE* fp = fopen("/etc/machine-id", "r");
+    if (fp != NULL) {
+        if (fgets(systemUniqueID, sizeof(systemUniqueID) - 1, fp) != NULL) {
+            // 移除换行符
+            systemUniqueID[strcspn(systemUniqueID, "\n")] = 0;
+            fclose(fp);
+            initialized = true;
+            return systemUniqueID;
+        }
+        fclose(fp);
+    }
+    
+    // 方法2: 读取产品UUID (适用于有DMI的系统)
+    fp = fopen("/sys/class/dmi/id/product_uuid", "r");
+    if (fp != NULL) {
+        if (fgets(systemUniqueID, sizeof(systemUniqueID) - 1, fp) != NULL) {
+            systemUniqueID[strcspn(systemUniqueID, "\n")] = 0;
+            fclose(fp);
+            initialized = true;
+            return systemUniqueID;
+        }
+        fclose(fp);
+    }
+#endif
+    
+    // 如果所有方法都失败，使用默认标识符
+    strcpy(systemUniqueID, "UnknownSystem");
+    initialized = true;
+    return systemUniqueID;
 }

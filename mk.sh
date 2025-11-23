@@ -359,6 +359,22 @@ if [ $? -eq 0 ]; then
                 echo -e "${CYAN}目标平台: $(uname -s) $(uname -m) -> ${BUILD_DIR}${NC}"
                 ;;
         esac
+        
+        # 检查并执行 copy.sh 脚本（仅ARM架构）
+        if [ "$CURRENT_PLATFORM" = "arm" ] && [ -f "./copy.sh" ]; then
+            echo -e "${CYAN}Found copy.sh and building for ARM, executing...${NC}"
+            chmod +x ./copy.sh
+            ./copy.sh
+            if [ $? -eq 0 ]; then
+                echo -e "${GREEN}copy.sh executed successfully!${NC}"
+            else
+                echo -e "${RED}copy.sh execution failed!${NC}"
+            fi
+        elif [ -f "./copy.sh" ]; then
+            echo -e "${YELLOW}Found copy.sh but skipping execution (not ARM build)${NC}"
+        else
+            echo -e "${YELLOW}No copy.sh found in current directory.${NC}"
+        fi
     fi
 else
     echo -e "${RED}Build failed!${NC}"

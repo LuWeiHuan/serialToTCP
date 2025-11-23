@@ -1,67 +1,42 @@
-
 #ifndef __CLIENTS_H_
 #define __CLIENTS_H_
+
+#include <stdint.h>
+#include <stdbool.h>
+
+#include "platform.h"
 
 #ifdef __cplusplus  
 extern "C" {
 #endif
 
-/*================== 头文件包含			=========================================*/
-#include <stdint.h>
-#include <stdbool.h>
-
-#include <winsock2.h>
-
-/*================== 宏定义声明			=========================================*/
-
-/*================== 数据类型声明		=========================================*/
-//struct enum union
+/*================== 数据类型声明    ========================================*/
 typedef struct {
   uint16_t count;
   uint16_t max;
-}ClientsNum_t;
+} ClientsNum_t;
 
-/*================== 外部变量声明		=========================================*/
+extern ClientsNum_t const * const g_clientsNum;
+#define getClientNum() g_clientsNum->count
+#define getMaxClient() g_clientsNum->max
 
-
-/*================== 外部函数声明		=========================================*/
+/*================== 外部函数声明    ========================================*/
 void ClientResourceInit(bool start);
-bool addNewClient(SOCKET socket, const char *ip);
-void CloseClientSocket(const SOCKET *socket, const char *reason);
+bool addNewClient(socket_t socket, const char *ip);
+void CloseClientSocket(const socket_t *socket, const char *reason);
 
-int sendDataToClients(const SOCKET *Socket, const char* buff, int len);
-int printfSend(const SOCKET *Socket, const char *fmt, ...) __attribute__ ((__format__ (__printf__, 2, 3)));
+int sendDataToClients(const socket_t *Socket, const char* buff, int len);
+int printfSend(const socket_t *Socket, const char *fmt, ...);
 
-bool getClientIndex(const SOCKET *Socket, uint16_t *retIndex);
-const SOCKET *getClientSocket(uint16_t index);
+bool getClientIndex(const socket_t *Socket, uint16_t *retIndex);
+const socket_t *getClientSocket(uint16_t index);
 const char *getClientIP(uint16_t index);
 void getAllClientIPandIndexInfo(char *retStr, uint16_t len);
 void KickAllClients(const char* reason);
 
-extern ClientsNum_t const * const g_clientsNum;
-#if 0
-inline uint16_t getClientNum(void){ 
-  extern ClientsNum_t const * const g_clientsNum;
-  return g_clientsNum->count;
-}
-
-inline uint16_t getMaxClient(void){
-  extern ClientsNum_t const * const g_clientsNum;
-  return g_clientsNum->max;
-}
-#else
-#define getClientNum() g_clientsNum->count
-#define getMaxClient() g_clientsNum->max
-#endif
+void sendComPortsListToClient(socket_t *socket, bool VPID);
 #ifdef __cplusplus
 }
 #endif
 
 #endif /*__CLIENTS_H_*/
-
-
-
-
-
-
-
