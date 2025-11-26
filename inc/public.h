@@ -28,7 +28,7 @@ void printBuildInfo(void);
 uint64_t getRuningTimeMs(void);
 char *getCurrentTimeStringSec(void);
 void updataConsoleTitle(const char *threadName);
-char *getSendRecvDirectionStr(char *direct, uint8_t index);
+char *getSendRecvDirectionStr(const char *direct, uint8_t index);
 const char *getComputerFullName(void);
 void GetAllLocalIPs(char ips[][20], uint8_t *count, uint8_t num);
 

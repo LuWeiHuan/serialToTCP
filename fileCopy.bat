@@ -1,0 +1,1 @@
+copy /Y .\com2tcp_server.exe "\\Hx-qxb-fs\器械部共享盘\软件包\远程工具\远程串口"

@@ -4,9 +4,12 @@ chcp 65001 >nul
 set TARGET_NAME=com2tcp_server
 set BUILD_DIR=buildWin
 
-if "%1"=="/?" goto show_help
-if "%1"=="help" goto show_help
-if "%1"=="-h" goto show_help
+:: 记录开始时间
+set START_TIME=%time%
+
+if /i "%1"=="/?" goto show_help
+if /i "%1"=="help" goto show_help
+if /i "%1"=="-h" goto show_help
 
 echo.
 echo [INFO] Checking for running %TARGET_NAME% processes...
@@ -20,11 +23,11 @@ if not errorlevel 1 (
     echo [INFO] No running %TARGET_NAME% processes found.
 )
 
-:: 直接处理各种情况
-if "%1"=="clean" goto do_clean
-if "%1"=="rm" goto do_rm
+:: 直接处理各种情况（不区分大小写）
+if /i "%1"=="clean" goto do_clean
+if /i "%1"=="rm" goto do_rm
 
-if "%1"=="cleanBuild" (
+if /i "%1"=="cleanBuild" (
     echo.
     echo [INFO] Cleaning build directory...
     if exist "%BUILD_DIR%" (
@@ -35,41 +38,47 @@ if "%1"=="cleanBuild" (
     ) else (
         echo [WARNING] Build directory does not exist.
     )
-    if "%2"=="release" goto do_release
-    if "%2"=="debug" goto do_debug
+    if /i "%2"=="release" goto do_release
+    if /i "%2"=="debug" goto do_debug
     goto do_development
 )
 
-if "%1"=="release" goto do_release
-if "%1"=="debug" goto do_debug
+if /i "%1"=="release" goto do_release
+if /i "%1"=="debug" goto do_debug
 
 :: 默认情况：无参数时构建开发版本
-goto do_development
+if "%1"=="" goto do_development
+
+:: 如果参数不是上述任何一种，显示错误信息
+echo [ERROR] 未知参数: %1
+echo 使用 %0 help 查看可用参数
+exit /b 1
 
 :do_release
 set BUILD_FLAGS=-DCMAKE_BUILD_TYPE=Release -DENABLE_MONITOR=OFF -DBUILD_STATIC=ON
 set BUILD_TYPE=Release
+set BUILD_TYPE_TIPS=(最优性能，无调试信息^)
 echo.
-echo [RELEASE] Building RELEASE version (最优性能，无调试信息)...
 goto do_build
 
 :do_debug
 set BUILD_FLAGS=-DCMAKE_BUILD_TYPE=Debug -DENABLE_MONITOR=ON -DBUILD_STATIC=ON
 set BUILD_TYPE=Debug
+set BUILD_TYPE_TIPS=(信号处理+符号解析^)
 echo.
-echo [DEBUG] Building DEBUG version (信号处理+符号解析)...
 goto do_build
 
 :do_development
 set BUILD_FLAGS=-DCMAKE_BUILD_TYPE=Debug -DENABLE_MONITOR=ON -DBUILD_STATIC=ON
 set BUILD_TYPE=Development
+set BUILD_TYPE_TIPS=(信号处理+符号解析^)
 echo.
-echo [DEVELOPMENT] Building DEVELOPMENT version (信号处理+符号解析)...
 goto do_build
 
 :do_build
 echo [INFO] Build directory: %BUILD_DIR%
 echo [INFO] CMake command: cmake -B %BUILD_DIR% -G "MinGW Makefiles" %BUILD_FLAGS%
+echo [%BUILD_TYPE%] Building %BUILD_TYPE% version %BUILD_TYPE_TIPS%...
 echo.
 
 echo [INFO] Configuring CMake...
@@ -93,40 +102,86 @@ if errorlevel 1 (
     exit /b 1
 )
 
-echo [SUCCESS] Build successful!
+echo [SUCCESS] Build Successful!
+echo [INFO] 目标平台: Windows
+echo [INFO] 构建类型: %BUILD_TYPE% %BUILD_TYPE_TIPS%
 
-set EXECUTABLE=%BUILD_DIR%\%TARGET_NAME%.exe
+set EXECUTABLE=%BUILD_DIR%\%TARGET_NAME%.exe 
 if exist "%EXECUTABLE%" (
-    echo [INFO] Executable: %EXECUTABLE%
-    
-    :: 获取文件大小并转换为KB（构建目录）
-    for /f "tokens=3" %%i in ('dir /-c "%EXECUTABLE%" ^| findstr /c:"%TARGET_NAME%.exe"') do (
-        set /a KB=%%i/1024
+    :: 获取文件大小
+    for %%F in ("%EXECUTABLE%") do (
+        set /a FILE_SIZE_KB=%%~zF/1024
     )
-    
-    :: 显示构建类型信息
-    if "%BUILD_TYPE%"=="Release" (
-        echo [INFO] 构建类型: Release (最优性能，无调试信息)
-    ) else if "%BUILD_TYPE%"=="Debug" (
-        echo [INFO] 构建类型: Debug (信号处理+符号解析)
+    echo [INFO] 程序文件位置：%EXECUTABLE% 存在
+)else (
+    echo [WARNING] 程序文件位置：%EXECUTABLE% 没有 
+)
+
+echo [INFO] 程序文件大小：%FILE_SIZE_KB% KB
+
+:: 计算构建时间
+set END_TIME=%time%
+call :CalculateDuration "%START_TIME%" "%END_TIME%" DURATION
+echo [INFO] 构建用时: %DURATION%
+
+:: 检查并执行额外的脚本
+echo.
+set EXTRA_BAT=fileCopy.bat
+if exist %EXTRA_BAT% (
+    echo [INFO] Found %EXTRA_BAT%, executing...
+    call %EXTRA_BAT%
+    if errorlevel 1 (
+        echo [WARNING] %EXTRA_BAT% completed with warnings or errors
     ) else (
-        echo [INFO] 构建类型: Development (信号处理+符号解析)
+        echo [SUCCESS] %EXTRA_BAT% executed successfully.
     )
-    echo [INFO] 目标平台: Windows
-) else (
-    echo [WARNING] 可执行文件可能被复制到根目录，构建目录中未找到: %EXECUTABLE%
-    if exist "%TARGET_NAME%.exe" (
-        echo [INFO] 可执行文件已复制到: %CD%\%TARGET_NAME%.exe
-        
-        :: 获取文件大小并转换为KB（根目录）
-        for /f "tokens=3" %%i in ('dir /-c "%TARGET_NAME%.exe" ^| findstr /c:"%TARGET_NAME%.exe"') do (
-            set /a KB=%%i/1024
-        )
-        echo [INFO] 程序文件大小：%KB% KB
-    )
+    echo.
 )
 
 exit /b 0
+
+:CalculateDuration
+setlocal
+set "start=%~1"
+set "end=%~2"
+
+:: 解析开始时间
+for /f "tokens=1-3 delims=:." %%a in ("%start%") do (
+    set /a "start_h=%%a, start_m=%%b, start_s=%%c"
+)
+
+:: 解析结束时间  
+for /f "tokens=1-3 delims=:." %%a in ("%end%") do (
+    set /a "end_h=%%a, end_m=%%b, end_s=%%c"
+)
+
+:: 计算总秒数
+set /a "start_total=%start_h%*3600 + %start_m%*60 + %start_s%"
+set /a "end_total=%end_h%*3600 + %end_m%*60 + %end_s%"
+
+:: 处理跨天情况
+if %end_total% lss %start_total% (
+    set /a "end_total+=86400"
+)
+
+set /a "duration_sec=%end_total% - %start_total%"
+
+:: 格式化输出
+if %duration_sec% geq 3600 (
+    set /a "hours=%duration_sec%/3600"
+    set /a "minutes=(%duration_sec% - hours*3600)/60"
+    set /a "seconds=%duration_sec% - hours*3600 - minutes*60"
+    set "result=%hours%小时%minutes%分钟%seconds%秒"
+) else if %duration_sec% geq 60 (
+    set /a "minutes=%duration_sec%/60"
+    set /a "seconds=%duration_sec% - minutes*60"
+    set "result=%minutes%分钟%seconds%秒"
+) else (
+    set "result=%duration_sec% 秒"
+)
+
+endlocal & set "%~3=%result%"
+goto :eof
 
 :do_clean
 echo.

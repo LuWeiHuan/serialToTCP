@@ -44,8 +44,8 @@ runInfo_t  runInfo = {
   .serverPrintData = 0,
   .monopolizeComRecvIndex = NULL,
   .monopolizeComSendIndex = NULL,
-  .COMsendPoll = true,
-  .COMrecvPoll = true,
+  .COMsendPoll = false,
+  .COMrecvPoll = false,
   .COMrecv4Knum = (RECV_BUFFER_SIZE) - 4096 - 1,
 };
 
@@ -243,7 +243,7 @@ void GetAllLocalIPs(char ips[][20], uint8_t *count, uint8_t num)
 
   index 客户端索引号
 */
-char *getSendRecvDirectionStr(char *direct, uint8_t index)
+char *getSendRecvDirectionStr(const char *direct, uint8_t index)
 {
     char *endptr;
     uint8_t comNum = 0;

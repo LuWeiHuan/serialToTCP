@@ -74,9 +74,14 @@ static ComPortInfo_t comPort = {
 ComPortInfo_t const * const ComPort = &comPort;
 
 /*================== 本地函数声明    ========================================*/
-static threadRet WINAPI ComRecvDataThread(void *param);
-static void trueHandleReceivedData(const uint8_t *data, uint32_t len);
 static void get_COM_VID_PID_REV(const char* portName, char *retVID, char *retPID, char *retREV);
+
+static threadRet WINAPI ComRecvDataThread(void *param);
+static void HandleReceivedData(const uint8_t *data, uint32_t len);
+static void handleReceivedDataAuotAsync(const char *comRecvBuffer, uint32_t len);
+static uint32_t handleAlignReceivedData(const char *newData, uint32_t bytesRead, 
+                                        bool isTimeout, const char * lineNumber);
+
 
 bool getComIsOpen(void)
 {
@@ -414,7 +419,7 @@ int8_t OpenComPort(const char* portName, uint32_t baudRate,
         case 500000: speed = B500000; break;
         case 576000: speed = B576000; break;
         case 921600: speed = B921600; break;
-        default: speed = B115200; break;
+        default: speed = B921600; break;
     }
     cfsetispeed(&options, speed);
     cfsetospeed(&options, speed);
@@ -482,241 +487,266 @@ int8_t OpenComPort(const char* portName, uint32_t baudRate,
 }
 #endif
 
-static void handleReceivedData(const char *comRecvBuffer, DWORD len)
+
+/*================== 串口接收线程 ============================================*/
+static threadRet WINAPI ComRecvDataThread(void *param)
+{
+  (void)param;
+  static char comRecvBuffer[RECV_BUFFER_SIZE];
+  const char *ThreadExitReason = "Thread Exit, NULL";
+
+  // 清空积攒对齐数据
+  uint32_t totalBytes = handleAlignReceivedData(NULL,0, false, NULL);
+
+#ifdef _WIN32
+  DWORD bytesRead = 0;
+  OVERLAPPED overlapped = {0};
+  bool readRet;
+  DWORD lastUpdateTime = 0, currentTickCount = 0;
+  const DWORD updateInterval = 1500;
+
+  while (comPort.isOpen) {
+    if (bytesRead == 0 || totalBytes == 0) 
+        Sleep(1);
+    
+    CloseHandle(overlapped.hEvent);
+    memset(&overlapped, 0, sizeof overlapped);
+    overlapped.hEvent = CreateEvent(NULL, true, false, NULL);
+    
+    // 发起异步读取
+    readRet = ReadFile(comPort.hCom, comRecvBuffer, 
+                      sizeof(comRecvBuffer) - 1, &bytesRead, &overlapped);
+    if (!readRet) {
+      DWORD error = GetLastError();
+      if (error == ERROR_IO_PENDING) {
+        // 等待读取完成或超时
+        DWORD waitResult = WaitForSingleObject(overlapped.hEvent, 1000);
+        bool isTimeout = (waitResult == WAIT_TIMEOUT);
+        totalBytes = handleAlignReceivedData(NULL, 0, isTimeout, "Win 1");
+        
+        if (isTimeout) {
+            updataConsoleTitle("COM: Timeout");
+            continue;
+        } 
+        else if (waitResult == WAIT_OBJECT_0) {
+          // 读取完成
+          if (!GetOverlappedResult(comPort.hCom, &overlapped, &bytesRead, false)) {
+            error = GetLastError();
+            if (error != ERROR_OPERATION_ABORTED) {
+              ThreadExitReason = getPrintf("Thread Exit[B], %s read error:%ld", 
+                  comPort.portName, error);
+              break;
+            }
+          }
+        }
+      } 
+      else if (error != ERROR_OPERATION_ABORTED) {
+        ThreadExitReason = getPrintf("Thread Exit[A], %s read error:%ld", 
+            comPort.portName, error);
+        break;
+      }
+    }
+
+    if (bytesRead == 0) { 
+        totalBytes = handleAlignReceivedData(NULL, 0, false, "Win 2"); // 零读取处理
+        
+        // 按间隔更新线程状态
+        currentTickCount = GetTickCount();
+        if (currentTickCount - lastUpdateTime >= updateInterval) {
+            updataConsoleTitle(comPort.portName);
+            lastUpdateTime = currentTickCount;
+        }
+        continue;
+    }
+
+    // 处理接收到的数据 
+    totalBytes = handleAlignReceivedData(comRecvBuffer, bytesRead, false, "Win 3");
+    bytesRead = 0;
+  }
+
+#else
+  fd_set readSet;
+  struct timeval timeout;
+  
+  while (comPort.isOpen) {
+    FD_ZERO(&readSet);
+    FD_SET(comPort.hCom, &readSet);
+    
+    // 动态设置超时：如果有积攒的对齐数据，使用较短超时
+    if ( totalBytes ) {
+        timeout.tv_sec = 0;
+        timeout.tv_usec = 5000; // 5ms短超时，用于快速检测
+    } 
+    else {
+        timeout.tv_sec = 1;
+        timeout.tv_usec = 0;
+    }
+
+    int selectRet = select(comPort.hCom + 1, &readSet, NULL, NULL, &timeout);
+    if (selectRet == 0) { // 超时处理 
+        totalBytes = handleAlignReceivedData(NULL, 0, true, "Linux 1");
+        continue;
+    } 
+    else if (selectRet == -1) {
+        if (errno == EINTR) 
+          continue;
+        ThreadExitReason = getPrintf("Select error: %s", strerror(errno));
+        break;
+    } 
+    else {
+      // select返回大于0，表示有文件描述符就绪
+      int fdRet = FD_ISSET(comPort.hCom, &readSet);
+      if (!fdRet) { 
+          totalBytes = handleAlignReceivedData(NULL, 0, true, "Linux 2");
+          SafePrintf("COM FD_ISSET ERROR:%d\n", fdRet);
+          continue;
+      }
+    }
+    
+    // 读取数据
+    ssize_t bytesRead = read(comPort.hCom, comRecvBuffer, sizeof comRecvBuffer - 1);
+    if (bytesRead > 0) {
+        totalBytes = handleAlignReceivedData(comRecvBuffer, bytesRead, false, "Linux 3");
+    }
+    else if (bytesRead == 0) {    // EOF - 设备断开 
+      ThreadExitReason = getPrintf("Device disconnected (EOF): %s", strerror(errno));
+      break;
+    }
+    else { // 读取错误
+      if (errno == EAGAIN || errno == EWOULDBLOCK) {
+        totalBytes = handleAlignReceivedData(NULL, 0, false, "Linux 4");
+      } 
+      else {
+        ThreadExitReason = getPrintf("Read error: %s", strerror(errno));
+        break;
+      }
+    }
+  }
+
+#endif
+  
+  // 线程退出前发送所有积攒的数据
+  for(uint8_t i=0; i<20 && handleAlignReceivedData( NULL, 0, true, "Win & Linux"); i++);
+  
+  CloseComPort(ThreadExitReason);
+#ifdef _WIN32
+  CloseHandle(overlapped.hEvent);
+#endif
+      
+  return (threadRet)0;
+}
+
+
+/**
+ * @brief 处理接收到的数据，包含数据对齐逻辑
+ * @param newData 新接收到的数据
+ * @param newDataLen 新数据长度
+ * @param isTimeout 是否超时处理
+ * @param lineNumber  传入行号可用于调试，空的则是清空积攒数据
+ * @return 已经积攒的数据
+ */
+static uint32_t handleAlignReceivedData(const char *newData, uint32_t bytesRead, 
+                                        bool isTimeout, const char * lineNumber)
+{  
+  if( runInfo.COMrecv4Knum == 0){ // 禁用限定阈值就字节发送
+    handleReceivedDataAuotAsync(newData, bytesRead);
+    return 0;
+  }
+
+  static uint32_t totalBytes = 0;              // 已积攒的总字节数
+  static uint8_t zeroNumCount = 0;             // 连续零读取计数
+  static uint8_t timeoutCount = 0;             // 超时计数
+  static char totalBuffer[RECV_BUFFER_SIZE];   // 积攒对齐缓冲区
+
+  if ( lineNumber == NULL ){
+    memset(totalBuffer, 0, sizeof totalBuffer);
+    totalBytes = zeroNumCount = timeoutCount = 0;
+    return 0;
+  }
+
+  uint32_t sumData = totalBytes + bytesRead;
+  // 检查数据对齐情况
+#ifdef _WIN32
+  // Windows系统：主要检查1024对齐，同时考虑常见的大数据包
+  bool aligned = (sumData % 1024 == 0);
+#else
+  // Linux系统：检查多种对齐情况
+  bool aligned = (sumData % 128 == 0) || (sumData % 1024 == 0)  ;
+#endif
+
+  static const uint8_t timeoutCountMax = 1;
+  static const uint16_t buffFull = 10000;
+  static uint8_t zeroNumMax = 2; 
+  zeroNumCount += sumData? (bytesRead ? 0 : 1) : 0; 
+  static uint8_t zeroCount = 0; 
+  if( (zeroCount += (bytesRead ? 0 : 1)) > 100){
+    zeroCount = 0;
+    zeroNumMax = 2;
+  }
+
+  // 自动追加读0允许的最大计数
+  if( bytesRead )
+    if((aligned && zeroNumMax >= 30) || zeroNumMax - 2 < zeroNumCount )
+      zeroNumMax = 2 + zeroNumCount;
+  
+
+  timeoutCount = isTimeout ? timeoutCount + 1 : 0;
+
+  bool condition[4];
+  condition[0] = (totalBytes > 0 && zeroNumCount > zeroNumMax);      // 积攒数据且多次空读
+  condition[1] = (totalBytes > 0 && timeoutCount > timeoutCountMax); // 积攒数据且多次超时
+  condition[2] = totalBytes > sizeof totalBuffer - buffFull;         // 缓冲区即将满，必须发送
+  condition[3] = runInfo.COMrecv4Knum < sumData;                     // 超过积攒阈值，发送数据
+
+  if( condition[3] )
+      zeroNumMax = 10;
+  
+  // 如果有积攒的数据且长时间无新数据，强制发送
+  if ( condition[0] || condition[1] || condition[2] || condition[3]){ 
+    SafePrintf("%sOM Aligned Recv %s OR %s: %u/%u/%u Bytes, "
+        "%s %d/%d, %s %d/%d, %-10s\n", condition[3]? "\nC":"C",
+        condition[2]? "FILL":"Fill",
+        condition[3]? "RESTRICT":"Restrict",
+        totalBytes, runInfo.COMrecv4Knum, (uint32_t)sizeof totalBuffer - buffFull, 
+        condition[1]? "TIMEOUT":"Timeout", timeoutCount, timeoutCountMax+1, 
+        condition[0]? "ZERO":"Zero", zeroNumCount, zeroNumMax+1, lineNumber);
+    handleReceivedDataAuotAsync(totalBuffer, totalBytes);
+    totalBytes = zeroNumCount = timeoutCount = 0;
+  }
+
+  // 如果没有新数据，只返回当前积攒的数据量
+  if (newData == NULL || bytesRead == 0)
+      return totalBytes;
+  
+  // 立即积攒数据 // 对于对齐数据，继续积攒等待更多数据或超时
+  memcpy(totalBuffer + totalBytes, newData, bytesRead);
+  totalBytes += bytesRead;
+  
+ // 非对齐数据且有积攒数据，立即发送
+ if (aligned == false && totalBytes ) {
+    handleReceivedDataAuotAsync(totalBuffer, totalBytes);
+    totalBytes = zeroNumCount = timeoutCount = 0; 
+  } 
+  return totalBytes;
+}
+
+static void handleReceivedDataAuotAsync(const char *comRecvBuffer, uint32_t len)
 {
   if( comRecvBuffer == NULL || len == 0 )
     return;
-    
+  
   if( AddDataToAsyncQueue(&asyncRecvQueue, (uint8_t*)comRecvBuffer, len) == false )   
-    trueHandleReceivedData((uint8_t*)comRecvBuffer, len); 
-}
-
-static threadRet WINAPI ComRecvDataThread(void *param)
-{
-    (void)param;
-    static char comRecvBuffer[RECV_BUFFER_SIZE];
-    DWORD bytesRead = 0, totalBytesRead = 0;
-    uint8_t zeroNumMax = 30, zeroNum = 0, timeoutNum = 0;
-    bool recvIsAligned = false;
-    const char *ThreadExitReason = "Thread Exit, NULL";
-    
-#ifdef _WIN32
-    OVERLAPPED overlapped = {0};
-    bool readRet;
-    DWORD lastUpdateTime = 0, currentTickCount = 0;
-    const DWORD updateInterval = 1500;
-    
-    while ( comPort.isOpen ) {
-        if( bytesRead == 0 || totalBytesRead == 0 )
-            Sleep(1);
-        CloseHandle(overlapped.hEvent);
-
-        memset(&overlapped, 0, sizeof overlapped);
-        overlapped.hEvent = CreateEvent(NULL, true, false, NULL);
-        
-        DWORD remainingSpace = (sizeof comRecvBuffer) - 1 - totalBytesRead;
-        if (zeroNum > zeroNumMax || timeoutNum > 10 || remainingSpace == 0) {  
-            SafePrintf("COM Repeatedly Read 4KB [Zero:%s(%d), timeout:%-2d, Full:%s] Recv:%ld(4KB:%0.1f)\n", 
-                totalBytesRead % 4096 == 0? "YES":"NO", zeroNumMax, 
-                timeoutNum, remainingSpace == 0? "YES": "NO ",
-                totalBytesRead, totalBytesRead / 4096.0);
-            handleReceivedData(comRecvBuffer, totalBytesRead);
-            totalBytesRead = zeroNum = timeoutNum = 0; 
-            remainingSpace = (sizeof comRecvBuffer) - 1; 
-        }
-        
-      // 发起异步读取
-      readRet = ReadFile(comPort.hCom, comRecvBuffer + totalBytesRead, 
-          remainingSpace, &bytesRead, &overlapped);
-      if (!readRet) {
-        DWORD error = GetLastError();
-        if (error == ERROR_IO_PENDING) {  // 等待读取完成或超时 
-          DWORD waitResult = WaitForSingleObject(overlapped.hEvent, 1000);
-          timeoutNum = waitResult == WAIT_TIMEOUT ? timeoutNum+1:0;
-          if (waitResult == WAIT_TIMEOUT) {
-            updataConsoleTitle("COM: Timeout");
-            continue;
-          }
-          else if (waitResult == WAIT_OBJECT_0) { // 读取完成 
-            if (!GetOverlappedResult(comPort.hCom, &overlapped, &bytesRead, false)) {
-              error = GetLastError();
-              if (error != ERROR_OPERATION_ABORTED) { 
-                ThreadExitReason = getPrintf("Thread Exit[B], %s read error:%ld", comPort.portName, error);
-                break;
-              }
-            }
-          }
-        }
-        else if (error != ERROR_OPERATION_ABORTED) { 
-          ThreadExitReason = getPrintf("Thread Exit[A], %s read error:%ld", comPort.portName, error); 
-          break;
-        }
-      }
-
-      if (bytesRead == 0) { // 处理接收到的数据如果是空读取就重新读
-        currentTickCount = GetTickCount();   // 按间隔更新线程状态
-        if (currentTickCount - lastUpdateTime >= updateInterval) {
-          updataConsoleTitle(comPort.portName);
-          lastUpdateTime = currentTickCount;
-        }
-        zeroNum = recvIsAligned && totalBytesRead? zeroNum + 1:0; 
-        continue;
-      }
-
-      recvIsAligned = bytesRead % 1024 == 0? true:false; 
-      if((recvIsAligned && zeroNumMax >= 30) || zeroNumMax - 2 < zeroNum )
-        zeroNumMax = zeroNum + 2;
-      
-      // if( recvIsAligned && zeroNum)
-      //   SafePrintf("COM zero Num:%-3d/%-3d, bytesRead:%ld total:%ld\n", 
-      //     zeroNum, zeroNumMax, bytesRead, totalBytesRead + bytesRead);
-
-      totalBytesRead += bytesRead;  // 更新总字节数
-
-      if( runInfo.COMrecv4Knum < totalBytesRead ){
-          zeroNumMax = 30;
-          SafePrintf("\n\n");
-      }
-
-      // 处理串口接收到的数据
-      if( (recvIsAligned == false && totalBytesRead) || 
-          runInfo.COMrecv4Knum < totalBytesRead ) {
-        handleReceivedData(comRecvBuffer, totalBytesRead);
-        totalBytesRead = 0;
-      }
-      zeroNum = timeoutNum = 0;
-    }
-
-#else  
-    fd_set readSet;
-    struct timeval timeout;
-    ssize_t len = 0;
-    
-    while (comPort.isOpen) { 
-        FD_ZERO(&readSet);
-        FD_SET(comPort.hCom, &readSet);
-        
-        // 设置超时：如果是对齐数据，使用较短超时；否则使用正常超时
-        if (recvIsAligned && totalBytesRead > 0) {
-            timeout.tv_sec = 0;
-            timeout.tv_usec = 5000; // 5ms短超时，用于快速检测是否有更多对齐数据
-        } 
-        else {
-            timeout.tv_sec = 1;
-            timeout.tv_usec = 0;
-        }
-
-        int ret = select(comPort.hCom + 1, &readSet, NULL, NULL, &timeout);
-        if (ret == -1) {
-            if (errno == EINTR) 
-                continue;
-            ThreadExitReason = getPrintf("Select error: %s", strerror(errno));
-            break;
-        }
-        
-        if (ret == 0) { // 超时处理：检查是否需要发送积攒的数据
-            timeoutNum++;
-            if (totalBytesRead > 0 && (timeoutNum > 2 || zeroNum > zeroNumMax)) {
-                SafePrintf("COM Timeout Send [Zero:%d/%d, timeout:%d] Recv:%ld(1KB:%.1f)\n", 
-                    zeroNum, zeroNumMax, timeoutNum, totalBytesRead, totalBytesRead / 4096.0);
-                handleReceivedData(comRecvBuffer, totalBytesRead);
-                totalBytesRead = zeroNum = timeoutNum = recvIsAligned = false;
-            }
-            continue;
-        }
-        
-        ret = FD_ISSET(comPort.hCom, &readSet);
-        if (!ret) {
-            SafePrintf("FD_ISSET %d\n", ret);
-            continue;
-        }
-        
-        // 计算剩余空间
-        size_t remainingSpace = sizeof(comRecvBuffer) - 1 - totalBytesRead;
-        if (remainingSpace == 0) {
-            // 缓冲区满，立即发送
-            SafePrintf("COM Buffer Full, Sending %ld bytes\n", totalBytesRead);
-            handleReceivedData(comRecvBuffer, totalBytesRead);
-            totalBytesRead = zeroNum = timeoutNum = 0;
-            remainingSpace = sizeof(comRecvBuffer) - 1;
-        }
-        
-        // 读取数据
-        len = read(comPort.hCom, comRecvBuffer + totalBytesRead, remainingSpace);
-        if (len > 0) { 
-            bytesRead = len;      // 更新统计信息
-            recvIsAligned = ((bytesRead % 128 == 0) || (bytesRead % 1024 == 0) || (bytesRead % 4095 == 0));
-            
-            // 动态调整 zeroNumMax
-            if( (recvIsAligned && zeroNumMax >= 30) || zeroNumMax - 2 < zeroNum) 
-                zeroNumMax = zeroNum + 2;
-            
-            totalBytesRead += bytesRead;
-            timeoutNum = zeroNum = 0; // 收到数据，重置零计数
-            
-            // 检查是否需要发送数据
-            bool shouldSend = false;
- 
-            // 情况1: 非对齐数据，立即发送
-            if (recvIsAligned == false && totalBytesRead) {
-                shouldSend = true;
-            }
-            // 情况2: 达到调试阈值
-            else if (runInfo.COMrecv4Knum < totalBytesRead) {
-                zeroNumMax = 30;
-                shouldSend = true;
-                SafePrintf("\n\n");
-            }
-            // 情况3: 对齐数据但需要检查积攒条件
-            else if (recvIsAligned && zeroNum > zeroNumMax) { 
-                shouldSend = true;  // 如果连续多次收到4KB数据，积攒几次后发送 
-            }
-
-            if (shouldSend) { 
-                handleReceivedData(comRecvBuffer, totalBytesRead);
-                totalBytesRead = recvIsAligned = false;
-            } 
-        } 
-        else if (len == 0) { // EOF - 设备断开
-            ThreadExitReason = getPrintf("Device disconnected (EOF): %s", strerror(errno));
-            break;
-        } 
-        else {  // 读取错误 
-            if (errno == EAGAIN || errno == EWOULDBLOCK) {
-                // 非阻塞读取返回，增加零计数
-                if (++zeroNum > zeroNumMax && totalBytesRead > 0) {
-                    SafePrintf("COM Max Zero Count Reached, Sending %ld bytes\n", totalBytesRead);
-                    handleReceivedData(comRecvBuffer, totalBytesRead);
-                    totalBytesRead = zeroNum = recvIsAligned = false;
-                }
-            } 
-            else { // 其他错误
-                ThreadExitReason = getPrintf("Read error: %s", strerror(errno));
-                break;
-            } 
-        }
-    }
- 
-#endif 
-    CloseComPort(ThreadExitReason);
-#ifdef _WIN32
-    CloseHandle(overlapped.hEvent);
-#endif
-    if (totalBytesRead > 0)
-        handleReceivedData(comRecvBuffer, totalBytesRead);
-        
-    return (threadRet)0;
+    HandleReceivedData((uint8_t*)comRecvBuffer, len);
 }
 
 // 处理串口发过来的数据
-static void trueHandleReceivedData(const uint8_t *comRecvBuffer, uint32_t len)
+static void HandleReceivedData(const uint8_t *comRecvBuffer, uint32_t len)
 {
-  if( comRecvBuffer == NULL || len == 0 ){
+  if( comRecvBuffer == NULL || len == 0 )
     return;
-  }
-  
+
 #ifdef __TRAFFIC_STATS_H_
-    trafficStats.com.totalBytesReceived += len;
+  trafficStats.com.totalBytesReceived += len;
 #endif
     
     int sendRet = 0;
@@ -791,12 +821,8 @@ static uint32_t ComPortTrueSendData(uint8_t const *tcpRecvBuffer, int bytesRecei
     CloseHandle(writeOverlapped.hEvent); 
 #else
     ssize_t n = write(comPort.hCom, tcpRecvBuffer, bytesReceived);
-    if (n >= 0) {
-        bytesWritten = n;
-    } else {
-        bytesWritten = 0;
-        error = errno;
-    }
+    bytesWritten = (n >= 0)? n:0;
+    error = errno; 
 #endif
     
     LeaveCriticalSection_Wrapper(&csComPort);
@@ -846,14 +872,14 @@ bool COM_UseAsyncSend(uint16_t num)
         FreeAsyncQueue(&asyncSendQueue);
         return num == 0 ? true : false;
     }
-        
+    
     return startAsyncQueue(&asyncSendQueue, 
         COMAsyncSendQueueCallBack, num, RECV_BUFFER_SIZE, "COM Send");
 }
 
 static void COMAsyncRecvQueueCallBack(uint8_t *data, uint32_t len)
 {
-    trueHandleReceivedData(data, len);
+    HandleReceivedData(data, len);
 }
 
 bool COM_UseAsyncRecv(uint16_t num)

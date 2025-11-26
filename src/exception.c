@@ -33,10 +33,10 @@
   #include <psapi.h>
   #include <dbghelp.h>
   #include <io.h>
+  //#include <signal.h>  // 添加信号处理支持
   #define access _access
   #define F_OK 0
 #else
-
   /* Linux 头文件 */
   #include <stdint.h>
   #include <errno.h>
@@ -76,6 +76,8 @@ static char g_LastExceptionInfo[EXCEPTION_INFO_SIZE] = {0};
   #endif
 #endif
 
+
+
 /*================== 本地函数声明 =====================================*/
 
 /* 通用工具函数 */
@@ -91,11 +93,15 @@ static const char *getExeName(void);
     static void GetSymbolInfoWithAddr2Line(DWORD64 address, char* result, size_t resultSize);
     static const char * GenerateStackTraceSimple(PEXCEPTION_POINTERS ExceptionInfo);
     static const char* GetExceptionDescription(DWORD exceptionCode); 
+  #else
+  
   #endif
     static bool InitializeSymbolsSimple(void);
     static void LogExceptionInfo(PEXCEPTION_POINTERS ExceptionInfo, const char* handlerType);
     static long WINAPI VectoredExceptionHandler(PEXCEPTION_POINTERS ExceptionInfo);
     static long WINAPI UnhandledExceptionFilterA(PEXCEPTION_POINTERS ExceptionInfo);
+    static BOOL WINAPI ConsoleCtrlHandler(DWORD dwCtrlType);
+    
 #else
 /* Linux 特定函数 */
     static void SignalHandler(int sig, siginfo_t *info, void *context);
@@ -110,6 +116,7 @@ static const char *getExeName(void);
     static const char* GetArchitectureInfo(void);
   #else 
     static void LogExceptionInfo(int sig, siginfo_t *info, void *context);
+    //static void LogNormalExit(const char* reason);
   #endif
 #endif
 
@@ -181,8 +188,102 @@ static const char *getExeName(void)
     return exeName ? exeName + 1 : processName;
 }
 
+
+
 /*================== 平台特定实现 =====================================*/
 #ifdef _WIN32
+
+
+static void LogVoluntaryExit(const char* reason)
+{
+    const char *exeName = getExeName();
+    const char *timeStr = getLocalTime();
+    
+#ifdef _WIN32
+    DWORD processId = GetCurrentProcessId();
+    DWORD threadId = GetCurrentThreadId();
+#else
+    pid_t processId = getpid();
+    #if defined(__arm__) // ARM32 似乎不支持 gettid
+    pid_t threadId = syscall(SYS_gettid);
+    #else
+    pid_t threadId = gettid();
+    #endif
+#endif
+    
+    char exitInfo[1024];
+    snprintf(exitInfo, sizeof(exitInfo),
+              "======== 程序退出 =========\n"
+              "时间    : %s\n"
+              "程序名称: %s\n"
+              "进程ID  : %d\n"
+              "线程ID  : %d\n"
+              "退出原因: %s\n"
+              "退出类型: %s\n",
+              timeStr, exeName, (int)processId, (int)threadId, reason,
+              strstr(reason, "主动") ? "主动退出" : "外部中断");
+    
+    printf("\n%s\n", exitInfo);
+    outLogToFile(exitInfo);
+}
+
+
+static BOOL WINAPI ConsoleCtrlHandler(DWORD dwCtrlType)
+{
+    const char* reason = NULL;
+    
+    switch (dwCtrlType) {
+        case CTRL_C_EVENT:
+            reason = "用户按下 CTRL+C";
+            break;
+        case CTRL_BREAK_EVENT:
+            reason = "用户按下 CTRL+BREAK";
+            break;
+        case CTRL_CLOSE_EVENT:
+            reason = "控制台窗口关闭";
+            break;
+        case CTRL_LOGOFF_EVENT:
+            reason = "用户注销";
+            break;
+        case CTRL_SHUTDOWN_EVENT:
+            reason = "系统关机";
+            break;
+        default:
+            reason = "未知控制台事件";
+            break;
+    }
+    
+    printf("\n检测到程序退出: %s (事件类型: %lu)\n", reason, dwCtrlType);
+    
+    // 记录退出信息
+    LogVoluntaryExit(reason);
+    
+    // 允许正常退出
+    return FALSE;
+}
+#if 0
+static void LogNormalExit(const char* reason)
+{
+    const char *exeName = getExeName();
+    const char *timeStr = getLocalTime();
+    DWORD processId = GetCurrentProcessId();
+    DWORD threadId = GetCurrentThreadId();
+    
+    char exitInfo[1024];
+    snprintf(exitInfo, sizeof(exitInfo),
+              "======== 正常退出 =========\n"
+              "时间    : %s\n"
+              "程序名称: %s\n"
+              "进程ID  : %lu\n"
+              "线程ID  : %lu\n"
+              "退出原因: %s\n"
+              "退出类型: 正常退出\n",
+              timeStr, exeName, processId, threadId, reason);
+    
+    printf("\n%s\n", exitInfo);
+    outLogToFile(exitInfo);
+}
+#endif
 static bool InitializeSymbolsSimple(void)
 {
 #if ENABLE_EXCEPTION_MONITOR==0
@@ -595,7 +696,7 @@ static void SignalHandler(int sig, siginfo_t *info, void *context)
     // 对于 SIGINT，可以选择是否立即退出
     if (sig == SIGINT)
       voluntaryWithdrawal("程序被用户中断 (CTRL+C)");
-        
+    
     const char *exeName = getExeName();
     const char *timeStr = getLocalTime();
     pid_t processId = getpid();
@@ -802,6 +903,14 @@ void ProcessExceptionMonitorInit(void)
     InitializeSymbolsSimple(); 
     SetUnhandledExceptionFilter(UnhandledExceptionFilterA);
     AddVectoredExceptionHandler(1, VectoredExceptionHandler); 
+    
+    // 新增：注册控制台事件处理
+    if (SetConsoleCtrlHandler(ConsoleCtrlHandler, TRUE)) {
+        printf("控制台事件监控已启用 (CTRL+C, 窗口关闭等)\n");
+    } else {
+        printf("控制台事件监控设置失败，错误: %lu\n", GetLastError());
+    }
+    
 #else           // Unix/Linux 系统
     SetupSignalHandlers();
 #endif // _WIN32
@@ -812,6 +921,9 @@ void CleanupProcessExceptionMonitor(void)
 #if ENABLE_EXCEPTION_MONITOR
 
 #ifdef _WIN32
+    // 移除控制台事件处理
+    SetConsoleCtrlHandler(ConsoleCtrlHandler, FALSE);
+    
     if (g_SymInitialized)
       SymCleanup(GetCurrentProcess());
 #else
@@ -834,3 +946,4 @@ const char* GetLastExceptionInfo(void)
 {
     return g_LastExceptionInfo;
 }
+

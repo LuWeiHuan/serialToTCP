@@ -43,6 +43,7 @@
     "_mingw_secapi.h": "c",
     "pthread.h": "c",
     "command.h": "c",
-    "fcntl.h": "c"
+    "fcntl.h": "c",
+    "cstdlib": "c"
   }
 }

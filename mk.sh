@@ -15,6 +15,9 @@ NC='\033[0m' # No Color
 # 或者如果是 ARM64：
 ARM_C_COMPILER="/usr/bin/aarch64-linux-gnu-gcc"
 
+# 构建玩后执行额外的脚本，仅提供ARM架构
+EXTRA_SH=fileCopy.sh
+
 # 默认平台检测
 detect_build_dir() {
     if [[ "$OSTYPE" == "linux-gnu"* ]]; then
@@ -50,6 +53,11 @@ TOOLCHAIN_FILE_ARM="./toolchain-arm.cmake"
 CURRENT_PLATFORM="auto"
 BUILD_DIR=$(detect_build_dir)
 
+# 转换为小写函数
+to_lower() {
+    echo "$1" | tr '[:upper:]' '[:lower:]'
+}
+
 # 显示帮助信息
 show_help() {
     echo "Usage: $0 [clean|rm|release|debug|asan|help|arm|arm64|arm32|x86|cleanBuild]"
@@ -80,7 +88,8 @@ show_help() {
 
 # 设置平台
 set_platform() {
-    case "$1" in
+    local platform=$(to_lower "$1")
+    case "$platform" in
         "arm"|"arm32"|"arm64"|"x86")
             CURRENT_PLATFORM="arm"
             # 使用配置的编译器路径推断架构
@@ -140,12 +149,13 @@ fi
 # 处理平台参数和清理参数
 CLEAN_BUILD=false
 while [[ $# -gt 0 ]]; do
-    case "$1" in
+    param_lower=$(to_lower "$1")
+    case "$param_lower" in
         "arm"|"arm32"|"arm64"|"x86")
             set_platform "$1"
             shift
             ;;
-        "cleanBuild")
+        "cleanbuild")
             CLEAN_BUILD=true
             shift
             ;;
@@ -193,7 +203,8 @@ fi
 
 # 设置构建类型
 BUILD_TYPE=""
-case "$1" in
+build_type_lower=$(to_lower "$1")
+case "$build_type_lower" in
     "release")
         BUILD_TYPE="-DCMAKE_BUILD_TYPE=Release -DENABLE_MONITOR=OFF -DENABLE_ASAN=OFF"
         echo -e "${GREEN}Building RELEASE version (最优性能，无调试信息)...${NC}"
@@ -334,7 +345,7 @@ if [ $? -eq 0 ]; then
         echo -e "${CYAN}File size: ${file_size}${NC}"
         
         # 显示构建类型信息
-        case "$1" in
+        case "$build_type_lower" in
             "release")
                 echo -e "${GREEN}构建类型: Release (最优性能，无调试信息)${NC}"
                 ;;
@@ -360,20 +371,16 @@ if [ $? -eq 0 ]; then
                 ;;
         esac
         
-        # 检查并执行 copy.sh 脚本（仅ARM架构）
-        if [ "$CURRENT_PLATFORM" = "arm" ] && [ -f "./copy.sh" ]; then
-            echo -e "${CYAN}Found copy.sh and building for ARM, executing...${NC}"
-            chmod +x ./copy.sh
-            ./copy.sh
+        # 检查并执行额外脚本（仅ARM架构）
+        if [ "$CURRENT_PLATFORM" = "arm" ] && [ -f "./$EXTRA_SH" ]; then
+            echo -e "${CYAN}Found $EXTRA_SH and building for ARM, executing...${NC}"
+            chmod +x ./$EXTRA_SH
+            ./$EXTRA_SH
             if [ $? -eq 0 ]; then
-                echo -e "${GREEN}copy.sh executed successfully!${NC}"
+                echo -e "${GREEN}$EXTRA_SH executed successfully!${NC}"
             else
-                echo -e "${RED}copy.sh execution failed!${NC}"
+                echo -e "${RED}$EXTRA_SH execution failed!${NC}"
             fi
-        elif [ -f "./copy.sh" ]; then
-            echo -e "${YELLOW}Found copy.sh but skipping execution (not ARM build)${NC}"
-        else
-            echo -e "${YELLOW}No copy.sh found in current directory.${NC}"
         fi
     fi
 else
