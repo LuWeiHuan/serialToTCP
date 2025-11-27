@@ -79,8 +79,7 @@ static void get_COM_VID_PID_REV(const char* portName, char *retVID, char *retPID
 static threadRet WINAPI ComRecvDataThread(void *param);
 static void HandleReceivedData(const uint8_t *data, uint32_t len);
 static void handleReceivedDataAuotAsync(const char *comRecvBuffer, uint32_t len);
-static uint32_t handleAlignReceivedData(const char *newData, uint32_t bytesRead, 
-                                        bool isTimeout, const char * lineNumber);
+static uint32_t handleAlignReceivedData(const char *newData, uint32_t bytesRead);
 
 
 bool getComIsOpen(void)
@@ -492,11 +491,11 @@ int8_t OpenComPort(const char* portName, uint32_t baudRate,
 static threadRet WINAPI ComRecvDataThread(void *param)
 {
   (void)param;
-  static char comRecvBuffer[RECV_BUFFER_SIZE];
+  static char comRecvBuffer[1024*20];
   const char *ThreadExitReason = "Thread Exit, NULL";
 
-  // 清空积攒对齐数据
-  uint32_t totalBytes = handleAlignReceivedData(NULL,0, false, NULL);
+  // 清空积攒的对齐数据
+  uint32_t totalBytes = handleAlignReceivedData((char*)0xFFFFFFFF, 0xFFFFFFFF);
 
 #ifdef _WIN32
   DWORD bytesRead = 0;
@@ -520,11 +519,10 @@ static threadRet WINAPI ComRecvDataThread(void *param)
       DWORD error = GetLastError();
       if (error == ERROR_IO_PENDING) {
         // 等待读取完成或超时
-        DWORD waitResult = WaitForSingleObject(overlapped.hEvent, 1000);
-        bool isTimeout = (waitResult == WAIT_TIMEOUT);
-        totalBytes = handleAlignReceivedData(NULL, 0, isTimeout, "Win 1");
+        DWORD waitResult = WaitForSingleObject(overlapped.hEvent, 1000); 
+        totalBytes = handleAlignReceivedData(NULL, 0);
         
-        if (isTimeout) {
+        if (waitResult == WAIT_TIMEOUT) {
             updataConsoleTitle("COM: Timeout");
             continue;
         } 
@@ -548,7 +546,7 @@ static threadRet WINAPI ComRecvDataThread(void *param)
     }
 
     if (bytesRead == 0) { 
-        totalBytes = handleAlignReceivedData(NULL, 0, false, "Win 2"); // 零读取处理
+        totalBytes = handleAlignReceivedData(NULL, 0); // 零读取处理
         
         // 按间隔更新线程状态
         currentTickCount = GetTickCount();
@@ -560,7 +558,7 @@ static threadRet WINAPI ComRecvDataThread(void *param)
     }
 
     // 处理接收到的数据 
-    totalBytes = handleAlignReceivedData(comRecvBuffer, bytesRead, false, "Win 3");
+    totalBytes = handleAlignReceivedData(comRecvBuffer, bytesRead);
     bytesRead = 0;
   }
 
@@ -584,7 +582,7 @@ static threadRet WINAPI ComRecvDataThread(void *param)
 
     int selectRet = select(comPort.hCom + 1, &readSet, NULL, NULL, &timeout);
     if (selectRet == 0) { // 超时处理 
-        totalBytes = handleAlignReceivedData(NULL, 0, true, "Linux 1");
+        totalBytes = handleAlignReceivedData(NULL, 0);
         continue;
     } 
     else if (selectRet == -1) {
@@ -597,7 +595,7 @@ static threadRet WINAPI ComRecvDataThread(void *param)
       // select返回大于0，表示有文件描述符就绪
       int fdRet = FD_ISSET(comPort.hCom, &readSet);
       if (!fdRet) { 
-          totalBytes = handleAlignReceivedData(NULL, 0, true, "Linux 2");
+          totalBytes = handleAlignReceivedData(NULL, 0);
           SafePrintf("COM FD_ISSET ERROR:%d\n", fdRet);
           continue;
       }
@@ -606,7 +604,7 @@ static threadRet WINAPI ComRecvDataThread(void *param)
     // 读取数据
     ssize_t bytesRead = read(comPort.hCom, comRecvBuffer, sizeof comRecvBuffer - 1);
     if (bytesRead > 0) {
-        totalBytes = handleAlignReceivedData(comRecvBuffer, bytesRead, false, "Linux 3");
+        totalBytes = handleAlignReceivedData(comRecvBuffer, bytesRead);
     }
     else if (bytesRead == 0) {    // EOF - 设备断开 
       ThreadExitReason = getPrintf("Device disconnected (EOF): %s", strerror(errno));
@@ -614,7 +612,7 @@ static threadRet WINAPI ComRecvDataThread(void *param)
     }
     else { // 读取错误
       if (errno == EAGAIN || errno == EWOULDBLOCK) {
-        totalBytes = handleAlignReceivedData(NULL, 0, false, "Linux 4");
+        totalBytes = handleAlignReceivedData(NULL, 0);
       } 
       else {
         ThreadExitReason = getPrintf("Read error: %s", strerror(errno));
@@ -626,7 +624,7 @@ static threadRet WINAPI ComRecvDataThread(void *param)
 #endif
   
   // 线程退出前发送所有积攒的数据
-  for(uint8_t i=0; i<20 && handleAlignReceivedData( NULL, 0, true, "Win & Linux"); i++);
+  for(uint8_t i=0; i<15 && handleAlignReceivedData(NULL, 0); i++);
   
   CloseComPort(ThreadExitReason);
 #ifdef _WIN32
@@ -640,92 +638,88 @@ static threadRet WINAPI ComRecvDataThread(void *param)
 /**
  * @brief 处理接收到的数据，包含数据对齐逻辑
  * @param newData 新接收到的数据
- * @param newDataLen 新数据长度
- * @param isTimeout 是否超时处理
+ * @param length  新数据长度
  * @param lineNumber  传入行号可用于调试，空的则是清空积攒数据
  * @return 已经积攒的数据
+ * @attention 当 newData 和 bytesRead 都是 0xFFFFFFFF 的时候清空积攒对齐的数据并退出
  */
-static uint32_t handleAlignReceivedData(const char *newData, uint32_t bytesRead, 
-                                        bool isTimeout, const char * lineNumber)
+static uint32_t handleAlignReceivedData(const char *newData, uint32_t length)
 {  
-  if( runInfo.COMrecv4Knum == 0){ // 禁用限定阈值就字节发送
-    handleReceivedDataAuotAsync(newData, bytesRead);
+  if( runInfo.COMalignedRecv4K == 0){ // 禁用限定阈值就直接发送
+    handleReceivedDataAuotAsync(newData, length);
     return 0;
   }
 
   static uint32_t totalBytes = 0;              // 已积攒的总字节数
   static uint8_t zeroNumCount = 0;             // 连续零读取计数
-  static uint8_t timeoutCount = 0;             // 超时计数
+  static uint8_t LinuxRecv4095Num = 0;          // Linux系统会出现4095这种奇怪对齐
   static char totalBuffer[RECV_BUFFER_SIZE];   // 积攒对齐缓冲区
+  static const uint32_t buffMax = sizeof totalBuffer - 10000;
 
-  if ( lineNumber == NULL ){
+  if ( newData == (char*)0xFFFFFFFF && length == 0xFFFFFFFF){
     memset(totalBuffer, 0, sizeof totalBuffer);
-    totalBytes = zeroNumCount = timeoutCount = 0;
+    totalBytes = zeroNumCount = LinuxRecv4095Num = 0;
     return 0;
   }
-
-  uint32_t sumData = totalBytes + bytesRead;
-  // 检查数据对齐情况
-#ifdef _WIN32
-  // Windows系统：主要检查1024对齐，同时考虑常见的大数据包
-  bool aligned = (sumData % 1024 == 0);
-#else
-  // Linux系统：检查多种对齐情况
-  bool aligned = (sumData % 128 == 0) || (sumData % 1024 == 0)  ;
-#endif
-
-  static const uint8_t timeoutCountMax = 1;
-  static const uint16_t buffFull = 10000;
-  static uint8_t zeroNumMax = 2; 
-  zeroNumCount += sumData? (bytesRead ? 0 : 1) : 0; 
+  static uint8_t zeroNumMax = 2;
   static uint8_t zeroCount = 0; 
-  if( (zeroCount += (bytesRead ? 0 : 1)) > 100){
-    zeroCount = 0;
-    zeroNumMax = 2;
+  if( (zeroCount = (length ? 0 : zeroCount+1)) > 100)
+    zeroCount = zeroNumMax = 2;
+    
+  uint32_t sumBytes = totalBytes + length;
+
+  #ifdef __linux
+  if( length == 4095 ){
+    LinuxRecv4095Num++;
+    sumBytes += LinuxRecv4095Num;
   }
+  #endif
 
-  // 自动追加读0允许的最大计数
-  if( bytesRead )
-    if((aligned && zeroNumMax >= 30) || zeroNumMax - 2 < zeroNumCount )
-      zeroNumMax = 2 + zeroNumCount;
+  bool aligned = (sumBytes % 128 == 0);
+  zeroNumCount = sumBytes? (length ? 0 : zeroNumCount+1) : 0;
+
+  // 自动追加读0允许的最大计数 
+  if(length && ((aligned && zeroNumMax >= 30) || zeroNumMax - 2 < zeroNumCount) )
+    zeroNumMax = 2 + zeroNumCount;
   
+  bool condition[3];
+  condition[0] = zeroNumCount > zeroNumMax ;      // 积攒数据且多次空读 
+  condition[1] = runInfo.COMalignedRecv4K < sumBytes; // 超过积攒阈值，发送数据
+  condition[2] = totalBytes > buffMax;            // 缓冲区即将满，必须发送
 
-  timeoutCount = isTimeout ? timeoutCount + 1 : 0;
-
-  bool condition[4];
-  condition[0] = (totalBytes > 0 && zeroNumCount > zeroNumMax);      // 积攒数据且多次空读
-  condition[1] = (totalBytes > 0 && timeoutCount > timeoutCountMax); // 积攒数据且多次超时
-  condition[2] = totalBytes > sizeof totalBuffer - buffFull;         // 缓冲区即将满，必须发送
-  condition[3] = runInfo.COMrecv4Knum < sumData;                     // 超过积攒阈值，发送数据
-
-  if( condition[3] )
+  if( condition[1] )
       zeroNumMax = 10;
   
   // 如果有积攒的数据且长时间无新数据，强制发送
-  if ( condition[0] || condition[1] || condition[2] || condition[3]){ 
-    SafePrintf("%sOM Aligned Recv %s OR %s: %u/%u/%u Bytes, "
-        "%s %d/%d, %s %d/%d, %-10s\n", condition[3]? "\nC":"C",
-        condition[2]? "FILL":"Fill",
-        condition[3]? "RESTRICT":"Restrict",
-        totalBytes, runInfo.COMrecv4Knum, (uint32_t)sizeof totalBuffer - buffFull, 
-        condition[1]? "TIMEOUT":"Timeout", timeoutCount, timeoutCountMax+1, 
-        condition[0]? "ZERO":"Zero", zeroNumCount, zeroNumMax+1, lineNumber);
+  if ( condition[0] || condition[1] || condition[2]){
+
+    char Recv4095NumSrting[30] = " ";
+    if( LinuxRecv4095Num )
+      snprintf(Recv4095NumSrting, sizeof Recv4095NumSrting,
+          ", Recv 4095 Num:%-5d\n", LinuxRecv4095Num );
+    
+    SafePrintf("%sOM Aligned Recv%s%s: %u/%u/%u Bytes, %s %d/%d%-25s\n", 
+        condition[1]? "\nC":"C", condition[2]? " Fill":" ",
+        condition[1]? " Restrict":" ",
+        totalBytes, runInfo.COMalignedRecv4K, buffMax,  
+        condition[0]? "ZERO":"Zero", zeroNumCount, zeroNumMax+1, 
+        Recv4095NumSrting);
     handleReceivedDataAuotAsync(totalBuffer, totalBytes);
-    totalBytes = zeroNumCount = timeoutCount = 0;
+    totalBytes = zeroNumCount = LinuxRecv4095Num = 0;
   }
 
   // 如果没有新数据，只返回当前积攒的数据量
-  if (newData == NULL || bytesRead == 0)
+  if (newData == NULL || length == 0)
       return totalBytes;
   
   // 立即积攒数据 // 对于对齐数据，继续积攒等待更多数据或超时
-  memcpy(totalBuffer + totalBytes, newData, bytesRead);
-  totalBytes += bytesRead;
+  memcpy(totalBuffer + totalBytes, newData, length);
+  totalBytes += length;
   
  // 非对齐数据且有积攒数据，立即发送
  if (aligned == false && totalBytes ) {
     handleReceivedDataAuotAsync(totalBuffer, totalBytes);
-    totalBytes = zeroNumCount = timeoutCount = 0; 
+    totalBytes = zeroNumCount = LinuxRecv4095Num =  0; 
   } 
   return totalBytes;
 }

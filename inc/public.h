@@ -17,7 +17,7 @@ typedef struct {
   uint16_t *monopolizeComSendIndex;  // 独享 数据发给串口 
   bool      COMsendPoll;    // 就是就是发给串口的日志要不要滚动
   bool      COMrecvPoll;    // 就是串口发上来的每条数据条目要不要滚动
-  uint32_t  COMrecv4Knum;  // 设置串口接收多少个4096字节数就发送
+  uint32_t  COMalignedRecv4K;   // 设置串口接收多少个对齐数据包就发送
 } runInfo_t;
 
 /*================== 外部变量声明    ========================================*/

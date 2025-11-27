@@ -45,8 +45,8 @@ runInfo_t  runInfo = {
   .monopolizeComRecvIndex = NULL,
   .monopolizeComSendIndex = NULL,
   .COMsendPoll = false,
-  .COMrecvPoll = false,
-  .COMrecv4Knum = (RECV_BUFFER_SIZE) - 4096 - 1,
+  .COMrecvPoll = true,
+  .COMalignedRecv4K = (RECV_BUFFER_SIZE) - 4096 - 1,
 };
 
 // 获取从运行到现在的间戳（毫秒）程序运行要调用一次

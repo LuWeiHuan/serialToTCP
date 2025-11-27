@@ -63,7 +63,7 @@ static void cmdOpenSerialCom(socket_t*, char*);
 static void cmdDoNotConnectCOM2TCP(socket_t*, char*);
 static void cmdSetLogPollCut(socket_t*, char*);
 static void cmdKickAllClients(socket_t*, char*);
-static void cmdsetCOM4KByteRecvNum(socket_t*, char*);
+static void cmdsetCOMalignedNum(socket_t*, char*);
 
 
 
@@ -76,7 +76,7 @@ static const CommandEntry cmdTable[] = {
   {"PrintAllclientIP",      cmdPrintAllclientIP},
   {"setCOMasyncSend",       cmdSetComAsyncSend},
   {"setCOMasyncRecv",       cmdSetComAsyncRecv},
-  {"setCOM4KByteNum",       cmdsetCOM4KByteRecvNum},
+  {"setCOMalignedNum",      cmdsetCOMalignedNum},
   {"setCOMdata",            cmdSetMonopolize},
   {"exit",                  cmdServerOverExit},
   {"serverPrintData",       cmdDataPrintMode},
@@ -280,7 +280,7 @@ static void cmdSetComAsyncRecv(socket_t *Socket, char* commandData)
   broadcastSendHandleResult(Socket, setInfo);
 }
 
-static void cmdsetCOM4KByteRecvNum(socket_t *Socket, char* commandData)
+static void cmdsetCOMalignedNum(socket_t *Socket, char* commandData)
 {
   char *token = strtok(commandData, DECOLLATOR);
   token = strtok(NULL, DECOLLATOR);
@@ -289,7 +289,7 @@ static void cmdsetCOM4KByteRecvNum(socket_t *Socket, char* commandData)
 
   if( in4KBnum > max4KBnum )
     in4KBnum = max4KBnum;
-  runInfo.COMrecv4Knum = in4KBnum * 4096;
+  runInfo.COMalignedRecv4K = in4KBnum * 4096;
   printfSend(Socket, "Set COM revc 4KByte Number: %d/%d\n", 
         in4KBnum, max4KBnum);
 }

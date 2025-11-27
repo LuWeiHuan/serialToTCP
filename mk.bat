@@ -112,12 +112,12 @@ if exist "%EXECUTABLE%" (
     for %%F in ("%EXECUTABLE%") do (
         set /a FILE_SIZE_KB=%%~zF/1024
     )
-    echo [INFO] 程序文件位置：%EXECUTABLE% 存在
+    echo [INFO] 程序位置：%EXECUTABLE% 存在
 )else (
-    echo [WARNING] 程序文件位置：%EXECUTABLE% 没有 
+    echo [WARNING] 程序位置：%EXECUTABLE% 没有 
 )
 
-echo [INFO] 程序文件大小：%FILE_SIZE_KB% KB
+echo [INFO] 程序大小：%FILE_SIZE_KB% KB
 
 :: 计算构建时间
 set END_TIME=%time%
