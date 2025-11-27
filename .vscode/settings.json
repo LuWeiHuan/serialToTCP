@@ -44,6 +44,7 @@
     "pthread.h": "c",
     "command.h": "c",
     "fcntl.h": "c",
-    "cstdlib": "c"
+    "cstdlib": "c",
+    "versionhelpers.h": "c"
   }
 }

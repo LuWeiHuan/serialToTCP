@@ -7,7 +7,7 @@
   ******************************************************************************
   * @attention 注意
   *
-  *
+  * 
   *******************************************************************************
 */
 
@@ -78,7 +78,6 @@ static void get_COM_VID_PID_REV(const char* portName, char *retVID, char *retPID
 
 static threadRet WINAPI ComRecvDataThread(void *param);
 static void HandleReceivedData(const uint8_t *data, uint32_t len);
-static void handleReceivedDataAuotAsync(const char *comRecvBuffer, uint32_t len);
 static uint32_t handleAlignReceivedData(const char *newData, uint32_t bytesRead);
 
 
@@ -573,7 +572,7 @@ static threadRet WINAPI ComRecvDataThread(void *param)
     // 动态设置超时：如果有积攒的对齐数据，使用较短超时
     if ( totalBytes ) {
         timeout.tv_sec = 0;
-        timeout.tv_usec = 5000; // 5ms短超时，用于快速检测
+        timeout.tv_usec = 50; // 50us 短超时，用于快速检测
     } 
     else {
         timeout.tv_sec = 1;
@@ -624,7 +623,7 @@ static threadRet WINAPI ComRecvDataThread(void *param)
 #endif
   
   // 线程退出前发送所有积攒的数据
-  for(uint8_t i=0; i<15 && handleAlignReceivedData(NULL, 0); i++);
+  for(uint8_t i=0; i<10 && handleAlignReceivedData(NULL, 0); i++);
   
   CloseComPort(ThreadExitReason);
 #ifdef _WIN32
@@ -632,96 +631,6 @@ static threadRet WINAPI ComRecvDataThread(void *param)
 #endif
       
   return (threadRet)0;
-}
-
-
-/**
- * @brief 处理接收到的数据，包含数据对齐逻辑
- * @param newData 新接收到的数据
- * @param length  新数据长度
- * @param lineNumber  传入行号可用于调试，空的则是清空积攒数据
- * @return 已经积攒的数据
- * @attention 当 newData 和 bytesRead 都是 0xFFFFFFFF 的时候清空积攒对齐的数据并退出
- */
-static uint32_t handleAlignReceivedData(const char *newData, uint32_t length)
-{  
-  if( runInfo.COMalignedRecv4K == 0){ // 禁用限定阈值就直接发送
-    handleReceivedDataAuotAsync(newData, length);
-    return 0;
-  }
-
-  static uint32_t totalBytes = 0;              // 已积攒的总字节数
-  static uint8_t zeroNumCount = 0;             // 连续零读取计数
-  static uint8_t LinuxRecv4095Num = 0;          // Linux系统会出现4095这种奇怪对齐
-  static char totalBuffer[RECV_BUFFER_SIZE];   // 积攒对齐缓冲区
-  static const uint32_t buffMax = sizeof totalBuffer - 10000;
-
-  if ( newData == (char*)0xFFFFFFFF && length == 0xFFFFFFFF){
-    memset(totalBuffer, 0, sizeof totalBuffer);
-    totalBytes = zeroNumCount = LinuxRecv4095Num = 0;
-    return 0;
-  }
-  static uint8_t zeroNumMax = 2;
-  static uint8_t zeroCount = 0; 
-  if( (zeroCount = (length ? 0 : zeroCount+1)) > 100)
-    zeroCount = zeroNumMax = 2;
-    
-  uint32_t sumBytes = totalBytes + length;
-
-  #ifdef __linux
-  if( length == 4095 ){
-    LinuxRecv4095Num++;
-    sumBytes += LinuxRecv4095Num;
-  }
-  #endif
-
-  bool aligned = (sumBytes % 128 == 0);
-  zeroNumCount = sumBytes? (length ? 0 : zeroNumCount+1) : 0;
-
-  // 自动追加读0允许的最大计数 
-  if(length && ((aligned && zeroNumMax >= 30) || zeroNumMax - 2 < zeroNumCount) )
-    zeroNumMax = 2 + zeroNumCount;
-  
-  bool condition[3];
-  condition[0] = zeroNumCount > zeroNumMax ;      // 积攒数据且多次空读 
-  condition[1] = runInfo.COMalignedRecv4K < sumBytes; // 超过积攒阈值，发送数据
-  condition[2] = totalBytes > buffMax;            // 缓冲区即将满，必须发送
-
-  if( condition[1] )
-      zeroNumMax = 10;
-  
-  // 如果有积攒的数据且长时间无新数据，强制发送
-  if ( condition[0] || condition[1] || condition[2]){
-
-    char Recv4095NumSrting[30] = " ";
-    if( LinuxRecv4095Num )
-      snprintf(Recv4095NumSrting, sizeof Recv4095NumSrting,
-          ", Recv 4095 Num:%-5d\n", LinuxRecv4095Num );
-    
-    SafePrintf("%sOM Aligned Recv%s%s: %u/%u/%u Bytes, %s %d/%d%-25s\n", 
-        condition[1]? "\nC":"C", condition[2]? " Fill":" ",
-        condition[1]? " Restrict":" ",
-        totalBytes, runInfo.COMalignedRecv4K, buffMax,  
-        condition[0]? "ZERO":"Zero", zeroNumCount, zeroNumMax+1, 
-        Recv4095NumSrting);
-    handleReceivedDataAuotAsync(totalBuffer, totalBytes);
-    totalBytes = zeroNumCount = LinuxRecv4095Num = 0;
-  }
-
-  // 如果没有新数据，只返回当前积攒的数据量
-  if (newData == NULL || length == 0)
-      return totalBytes;
-  
-  // 立即积攒数据 // 对于对齐数据，继续积攒等待更多数据或超时
-  memcpy(totalBuffer + totalBytes, newData, length);
-  totalBytes += length;
-  
- // 非对齐数据且有积攒数据，立即发送
- if (aligned == false && totalBytes ) {
-    handleReceivedDataAuotAsync(totalBuffer, totalBytes);
-    totalBytes = zeroNumCount = LinuxRecv4095Num =  0; 
-  } 
-  return totalBytes;
 }
 
 static void handleReceivedDataAuotAsync(const char *comRecvBuffer, uint32_t len)
@@ -732,6 +641,127 @@ static void handleReceivedDataAuotAsync(const char *comRecvBuffer, uint32_t len)
   if( AddDataToAsyncQueue(&asyncRecvQueue, (uint8_t*)comRecvBuffer, len) == false )   
     HandleReceivedData((uint8_t*)comRecvBuffer, len);
 }
+
+/**
+ * @brief 处理接收到的数据，包含数据对齐逻辑
+ * @param newData 新接收到的数据
+ * @param length  新数据长度
+ * @param lineNumber  传入行号可用于调试，空的则是清空积攒数据
+ * @return 已经积攒的数据
+ * @attention 当 newData 和 bytesRead 都是 0xFFFFFFFF 的时候清空积攒对齐的数据并退出
+ * 当下函数对于处理全是对齐数据包的效果，误打误撞得实现的好像还不错。
+ * 串接收数据对齐接收问题，实现业务逻辑有以下几点：
+    1. 不是对齐数据包立即发送出去，如果之间已经积攒了对其数据连同对其数据一起发送出去，这两个功能最容易实现。
+    2. 是对齐数据包积攒起来，超过缓冲区和限定最大积攒发送出去，这两个功能也最容易实现。
+    3. 对只有齐数据包的情况且，这种就是全是对齐数据包，每个数据包之间会出现“空转”无数据调用本函数，也是本函数最主要且最大难点。
+       每个环境空转次数都不一样，目前观察到下面几个环境的空转次数如下：
+       Win7 空转5~6次还算稳定；
+       Win10 空转2~3次，甚至因为性能问题，空转指数基本就1~2次；
+       Linux 空转最大能做到25左右，也可以比较稳定空转5次。
+    4. 对齐数据判断条件只有两个，一是 总数据 ÷ 128 余数为0，即可判定为对齐数据包，总数据 = 积攒对齐 + 新长度。
+        二是对于Linux系统会出现4095这种奇怪数据包，也判定为对齐数据包。
+    5. 已经积攒了数据的情况下，Linux要修改struct timeval缩短接收超时，
+        以便增加“空转”次数，用来判断是否发送已经积攒的数据包，这个由外部实现，不在不本函数内实现范围内。
+    6. 针对单包对齐数据包的发送延时问题，暂时没有很好的解决方法，
+       只能通过增加“空转”次数来尽量减少延时，如果全是单包建议关闭对齐发送功能。
+    发散性思路实现全是对齐数据包处理方法：
+    1. 有一种音乐律动效果，是根据音量大小柱子会变搞或变低，有一条像素会逐渐递减。
+       想过用空转增加柱子高低，那一条像素逐渐接近底部的时候把所有积攒数据发送出去。不知道好不好实现。
+    2. 记录每一个对齐数据包接收的时间戳，计算时间差，如果时间差超过某个值就发送出去。
+       这个方法实现起来比较复杂，而且时间差值和性能上调度上也不好把握。
+ */
+static uint32_t handleAlignReceivedData(const char *newData, uint32_t length)
+{  
+  if( runInfo.COMalignedRecv4K == 0){ // 禁用限定阈值就直接发送
+    handleReceivedDataAuotAsync(newData, length);
+    return 0;
+  }
+  
+  static uint32_t totalBytes = 0;             // 已积攒的总字节数
+  static uint8_t LinuxRecv4095Num = 0;        // Linux系统会出现4095这种奇怪对齐
+  static char totalBuffer[RECV_BUFFER_SIZE];  // 积攒对齐缓冲区
+  static const uint32_t buffMax = sizeof totalBuffer - 10000;
+
+  if ( newData == (char*)0xFFFFFFFF && length == 0xFFFFFFFF){
+    memset(totalBuffer, 0, sizeof totalBuffer);
+    totalBytes = LinuxRecv4095Num = 0;
+    return 0;
+  }
+  
+  // 自动获取连续空读次数阈值，方法不一定好用，只是保留着当备用
+  static bool infiniteZero = false;   // 是否进入无限空读状态
+  static uint8_t zeroNumCount = 0, autoZeroMax = 10, cmpZeroMax = 0;
+  if(infiniteZero == false)
+    autoZeroMax = ( length && zeroNumCount > 1)? zeroNumCount : autoZeroMax;
+  zeroNumCount = length==0? zeroNumCount + 1 :0;
+  if( zeroNumCount >= 10 ){
+    zeroNumCount = 10;
+    infiniteZero = true;
+  }
+  if( length )
+    infiniteZero = false;
+
+  // if (infiniteZero == false )
+  //   SafePrintf("COM Zero %d/%d, length：%-10d\n", zeroNumCount, autoZeroMax, length);
+
+ uint32_t sumBytes = totalBytes + length;
+  bool condition[3];
+  static uint8_t zeroNumMax = 3;  // 这个固定3~4的方法表现还怪好的，很奇怪
+  static uint8_t autoZeroCount = 0;           // 连续零读取计数
+  autoZeroCount = (totalBytes && length==0 ? autoZeroCount+1 : 0);
+  condition[0] = autoZeroCount >= zeroNumMax;         // 积攒数据且多次空读 
+  condition[1] = runInfo.COMalignedRecv4K < sumBytes; // 超过积攒阈值，发送数据
+  condition[2] = totalBytes > buffMax;                // 缓冲区即将满，必须发送
+  
+  if( condition[1] || condition[2] )      // 超过阈值发送数据，空读次数降低要求
+      zeroNumMax = 3;
+  
+  // 如果有积攒的数据且长时间无新数据，强制发送
+  if ( condition[0] || condition[1] || condition[2]){
+
+    char Recv4095NumSrting[30] = " ";
+    if( LinuxRecv4095Num )
+      snprintf(Recv4095NumSrting, sizeof Recv4095NumSrting,
+          ", Linux Recv 4095 Num:%-5d", LinuxRecv4095Num );
+    
+    SafePrintf("%sOM Aligned Recv%s%s: %-6u/%-6u/%-6u Bytes, %s:%d/%d/%-2d%s%-33s\n", 
+        condition[1]? "\nC":"C", condition[2]? " Fill":" ",
+        condition[1]? " Restrict":" ",
+        totalBytes, runInfo.COMalignedRecv4K, buffMax,  
+        condition[0]? "ZERO":"Zero", autoZeroCount, zeroNumMax, autoZeroMax,
+        zeroNumCount != cmpZeroMax? " NEW":" ",
+        Recv4095NumSrting);
+    handleReceivedDataAuotAsync(totalBuffer, totalBytes);
+    
+    if( zeroNumCount != cmpZeroMax )
+      cmpZeroMax = zeroNumCount;
+    totalBytes = LinuxRecv4095Num = 0;
+  }
+
+  // 如果没有新数据，只返回当前积攒的数据量 *****************************************
+  if (newData == NULL || length == 0)
+      return totalBytes;
+  
+  // 立即积攒数据 // 对于对齐数据，继续积攒等待更多数据或超时
+  memcpy(totalBuffer + totalBytes, newData, length);
+  totalBytes += length;
+
+  #ifdef __linux
+  if( length == 4095 ){
+    LinuxRecv4095Num++;
+    sumBytes += LinuxRecv4095Num;
+  }
+  #endif
+ 
+ // 非对齐数据且有积攒数据，立即发送
+ if (sumBytes % 128 && totalBytes ) {
+    handleReceivedDataAuotAsync(totalBuffer, totalBytes);
+    totalBytes = LinuxRecv4095Num = 0; 
+  } 
+  return totalBytes;
+}
+
+
 
 // 处理串口发过来的数据
 static void HandleReceivedData(const uint8_t *comRecvBuffer, uint32_t len)
@@ -888,7 +918,7 @@ bool COM_UseAsyncRecv(uint16_t num)
 }
 
 
-#ifndef _WIN32 
+#ifdef __linux
 #include <sys/stat.h>
 #include <stdlib.h>
 #include <limits.h>

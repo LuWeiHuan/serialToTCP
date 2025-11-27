@@ -45,7 +45,7 @@ runInfo_t  runInfo = {
   .monopolizeComRecvIndex = NULL,
   .monopolizeComSendIndex = NULL,
   .COMsendPoll = false,
-  .COMrecvPoll = true,
+  .COMrecvPoll = false,
   .COMalignedRecv4K = (RECV_BUFFER_SIZE) - 4096 - 1,
 };
 
@@ -175,7 +175,9 @@ void printBuildInfo(void)
 #endif
     
 #ifdef _WIN32
-    printf("  Platform   : Windows\n" );
+    char getversions[5] = "NULL";
+    getWindowsVersionSimple(getversions);
+    printf("  Platform   : Windows %s\n", getversions);
 #else
     printf("  Platform   : Linux\n");
 #endif
@@ -442,4 +444,37 @@ const char* GetSystemUniqueIdentifier(void)
     strcpy(systemUniqueID, "UnknownSystem");
     initialized = true;
     return systemUniqueID;
+}
+
+#ifdef _WIN32
+#include <versionhelpers.h>  // 需要包含这个头文件
+#endif
+
+// 简单粗暴的Win版本获取
+uint8_t getWindowsVersionSimple(char *retStr) 
+{
+  #ifdef _WIN32
+  if (IsWindows10OrGreater()) {
+      if (retStr) strcpy(retStr, "10+");
+      return 10;
+  } else if (IsWindows8Point1OrGreater()) {
+      if (retStr) strcpy(retStr, "8.1+");
+      return 9;
+  } else if (IsWindows8OrGreater()) {
+      if (retStr) strcpy(retStr, "8+");
+      return 8;
+  } else if (IsWindows7OrGreater()) {
+      if (retStr) strcpy(retStr, "7+");
+      return 7;
+  } else if (IsWindowsVistaOrGreater()) {
+      if (retStr) strcpy(retStr, "Vista+");
+      return 6;
+  } else {
+      if (retStr) strcpy(retStr, "XP-");
+      return 5;
+  }
+  #else
+  if (retStr) strcpy(retStr, "linux");
+  return 10;
+  #endif
 }

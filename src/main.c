@@ -151,37 +151,34 @@ static bool startServer(int argc, char const *argv[])
 // 平台特定初始化
 static void PlatformSpecificInit(void)
 {
-  linuxPlatformIsRoot(); 
-
-#if defined(_WIN32_WINNT) && _WIN32_WINNT <= 0x0601
-  // Windows 7 或更早版本
-  system("cls");
-#else
-  // Windows 8 或更新版本 - 使用ANSI转义序列
-  printf("\033[H\033[J");
-#endif
- 
+  linuxPlatformIsRoot();
 
 #ifdef _WIN32
-    // Windows 特定初始化
-    SetConsoleOutputCP(65001);  // 设置控制台为UTF-8编码
-    SetConsoleCP(65001);
-    EnableVTMode();             // 启用VT模式支持ANSI转义序列
-    SetConsoleFontSize(8, 16);  // 设置控制台字体
-    
-    // 设置控制台标题
-    SetConsoleTitleA("串口转TCP服务器 - 启动中...");
-
-    if( !Platform_Initialize() )
-      printf("平台初始化失败\n");
+  system("cls"); 
 #else
-    // Linux 特定初始化
-    // 检查是否在终端中运行
-    if (isatty(STDOUT_FILENO)) 
-        printf("\033[?25h");  // 启用终端颜色和支持 显示光标
-    
-    // 注意：信号处理现在由 exception.c 统一管理
-    // 不需要在这里重复设置信号处理
+  system("clear"); 
+#endif
+  
+#ifdef _WIN32
+  // Windows 特定初始化
+  SetConsoleOutputCP(65001);  // 设置控制台为UTF-8编码
+  SetConsoleCP(65001);
+  EnableVTMode();             // 启用VT模式支持ANSI转义序列
+  SetConsoleFontSize(8, 16);  // 设置控制台字体
+  
+  // 设置控制台标题
+  SetConsoleTitleA("串口转TCP服务器 - 启动中...");
+
+  if( !Platform_Initialize() )
+    printf("平台初始化失败\n");
+#else
+  // Linux 特定初始化
+  // 检查是否在终端中运行
+  if (isatty(STDOUT_FILENO)) 
+      printf("\033[?25h");  // 启用终端颜色和支持 显示光标
+  
+  // 注意：信号处理现在由 exception.c 统一管理
+  // 不需要在这里重复设置信号处理
 #endif
 }
 

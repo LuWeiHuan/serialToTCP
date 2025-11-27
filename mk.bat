@@ -1,6 +1,7 @@
 @echo off
 chcp 65001 >nul
 
+set EXTRA_BAT=fileCopy.bat
 set TARGET_NAME=com2tcp_server
 set BUILD_DIR=buildWin
 
@@ -121,12 +122,13 @@ echo [INFO] 程序大小：%FILE_SIZE_KB% KB
 
 :: 计算构建时间
 set END_TIME=%time%
+echo [INFO] 构建时间: %START_TIME% - %END_TIME%
+echo [INFO] 当前时间: %DATE% %TIME%
 call :CalculateDuration "%START_TIME%" "%END_TIME%" DURATION
 echo [INFO] 构建用时: %DURATION%
 
 :: 检查并执行额外的脚本
 echo.
-set EXTRA_BAT=fileCopy.bat
 if exist %EXTRA_BAT% (
     echo [INFO] Found %EXTRA_BAT%, executing...
     call %EXTRA_BAT%

@@ -32,7 +32,8 @@ char *getSendRecvDirectionStr(const char *direct, uint8_t index);
 const char *getComputerFullName(void);
 void GetAllLocalIPs(char ips[][20], uint8_t *count, uint8_t num);
 
-const char* GetSystemUniqueIdentifier(void);
+const char *GetSystemUniqueIdentifier(void);
+uint8_t getWindowsVersionSimple(char *retStr);
 
 // 平台函数
 bool Platform_Initialize(void);

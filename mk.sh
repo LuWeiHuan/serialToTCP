@@ -369,19 +369,7 @@ if [ $? -eq 0 ]; then
             *)
                 echo -e "${CYAN}目标平台: $(uname -s) $(uname -m) -> ${BUILD_DIR}${NC}"
                 ;;
-        esac
-        
-        # 检查并执行额外脚本（仅ARM架构）
-        if [ "$CURRENT_PLATFORM" = "arm" ] && [ -f "./$EXTRA_SH" ]; then
-            echo -e "${CYAN}Found $EXTRA_SH and building for ARM, executing...${NC}"
-            chmod +x ./$EXTRA_SH
-            ./$EXTRA_SH
-            if [ $? -eq 0 ]; then
-                echo -e "${GREEN}$EXTRA_SH executed successfully!${NC}"
-            else
-                echo -e "${RED}$EXTRA_SH execution failed!${NC}"
-            fi
-        fi
+        esac 
     fi
 else
     echo -e "${RED}Build failed!${NC}"
@@ -399,4 +387,17 @@ else
 fi
 
 # 输出构建用时
-echo -e "${GREEN}Build duration: ${DURATION} seconds${NC}"
+echo -e "${GREEN}Build duration: ${DURATION} seconds, Timer: $(date '+%Y-%m-%d %H:%M:%S')${NC}${NC}"
+
+
+# 检查并执行额外脚本（仅ARM架构）
+if [ $? -eq 0 ] && [ "$CURRENT_PLATFORM" = "arm" ] && [ -f "./$EXTRA_SH" ]; then
+    echo -e "${CYAN}Found $EXTRA_SH and building for ARM, executing...${NC}"
+    chmod +x ./$EXTRA_SH
+    ./$EXTRA_SH
+    if [ $? -eq 0 ]; then
+        echo -e "${GREEN}$EXTRA_SH executed successfully!${NC}"
+    else
+        echo -e "${RED}$EXTRA_SH execution failed!${NC}"
+    fi
+fi
