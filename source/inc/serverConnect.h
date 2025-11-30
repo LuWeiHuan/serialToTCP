@@ -16,9 +16,9 @@ extern "C" {
 /*================== 数据类型声明   =========================================*/
 // 连接状态枚举
 typedef enum { 
-  CONNECT_STATE_FAILURE_DISCONNECTED = 0,  // 失败与断接
-  CONNECT_STATE_CONNECTING ,  // 连接中
-  CONNECT_STATE_CONNECTED  ,  // 已连接 
+  CONNECT_STATE_FAILURE_DISCONNECTED = 0,   // 失败与断接
+  CONNECT_STATE_CONNECTING,                 // 连接中
+  CONNECT_STATE_CONNECTED,                  // 已连接 
 } ConnectState_t;
 
 typedef void(*connectResultCallback)(ConnectState_t state, 

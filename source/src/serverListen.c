@@ -48,10 +48,13 @@ typedef int socklen_t;
 /*================== 本地函数声明    ========================================*/
 static uint16_t FindAvailablePort(uint16_t startPort);
 
-
-
-// 新增：服务器资源清理函数
-// 服务器资源清理函数 - 专门解决Linux端口占用问题
+/*=============================================================================
+ 功   能：服务器资源清理函数
+ 参   数：server  服务器信息结构体指针
+ 返   回：无
+ 注   意：只关闭监听socket，不关闭newSocket
+ 说   明：专门解决Linux端口占用问题
+=============================================================================*/
 void serverCleanup(serverInfo_t *server)
 {
     if (server == NULL || server->socket == INVALID_SOCKET_VALUE || server->socket == 0)
@@ -75,7 +78,7 @@ void serverCleanup(serverInfo_t *server)
     SafePrintf(" has been released\n");
 }
 
-bool serverInit(serverInfo_t *server)
+bool serverStart(serverInfo_t *server)
 {
   if( server == NULL )
     return false;
@@ -249,29 +252,25 @@ uint16_t ParsePortParameter(int argc, char const* argv[])
 // 从指定端口开始查找100个可用端口，返回0是无效端口
 static uint16_t FindAvailablePort(uint16_t startPort) 
 {
-  int bindRet;
-  struct sockaddr_in service;
-  uint16_t port = startPort;
-  
-  for (port = startPort; port < startPort + 100; port++) {
-    socket_t testSocket = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
-    if (testSocket == INVALID_SOCKET_VALUE)
-      break;
-
-    // 关键：在测试socket上也设置SO_REUSEADDR
-    int reuse = 1;
-    setsockopt(testSocket, SOL_SOCKET, SO_REUSEADDR, (char*)&reuse, sizeof(reuse));
-
-    service.sin_family = AF_INET;
-    service.sin_addr.s_addr = INADDR_ANY;
-    service.sin_port = htons(port);
-
-    bindRet = bind(testSocket, (struct sockaddr*)&service, sizeof(service));
-    closeSocket(testSocket);
+    int bindRet;
+    struct sockaddr_in service;
+    uint16_t port = startPort;
     
-    if( bindRet != SOCKET_ERROR)
-      return port;
-  }
+    for (port = startPort; port < startPort + 100; port++) {
+        socket_t testSocket = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
+        if (testSocket == INVALID_SOCKET_VALUE)
+            break;
 
-  return 0;
+        service.sin_family = AF_INET;
+        service.sin_addr.s_addr = INADDR_ANY;
+        service.sin_port = htons(port);
+
+        bindRet = bind(testSocket, (struct sockaddr*)&service, sizeof(service));
+        closeSocket(testSocket);
+        
+        if( bindRet != SOCKET_ERROR)
+            return port;
+    }
+
+    return 0;
 }

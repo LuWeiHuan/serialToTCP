@@ -11,10 +11,13 @@ if(CMAKE_SYSTEM_PROCESSOR)
     message(STATUS "System processor: ${CMAKE_SYSTEM_PROCESSOR}")
 endif()
 
+# 设置构建目录基础名称
+set(BUILD_DIR_NAME "build/")
+
 # 根据平台自动设置构建目录
 if(WIN32)
     set(PLATFORM_WINDOWS 1)
-    set(DEFAULT_BUILD_DIR "buildWin")
+    set(DEFAULT_BUILD_DIR "${BUILD_DIR_NAME}Win")
     message(STATUS "Building for Windows platform")
     
     # Windows 特定设置
@@ -24,7 +27,7 @@ if(WIN32)
     
 elseif(UNIX)
     set(PLATFORM_LINUX 1)
-    set(DEFAULT_BUILD_DIR "buildLinux")
+    set(DEFAULT_BUILD_DIR "${BUILD_DIR_NAME}Linux")
     message(STATUS "Building for Linux platform")
     
     # === 增强的架构检测逻辑 ===
@@ -71,30 +74,30 @@ elseif(UNIX)
     if(DETECTED_ARCH STREQUAL "aarch64")
         set(PLATFORM_ARM 1)
         set(PLATFORM_ARM64 1)
-        set(DEFAULT_BUILD_DIR "buildLinuxARM64")
+        set(DEFAULT_BUILD_DIR "${BUILD_DIR_NAME}LinuxARM64")
         message(STATUS "Target architecture: ARM64 (AArch64)")
     elseif(DETECTED_ARCH STREQUAL "arm32")
         set(PLATFORM_ARM 1)
         set(PLATFORM_ARM32 1)
-        set(DEFAULT_BUILD_DIR "buildLinuxARM32")
+        set(DEFAULT_BUILD_DIR "${BUILD_DIR_NAME}LinuxARM32")
         message(STATUS "Target architecture: ARM32")
     elseif(DETECTED_ARCH STREQUAL "x86_64")
         set(PLATFORM_X86 1)
         set(PLATFORM_X64 1)
-        set(DEFAULT_BUILD_DIR "buildLinuX64")
+        set(DEFAULT_BUILD_DIR "${BUILD_DIR_NAME}LinuxX64")
         message(STATUS "Target architecture: x86_64")
     elseif(DETECTED_ARCH STREQUAL "x86")
         set(PLATFORM_X86 1)
         set(PLATFORM_X86 1)
-        set(DEFAULT_BUILD_DIR "buildLinuxX86")
+        set(DEFAULT_BUILD_DIR "${BUILD_DIR_NAME}LinuxX86")
         message(STATUS "Target architecture: x86")
     else()
         # 默认情况
         if(CMAKE_SIZEOF_VOID_P EQUAL 8)
-            set(DEFAULT_BUILD_DIR "buildLinuX64")
+            set(DEFAULT_BUILD_DIR "${BUILD_DIR_NAME}LinuxX64")
             message(STATUS "Target architecture: 64-bit (auto-detected)")
         else()
-            set(DEFAULT_BUILD_DIR "buildLinuxX86")
+            set(DEFAULT_BUILD_DIR "${BUILD_DIR_NAME}LinuxX86")
             message(STATUS "Target architecture: 32-bit (auto-detected)")
         endif()
     endif()
@@ -153,8 +156,8 @@ set(CMAKE_C_FLAGS_MINSIZEREL "${COMMON_C_FLAGS} -Os -DNDEBUG")
 # 带调试信息的发布版本
 set(CMAKE_C_FLAGS_RELWITHDEBINFO "${COMMON_C_FLAGS} -O2 -g -DNDEBUG")
 
-# 禁用 PIE 以便符号解析正常工作（仅限 Win+MinGW 特定版本）
-if(PLATFORM_WINDOWS AND CMAKE_BUILD_TYPE STREQUAL "Debug" AND NOT ENABLE_ASAN)
+# 禁用 PIE 以便符号解析正常工作（GCC 大于 8.5 版本）
+if(CMAKE_BUILD_TYPE STREQUAL "Debug" AND NOT ENABLE_ASAN)
     # 检查是否是 MinGW 且版本支持 -no-pie
     if(CMAKE_C_COMPILER_ID MATCHES "GNU")
         execute_process(
@@ -262,30 +265,35 @@ endif()
 
 # 包含目录设置
 include_directories(
-    inc
-    openSrc/uthash/src
+    source/main
+    source/inc
+    source/middleware
+    source/openSrc/uthash/src
+    source/openSrc/minIni/dev
 )
 
 # 源文件分组
 # 平台通用源文件
 file(GLOB COMMON_SOURCES
-    "src/*.c"
+    "source/main/*.c"
+    "source/middleware/*.c"
+    "source/src/*.c"
 )
 
 # 第三方库源文件
 file(GLOB THIRDPARTY_SOURCES
-    "openSrc/uthash/src/*.c"
+    "source/openSrc/minIni/dev/minIni.c"
 )
 
 # 平台特定源文件
 if(PLATFORM_WINDOWS)
     file(GLOB PLATFORM_SOURCES
-        "src/platform/windows/*.c"
+        "source/src/platform/windows/*.c"
     )
     set(PLATFORM_DEFINITIONS -D_WIN32_WINNT=0x0600)
 elseif(PLATFORM_LINUX)
     file(GLOB PLATFORM_SOURCES
-        "src/platform/linux/*.c"
+        "source/src/platform/linux/*.c"
     )
 endif()
 
@@ -327,10 +335,10 @@ elseif(PLATFORM_LINUX)
     # 对于ARM交叉编译，设置库搜索路径
     if(PLATFORM_ARM AND CMAKE_CROSSCOMPILING)
         if(PLATFORM_ARM64)
-            set(ARM_LIB_PATH "${CMAKE_SOURCE_DIR}/lib/aarch64")
+            set(ARM_LIB_PATH "${CMAKE_SOURCE_DIR}/source/lib/aarch64")
             message(STATUS "ARM64 cross compiling, library path: ${ARM_LIB_PATH}")
         elseif(PLATFORM_ARM32)
-            set(ARM_LIB_PATH "${CMAKE_SOURCE_DIR}/lib/arm32")
+            set(ARM_LIB_PATH "${CMAKE_SOURCE_DIR}/source/lib/arm32")
             message(STATUS "ARM32 cross compiling, library path: ${ARM_LIB_PATH}")
         endif()
         
@@ -386,7 +394,7 @@ if(PLATFORM_LINUX)
     # 创建 systemd 服务文件（可选）
     if(EXISTS "${CMAKE_SOURCE_DIR}/scripts/com2tcp-server.service")
         install(FILES scripts/com2tcp-server.service
-            DESTINATION /lib/systemd/system
+            DESTINATION /source/lib/systemd/system
             COMPONENT systemd
         )
     endif()

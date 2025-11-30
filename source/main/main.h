@@ -13,11 +13,12 @@ extern "C" {
 #define MAX_CLIENTS         50
 #define DEFAULT_PORT        9000
 #define RECV_BUFFER_SIZE    1024*100+1
+#define RECV_4K_MAX         (RECV_BUFFER_SIZE) - 4096 - 1
 
 #define VERSIONS            "V0.5"
 
 #if MAX_CLIENTS<3
-#error "请不要把客户端数量设置那么少，至少给3个嘛，老铁！"
+#error "建议不要把客户端数量设置那么少，至少给3个嘛，老铁！"
 #endif
 
 /*================== 数据类型声明		=========================================*/

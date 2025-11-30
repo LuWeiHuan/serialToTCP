@@ -40,31 +40,28 @@
 
 /*================== 全局共享变量    ========================================*/
 runInfo_t  runInfo = {
-  .startTime = 0,
-  .serverPrintData = 0,
+  .startTimeSec = 0,
   .monopolizeComRecvIndex = NULL,
   .monopolizeComSendIndex = NULL,
-  .COMsendPoll = false,
-  .COMrecvPoll = false,
-  .COMalignedRecv4K = (RECV_BUFFER_SIZE) - 4096 - 1,
 };
 
 // 获取从运行到现在的间戳（毫秒）程序运行要调用一次
 // 这个函数会由于 mian 函数之前执行
 __attribute__((constructor)) uint64_t getRuningTimeMs(void) 
 {
-  static uint64_t initialTimeMs = 0; 
+  static uint64_t initialTimeMs = 0;
+  
 #ifdef _WIN32
     struct _timeb timebuffer; 
     _ftime_s(&timebuffer);
+    timebuffer.time *= 1000;
  
     if( initialTimeMs == 0 ){
-        initialTimeMs = timebuffer.time * 1000 + timebuffer.millitm;
-        runInfo.startTime = time(NULL);
+        initialTimeMs = timebuffer.time + timebuffer.millitm;
+        runInfo.startTimeSec = time(NULL);
     }
     
-    uint64_t atPresent = timebuffer.time * 1000 + timebuffer.millitm;
-    return atPresent - initialTimeMs;
+    uint64_t currentTimeMs = timebuffer.time + timebuffer.millitm; 
 #else
     struct timespec ts; 
     clock_gettime(CLOCK_MONOTONIC, &ts);
@@ -72,29 +69,32 @@ __attribute__((constructor)) uint64_t getRuningTimeMs(void)
     
     if (initialTimeMs == 0) {
         initialTimeMs = currentTimeMs;
-        runInfo.startTime = time(NULL);
-    }
-    
-    return currentTimeMs - initialTimeMs;
+        runInfo.startTimeSec = time(NULL);
+    } 
 #endif
+
+  return currentTimeMs - initialTimeMs;
+}
+
+time_t getCurrentTimeSec(void)
+{
+    return time(NULL) - runInfo.startTimeSec;
 }
 
 // 更新标题栏内容
 void updataConsoleTitle(const char *threadName)
 {
-#ifdef _WIN32
-    time_t currentTime = time(NULL) - runInfo.startTime;
-    uint16_t day = currentTime / 86400;
-    uint8_t hour = currentTime / 3600 % 24;
-    uint8_t min  = currentTime / 60 % 60;
-    uint8_t sec  = currentTime % 60;
-
+    time_t currentTimeSec = getCurrentTimeSec();
+    uint16_t day = currentTimeSec / 86400;
+    uint8_t hour = currentTimeSec / 3600 % 24;
+    uint8_t min  = currentTimeSec / 60 % 60;
+    uint8_t sec  = currentTimeSec % 60; 
     char title[150];
     memset(title, 0, sizeof title); 
 
     DWORD theradID = GetCurrentThreadId_Wrapper();
 #ifdef __TRAFFIC_STATS_H_
-    if( trafficStats.run && currentTime % 6 < 3 )
+    if( trafficStats.run && currentTimeSec % 6 < 3 )
         snprintf(title, sizeof title, "串口转TCP     串口:↑ %s  ↓ %s   网络：↑ %s  ↓ %s    线程%ld：%s",
             trafficStats.com.recvRate, trafficStats.com.sendRate,
             trafficStats.net.sendRate, trafficStats.net.recvRate,
@@ -105,31 +105,31 @@ void updataConsoleTitle(const char *threadName)
             "已运行%d天：%02d:%02d:%02d  客户端：%d/%d  线程%ld：%s",
             getMainServerPort(), day, hour, min, sec, getClientNum(), getMaxClient(), 
             theradID, threadName != NULL ? threadName : "No thread Name");
-    
+
+#ifdef _WIN32    
     SetConsoleTitleA( title );
 #else
-    static uint64_t lastUpdate = 0;
-    uint64_t currentTime = getRuningTimeMs();
-    
-    if (currentTime - lastUpdate > 5000) { // 每5秒更新一次
-        time_t uptime = time(NULL) - runInfo.startTime;
-        uint16_t day = uptime / 86400;
-        uint8_t hour = uptime / 3600 % 24;
-        uint8_t min  = uptime / 60 % 60;
-        uint8_t sec  = uptime % 60;
-        
-        char title[200];
-        snprintf(title, sizeof(title), 
-                "串口转TCP - 端口:%d - 运行:%d天%02d:%02d:%02d - 客户端:%d/%d - 线程:%s", 
-                getMainServerPort(), day, hour, min, sec,
-                getClientNum(), getMaxClient(),
-                threadName ? threadName : "Unknown");
-        
-        // 设置终端标题 (支持xterm等)
-        printf("\033]0;%s\007", title);
-        fflush(stdout);
-        lastUpdate = currentTime;
+
+#if !defined(__aarch64__) && !defined(__arm__)
+    // 获取终端类型
+    char* term = getenv("TERM");
+    // 检查终端是否支持标题设置（排除不支持的情况）
+    if (term != NULL) {
+        // 这些终端通常支持标题设置
+        if (strstr(term, "xterm") != NULL ||
+            strstr(term, "rxvt") != NULL ||
+            strstr(term, "screen") != NULL ||
+            strstr(term, "tmux") != NULL) {
+            
+            printf("\033]0;%s\007", title);
+            fflush(stdout);
+        }
+        // 对于串口终端、linux终端、vt系列等，不设置标题
     }
+#endif
+
+ 
+
 #endif
 }
 
@@ -364,16 +364,23 @@ bool EnableVTMode(void) {
 }
 #endif
 
-
+#define defind CLOSE_EXCEPTION_MONITOR 0
 // 这里是进行程序异常退出捕获测试的位置，用于程序自我错误定位测试
 void ErrorCodeTest(void)
 {
-  #if 0 || defined CLOSE_EXCEPTION_MONITOR 
-  for( int8_t i = -2; i < 2; i++)
-    printf("开始异常除法运算 8 / %d = %d\n", i, 8/i);
-  int *ptr = NULL;
-  *ptr = 42;  // 这里会导致段错误
-  #endif
+#if !defined(CLOSE_EXCEPTION_MONITOR) && 0
+  uint32_t TimeMs = getRuningTimeMs() / 1000; 
+  printf("开始错误代码测试，当前时间戳：%d sec\n", TimeMs);
+  //Sleep(2000);
+  if( TimeMs % 2 == 0 ) {
+    int *ptr = NULL;
+    *ptr = 42;  // 这里会导致段错误
+  }
+  else {
+    for( int8_t i = -2; i < 2; i++)
+      printf("开始异常除法运算 8 / %d = %d\n", i, 8/i);
+  } 
+#endif
 }
 
 

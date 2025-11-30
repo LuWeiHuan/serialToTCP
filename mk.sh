@@ -11,12 +11,15 @@ NC='\033[0m' # No Color
 
 # === 在这里设置您的交叉编译器路径 ===
 # 注意：这里需要设置完整的编译器可执行文件路径，而不是目录路径
-#ARM_C_COMPILER="/usr/local/arm/arm-linux-gnueabihf_4.9.4/bin/arm-linux-gnueabihf-gcc"
+ARM_C_COMPILER="/usr/local/arm/arm-linux-gnueabihf_4.9.4/bin/arm-linux-gnueabihf-gcc"
 # 或者如果是 ARM64：
-ARM_C_COMPILER="/usr/bin/aarch64-linux-gnu-gcc"
+#ARM_C_COMPILER="/usr/bin/aarch64-linux-gnu-gcc"
 
 # 构建玩后执行额外的脚本，仅提供ARM架构
 EXTRA_SH=fileCopy.sh
+
+# 构建文件夹保存路径
+BUILD_DIR_NAME=build/
 
 # 默认平台检测
 detect_build_dir() {
@@ -24,23 +27,23 @@ detect_build_dir() {
         local arch=$(uname -m)
         case "$arch" in
             "aarch64"|"arm64")
-                echo "buildLinuxARM64"
+                echo "${BUILD_DIR_NAME}LinuxARM64"
                 ;;
             "armv7l"|"armv6l")
-                echo "buildLinuxARM32"
+                echo "${BUILD_DIR_NAME}LinuxARM32"
                 ;;
             "x86_64")
-                echo "buildLinuxX64"
+                echo "${BUILD_DIR_NAME}LinuxX64"
                 ;;
             "i386"|"i686")
-                echo "buildLinuxX86"
+                echo "${BUILD_DIR_NAME}LinuxX86"
                 ;;
             *)
-                echo "buildLinux"
+                echo "${BUILD_DIR_NAME}Linux"
                 ;;
         esac
     elif [[ "$OSTYPE" == "msys" ]] || [[ "$OSTYPE" == "win32" ]]; then
-        echo "buildWin"
+        echo "${BUILD_DIR_NAME}Win"
     else
         echo "build"
     fi
@@ -96,19 +99,18 @@ set_platform() {
             if [[ -n "$ARM_C_COMPILER" ]]; then
                 # 根据编译器名称推断架构
                 if [[ "$ARM_C_COMPILER" == *"aarch64"* ]] || [[ "$ARM_C_COMPILER" == *"arm64"* ]]; then
-                    BUILD_DIR="buildLinuxARM64"
+                    BUILD_DIR="${BUILD_DIR_NAME}LinuxARM64"    
                     echo -e "${CYAN}目标平台: ARM64 (根据编译器路径推断)${NC}"
                 else
-                    BUILD_DIR="buildLinuxARM32"
+                    BUILD_DIR="${BUILD_DIR_NAME}LinuxARM32"    
                     echo -e "${CYAN}目标平台: ARM32 (根据编译器路径推断)${NC}"
                 fi
             else
-                # 没有指定编译器时使用默认检测
                 local arch=$(uname -m)
                 if [[ "$arch" == "aarch64" || "$arch" == "arm64" ]]; then
-                    BUILD_DIR="buildLinuxARM64"
+                    BUILD_DIR="${BUILD_DIR_NAME}LinuxARM64"    
                 else
-                    BUILD_DIR="buildLinuxARM32"
+                    BUILD_DIR="${BUILD_DIR_NAME}LinuxARM32"    
                 fi
                 echo -e "${CYAN}目标平台: ARM (自动检测)${NC}"
             fi
@@ -116,9 +118,9 @@ set_platform() {
         "x86")
             CURRENT_PLATFORM="x86"
             if [[ $(uname -m) == "x86_64" ]]; then
-                BUILD_DIR="buildLinuxX64"
+                BUILD_DIR="${BUILD_DIR_NAME}LinuxX64"          
             else
-                BUILD_DIR="buildLinuxX86"
+                BUILD_DIR="${BUILD_DIR_NAME}LinuxX86"          
             fi
             echo -e "${CYAN}目标平台设置为 x86 (本地编译)${NC}"
             ;;
@@ -146,6 +148,8 @@ if [ "$1" = "help" ] || [ "$1" = "-h" ] || [ "$1" = "--help" ]; then
     exit 0
 fi
 
+ORIGINAL_DIR="$(pwd)"
+
 # 处理平台参数和清理参数
 CLEAN_BUILD=false
 while [[ $# -gt 0 ]]; do
@@ -164,7 +168,7 @@ while [[ $# -gt 0 ]]; do
             if [ -d "${BUILD_DIR}" ]; then
                 cd "${BUILD_DIR}"
                 make clean
-                cd ..
+                cd "$ORIGINAL_DIR"    # 返回脚本所在目录
                 echo -e "${GREEN}Clean completed.${NC}"
             else
                 echo -e "${YELLOW}Build directory does not exist.${NC}"
@@ -194,7 +198,7 @@ if [ "$CLEAN_BUILD" = true ]; then
     if [ -d "${BUILD_DIR}" ]; then
         cd "${BUILD_DIR}"
         make clean
-        cd ..
+        cd "$ORIGINAL_DIR"    # 返回脚本所在目录
         echo -e "${GREEN}Clean completed.${NC}"
     else
         echo -e "${YELLOW}Build directory does not exist.${NC}"

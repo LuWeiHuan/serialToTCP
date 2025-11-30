@@ -18,6 +18,7 @@
 #include <stdlib.h>
 #include <time.h>
 #include <string.h>
+#include "logPrint.h"
 
 /*================== 平台配置 =========================================*/
 #ifndef CLOSE_EXCEPTION_MONITOR
@@ -41,7 +42,6 @@
   #include <stdint.h>
   #include <errno.h>
   #include <signal.h>
-  #include <string.h>
   #include <libgen.h>
   #include <unistd.h>
   #include <sys/types.h>
@@ -65,7 +65,7 @@
 #endif 
 
 /*================== 全局共享变量 =====================================*/
-static char g_LogPath[MAX_PATH] = "process_exceptions.log";
+
 static char g_LastExceptionInfo[EXCEPTION_INFO_SIZE] = {0};
 
 #if ENABLE_EXCEPTION_MONITOR
@@ -81,8 +81,6 @@ static char g_LastExceptionInfo[EXCEPTION_INFO_SIZE] = {0};
 /*================== 本地函数声明 =====================================*/
 
 /* 通用工具函数 */
-static void CheckAndCleanLogFile(void);
-static void outLogToFile(const char *log);
 static const char *getLocalTime(void);
 static const char *getExeName(void);
 
@@ -121,43 +119,11 @@ static const char *getExeName(void);
 #endif
 
 /*================== 通用工具函数实现 =================================*/
-static void CheckAndCleanLogFile(void)
-{
-  const char* fileName = g_LogPath;
-  
-  // 检查文件是否存在
-  if (access(fileName, F_OK) != 0)
-      return; // 文件不存在
 
-  // 获取文件大小
-  FILE* file = fopen(fileName, "rb");
-  if (!file)
-      return; // 无法打开文件
-
-  // 移动到文件末尾获取大小
-  fseek(file, 0, SEEK_END);
-  long file_size = ftell(file);
-  fclose(file);
-
-  // 如果文件超过10MB，删除它
-  const long max_log_size = 10 * 1024 * 1024; // 10MB
-  if (file_size < max_log_size) 
-    return;
-  
-  printf("日志文件检测: %s, 大小: %.2f MB\n", 
-          fileName, (double)file_size / (1024 * 1024));
-  printf("日志文件超过10MB限制，删除...%s ，代码: %u\n",
-      remove(fileName) == 0?"成功":"失败", errno);
-}
 
 static void outLogToFile(const char *log)
-{ 
-    FILE* logFile = fopen(g_LogPath, "a");
-    if (logFile == NULL) 
-        return; 
-    
-    fprintf(logFile, "%s\n", log); 
-    fclose(logFile); 
+{
+  logPrintFull(LOG_LEVEL_ERROR, "\n%s", log);
 }
 
 static const char *getLocalTime(void)
@@ -303,6 +269,60 @@ static bool InitializeSymbolsSimple(void)
 
 /******************** 启用异常监控版本 ********************/
 
+static const char* extract_path_info(const char* input) {
+    static char output[512];
+    output[0] = '\0';
+    
+    // 尝试查找分隔符，支持 " at " 和 " 于 "
+    const char* separator = NULL;
+    const char* at_pos = strstr(input, " at ");
+    const char* yu_pos = strstr(input, " 于 ");
+    
+    if (at_pos) {
+        separator = at_pos;
+    } else if (yu_pos) {
+        separator = yu_pos;
+    }
+    
+    if (!separator) return input;
+    
+    // 计算分隔符长度
+    size_t separator_len = (separator == at_pos) ? 4 : 3; // " at " 是4个字符，" 于 " 是3个字符
+    size_t prefix_len = separator - input;
+    const char* path_start = separator + separator_len;
+    
+    // 计算路径中的斜杠总数
+    int total_slashes = 0;
+    for (const char* p = path_start; *p; p++) {
+        if (*p == '/') total_slashes++;
+    }
+    
+    const char* project_path_start = path_start;
+    
+    if (total_slashes >= 3) {
+        // 如果有3个或更多斜杠，跳过前面的部分
+        int slashes_to_find = total_slashes - 1;
+        const char* p = path_start;
+        while (slashes_to_find > 0 && *p) {
+            if (*p == '/') slashes_to_find--;
+            p++;
+        }
+        if (*p) project_path_start = p;
+    } else if (total_slashes == 2) {
+        // 如果正好2个斜杠，从第一个斜杠后面开始
+        const char* first_slash = strchr(path_start, '/');
+        if (first_slash) project_path_start = first_slash + 1;
+    }
+    // 如果只有0-1个斜杠，直接使用完整路径
+    
+    // 使用原始的分隔符重新构建输出
+    const char* original_separator = (separator == at_pos) ? " at " : " 于 ";
+    snprintf(output, sizeof(output), "%.*s%s%s", 
+             (int)prefix_len, input, original_separator, project_path_start);
+    
+    return output;
+}
+
 #ifdef _WIN32
 /*================== Windows 启用监控版本 ====================*/
 
@@ -427,45 +447,8 @@ static const char* GetExceptionDescription(DWORD exceptionCode)
     }
 }
 
-static const char* extract_path_info(const char* input) {
-    static char output[512];
-    output[0] = '\0';
-    
-    const char* at_pos = strstr(input, " at ");
-    if (!at_pos) return input;
-    
-    size_t thread_name_len = at_pos - input;
-    const char* path_start = at_pos + 4;
-    
-    // 计算路径中的斜杠总数
-    int total_slashes = 0;
-    for (const char* p = path_start; *p; p++) {
-        if (*p == '/') total_slashes++;
-    }
-    
-    const char* project_path_start = path_start;
-    
-    if (total_slashes >= 3) {
-        // 如果有3个或更多斜杠，跳过前面的部分
-        int slashes_to_find = total_slashes - 1;
-        const char* p = path_start;
-        while (slashes_to_find > 0 && *p) {
-            if (*p == '/') slashes_to_find--;
-            p++;
-        }
-        if (*p) project_path_start = p;
-    } else if (total_slashes == 2) {
-        // 如果正好2个斜杠，从第一个斜杠后面开始
-        const char* first_slash = strchr(path_start, '/');
-        if (first_slash) project_path_start = first_slash + 1;
-    }
-    // 如果只有0-1个斜杠，直接使用完整路径
-    
-    snprintf(output, sizeof(output), "%.*s at %s", 
-             (int)thread_name_len, input, project_path_start);
-    
-    return output;
-}
+ 
+
 
 static void LogExceptionInfo(PEXCEPTION_POINTERS ExceptionInfo, const char* handlerType)
 { 
@@ -537,6 +520,8 @@ static long WINAPI UnhandledExceptionFilterA(PEXCEPTION_POINTERS ExceptionInfo)
 #else
 /*================== Linux 启用监控版本 ====================*/
 
+
+
 static bool CheckAddr2LineAvailable(void)
 {
     FILE *fp = popen("which addr2line", "r");
@@ -588,7 +573,8 @@ static void ResolveAddressToSource(void *address, char *output, size_t output_si
         if (fgets(buffer, sizeof(buffer), fp)) {
             // 移除换行符
             buffer[strcspn(buffer, "\r\n")] = '\0';
-            snprintf(output, output_size, "%s", buffer);
+            const char* processed = extract_path_info(buffer);
+            snprintf(output, output_size, "%s", processed);
         } else {
             snprintf(output, output_size, "0x%p [符号解析失败]", address);
         }
@@ -889,9 +875,7 @@ static void ASANReportCallback(const char* report)
 /*================== 公共接口实现 ===================================*/
 // 平台相关的异常处理设置
 void ProcessExceptionMonitorInit(void)
-{
-    CheckAndCleanLogFile();
-    
+{  
 #ifdef __SANITIZE_ADDRESS__ // GCC 的 ASAN 宏
     __asan_set_error_report_callback(ASANReportCallback);
     printf("启用了 Address Sanitizer ASAN内存检测\n");
@@ -934,13 +918,7 @@ void CleanupProcessExceptionMonitor(void)
   printf("异常监控已停止\n");
 }
 
-void SetExceptionLogPath(const char* logPath)
-{
-  if (logPath == NULL) 
-    return;
-  strncpy(g_LogPath, logPath, MAX_PATH - 1);
-  g_LogPath[MAX_PATH - 1] = '\0';
-}
+
 
 const char* GetLastExceptionInfo(void)
 {

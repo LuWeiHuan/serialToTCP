@@ -28,11 +28,6 @@ void ProcessExceptionMonitorInit(void);
  */
 void CleanupProcessExceptionMonitor(void);
 
-/**
- * @brief 设置异常日志路径
- * @param logPath 日志文件路径
- */
-void SetExceptionLogPath(const char* logPath);
 
 /**
  * @brief 获取最后一次异常信息

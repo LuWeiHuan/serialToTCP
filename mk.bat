@@ -1,9 +1,14 @@
 @echo off
 chcp 65001 >nul
 
-set EXTRA_BAT=fileCopy.bat
+:: 用于检测可执行文件是否在运行，并在必要时终止它
 set TARGET_NAME=com2tcp_server
-set BUILD_DIR=buildWin
+
+:: 构建目录
+set BUILD_DIR=build/Win
+
+:: 是否执行外部脚本
+set EXTRA_BAT=fileCopy.bat
 
 :: 记录开始时间
 set START_TIME=%time%
@@ -34,7 +39,7 @@ if /i "%1"=="cleanBuild" (
     if exist "%BUILD_DIR%" (
         cd "%BUILD_DIR%"
         make clean
-        cd ..
+        cd "%~dp0"
         echo [SUCCESS] Clean completed.
     ) else (
         echo [WARNING] Build directory does not exist.
@@ -191,7 +196,7 @@ echo [INFO] Cleaning build directory...
 if exist "%BUILD_DIR%" (
     cd "%BUILD_DIR%"
     make clean
-    cd ..
+    cd "%~dp0"
     echo [SUCCESS] Clean completed.
 ) else (
     echo [WARNING] Build directory does not exist.

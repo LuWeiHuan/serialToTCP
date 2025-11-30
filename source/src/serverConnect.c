@@ -43,10 +43,10 @@
 typedef struct {
   ConnectState_t  state;
   uint64_t        startTimeMs;
-  socket_t     socket;
+  socket_t        socket;
   char            serverIP[46];    // 支持IPv6的最大长度
   uint16_t        serverPort;
-  thread_t   thread;
+  thread_t        thread;
   char            hsot[256];
   connectResultCallback Callback;
   void            *arg;

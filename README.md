@@ -13,7 +13,7 @@ AI 平台：DeepSeek
 编译工具：MinGW GCC
 工程管理：Cmake
 Linux引用库：libudev-dev
-引用外部开源代码：uthash
+引用开源代码：uthash 和 mimIni ，这里表示对他们的感谢。
 
 实现将串口数据转到TCP收发的能力
 环境Win平台，使用C语言编写一个服务端程序，接受任何网段连接该服务器
@@ -117,7 +117,7 @@ Win 系统通常会出现接收 4~8KByte ，Linux 系统则是 128（低速串�
 
 
 ## 编译
-在 openSrc 文件夹引用了开源 uthash 库进行哈希值计算，可能需要您手动拉取一下。
+在 openSrc 文件夹引用了开源几个开源库，可能需要您手动拉取一下。
 确保系统已安装make、Cmake工具，Win系统还要安装MinGW
 执行对应平台的 mk 脚本直接编译。
 Linux环境还需要安装libudev开发包，实现PVID获取、设备插拔检测功能

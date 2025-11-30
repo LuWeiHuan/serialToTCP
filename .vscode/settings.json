@@ -45,6 +45,12 @@
     "command.h": "c",
     "fcntl.h": "c",
     "cstdlib": "c",
-    "versionhelpers.h": "c"
+    "versionhelpers.h": "c",
+    "cominfo.h": "c",
+    "compare": "c",
+    "configsave.h": "c",
+    "minini.h": "c",
+    "format": "c",
+    "queue": "c"
   }
 }

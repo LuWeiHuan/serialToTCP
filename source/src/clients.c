@@ -26,9 +26,10 @@
 #include "public.h"
 #include "logPrint.h"
 #include "COM.h"
+#include "COMinfo.h"
 #include "TrafficStats.h"
 #include "Command.h"
-
+#include "configSave.h"
 
 #include <stdio.h>
 #include <stdarg.h>
@@ -340,7 +341,7 @@ static threadRet WINAPI ClientRecvDataThread(void *param)
     tcpRecvBuffer[bytesReceived] = '\0';
 
     if (strnicmp(tcpRecvBuffer, CTRL_HEADER, strlen(CTRL_HEADER)) == 0) {
-      if (runInfo.serverPrintData == 3) 
+      if (saveInfo.serverPrintData == 3) 
         SafePrintf("Client [%-2d]IP:%s len:%d cmd: %-60s\n", 
             clientInfo->index, clientInfo->ip, bytesReceived, tcpRecvBuffer);
       
@@ -366,13 +367,13 @@ static threadRet WINAPI ClientRecvDataThread(void *param)
 
     SafePrintf("%-21s%10" PRIu64 " [%s]  %-6d/%-6d Byte (%s : %d)%s%c", timeStr, ++sendCount, Direct,
             bytesWritten, bytesReceived, bytesWritten == bytesReceived? "OK" : "Fail", getError,
-            runInfo.serverPrintData != 0 ? " data:" : " ", runInfo.COMsendPoll? '\n':'\r');
+            saveInfo.serverPrintData != 0 ? " data:" : " ", saveInfo.COMsendPoll? '\n':'\r');
     
-    if (runInfo.serverPrintData != 0) {
-      if (runInfo.serverPrintData == 1)
+    if (saveInfo.serverPrintData != 0) {
+      if (saveInfo.serverPrintData == 1)
         SafePrintf("%s", tcpRecvBuffer);
         
-      if (runInfo.serverPrintData == 2) 
+      if (saveInfo.serverPrintData == 2) 
         printHex((uint8_t*)tcpRecvBuffer, bytesReceived, 40, 2);
     }
     

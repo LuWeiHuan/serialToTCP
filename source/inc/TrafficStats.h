@@ -17,8 +17,8 @@ extern "C" {
 typedef struct {
   uint64_t totalBytesSent;      // 总发送字节数
   uint64_t totalBytesReceived;  // 总接收字节数
-  char sendRate[15];        // 格式化后的发送速率字符串（如"1.23 MB/s"）
-  char recvRate[15];        // 格式化后的接收速率字符串
+  char sendRate[15];            // 格式化后的发送速率字符串（如"1.23 MB/s"）
+  char recvRate[15];            // 格式化后的接收速率字符串
 } TrafficStats_t;
 
 // 全局流量统计

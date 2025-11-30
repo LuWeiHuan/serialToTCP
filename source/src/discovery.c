@@ -22,6 +22,7 @@
 #include "clients.h"
 #include "Command.h"
 #include "hostConnect.h"
+#include "configSave.h"
 
 #include <stdio.h>
 #include <string.h>
@@ -264,7 +265,7 @@ threadRet WINAPI DiscoveryThread(void* lpParam)
       SendDiscoveryResponse(&newClientInfo); // 发送响应
     }
     else if (strnicmp(recvBuffer, CTRL_HEADER, strlen(CTRL_HEADER)) == 0){
-      if (runInfo.serverPrintData == 3)
+      if (saveInfo.serverPrintData == 3)
         SafePrintf("UDP [%s]:%d CMD: %-60s\n", inet_ntoa(newClientInfo.sin_addr), 
                 ntohs(newClientInfo.sin_port), recvBuffer);
       

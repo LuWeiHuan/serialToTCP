@@ -21,6 +21,7 @@
 #include "ServerConnect.h"
 #include "discovery.h"
 #include "main.h"
+#include "configSave.h"
 
 #include <stdio.h>
 #include <string.h>
@@ -139,24 +140,28 @@ static void cmdSetLogPollCut(socket_t *Socket, char* commandData)
   (void)Socket; (void)commandData;
   char *token = strtok(commandData, DECOLLATOR);
   token = strtok(NULL, DECOLLATOR);
+  
   if(token != NULL){
-    if( strnicmp(token, "Recv", strlen("Recv") ) == 0 )
-      runInfo.COMrecvPoll = !runInfo.COMrecvPoll;
-    else if( strnicmp(token, "send", strlen("send") ) == 0 )
-      runInfo.COMsendPoll = !runInfo.COMsendPoll;
+    if( strnicmp(token, "Recv", strlen("Recv") ) == 0 ){
+      saveInfo.COMrecvPoll = !saveInfo.COMrecvPoll;
+    }
+    else if( strnicmp(token, "send", strlen("send") ) == 0 ){
+      saveInfo.COMsendPoll = !saveInfo.COMsendPoll;
+    }
     else{
-      runInfo.COMrecvPoll = !runInfo.COMrecvPoll;
-      runInfo.COMsendPoll = !runInfo.COMsendPoll;
+      saveInfo.COMrecvPoll = !saveInfo.COMrecvPoll;
+      saveInfo.COMsendPoll = !saveInfo.COMsendPoll;
     }
   }
   else{
-    runInfo.COMrecvPoll = !runInfo.COMrecvPoll;
-    runInfo.COMsendPoll = !runInfo.COMsendPoll;
+    saveInfo.COMrecvPoll = !saveInfo.COMrecvPoll;
+    saveInfo.COMsendPoll = !saveInfo.COMsendPoll;
   }
   
   const char *setInfo = getPrintf( "Set log Poll [send %-3s | recv %-3s]\n",
-    runInfo.COMsendPoll? "YES":"NO", runInfo.COMrecvPoll? "YES":"NO" );
+    saveInfo.COMsendPoll? "YES":"NO", saveInfo.COMrecvPoll? "YES":"NO" );
   broadcastSendHandleResult(Socket, setInfo);
+  saveConfig();
 }
 
 static void cmdDoNotConnectCOM2TCP(socket_t *Socket, char* commandData)
@@ -289,7 +294,7 @@ static void cmdsetCOMalignedNum(socket_t *Socket, char* commandData)
 
   if( in4KBnum > max4KBnum )
     in4KBnum = max4KBnum;
-  runInfo.COMalignedRecv4K = in4KBnum * 4096;
+  saveInfo.COMalignedRecv4K = in4KBnum * 4096;
   printfSend(Socket, "Set COM revc 4KByte Number: %d/%d\n", 
         in4KBnum, max4KBnum);
 }
@@ -356,18 +361,18 @@ static void cmdDataPrintMode(socket_t *Socket, char* commandData)
 
   char *token = strtok(commandData, DECOLLATOR);
   token = strtok(NULL, DECOLLATOR);
-  runInfo.serverPrintData = 0;
+  saveInfo.serverPrintData = 0;
   if( strnicmp(token, "NULL", strlen("NULL") ) == 0 )
-    runInfo.serverPrintData = 0;
+    saveInfo.serverPrintData = 0;
   if( strnicmp(token, "ASCII", strlen("ASCII")) == 0 )
-    runInfo.serverPrintData = 1;
+    saveInfo.serverPrintData = 1;
   if( strnicmp(token, "HEX", strlen("HEX")) == 0 )
-    runInfo.serverPrintData = 2;
+    saveInfo.serverPrintData = 2;
   if( strnicmp(token, "CMD", strlen("CMD")) == 0 )
-    runInfo.serverPrintData = 3;
+    saveInfo.serverPrintData = 3;
   
   const char *setInfo = getPrintf("server Print Data: %d %s \n", 
-      runInfo.serverPrintData, token);
+      saveInfo.serverPrintData, token);
   broadcastSendHandleResult(Socket, setInfo);
 }
 

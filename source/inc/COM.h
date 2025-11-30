@@ -12,7 +12,6 @@
 extern "C" {
 #endif
 void ComPortResourceInit(bool start);
-const char *getComPortList(bool VPID);
 int8_t OpenComPort(const char* portName, uint32_t baudRate, uint8_t dataBits, uint8_t stopBits, uint8_t parity);
 int ComPortSendData(const uint8_t *tcpRecvBuffer, int bytesReceived, uint32_t *retError);
 void CloseComPort(const char * reason);
