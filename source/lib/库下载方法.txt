@@ -1,0 +1,18 @@
+问AI
+上面是这个 http://ports.ubuntu.com/pool/main/s/systemd/  网页内容。
+我想要获取 arm32(i.mx6ull) 或 arm64(全志H618) 架构下的udev的静态库或动态库，我该选择哪个下载？
+
+
+libudev1_*.deb - 运行时库
+包含实际的动态库文件（.so）
+在目标设备上运行时需要
+包含：libudev.so.1.6.11 等
+libudev1_255.4-1ubuntu8.11_arm64.deb	#arm64位
+libudev1_255.4-1ubuntu8.11_armhf.deb	#arm32位
+
+libudev-dev_*.deb - 开发包
+包含开发时需要的文件
+在编译时需要，运行时不需要
+包含：头文件（.h）、静态库（.a）、pkgconfig 文件等
+libudev-dev_255.4-1ubuntu8.11_arm64.deb	#arm64位
+libudev-dev_255.4-1ubuntu8.11_armhf.deb	#arm32位

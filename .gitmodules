@@ -1,14 +1,14 @@
-[submodule "openSrc/uthash"]
-	path = source/openSrc/uthash
+[submodule "third_party/uthash"]
+	path = source/third_party/uthash
 	url = https://github.com/troydhanson/uthash
 	ignore = dirty
 
-[submodule "openSrc/openthread"]
-	path = source/openSrc/openthread
+[submodule "third_party/openthread"]
+	path = source/third_party/openthread
 	url = https://github.com/OpenMiniServer/openthread
 	ignore = dirty
 
-[submodule "openSrc/minIni"]
-	path = source/openSrc/minIni
+[submodule "third_party/minIni"]
+	path = source/third_party/minIni
 	url = https://github.com/compuphase/minIni
 	ignore = dirty

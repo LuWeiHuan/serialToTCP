@@ -7,7 +7,7 @@ set IP=192.168.1.25
 set PORT=19000
 set MESSAGE=discover_com2tcp_server
 set MESSAGE=ctrlInfo:exit
-set TIMEOUT_MS=500
+set TIMEOUT_MS=100
  
 echo 正在向 %IP%:%PORT% 发送UDP数据: %MESSAGE%
 
@@ -16,5 +16,5 @@ powershell -Command "$ip='%IP%'; $port=%PORT%; $message='%MESSAGE%'; $timeout=%T
 echo 操作完成
 endlocal
 
-::copy /Y .\com2tcp_server.exe "\\Hx-qxb-fs\器械部共享盘\软件包\远程工具\远程串口"
+copy /Y .\com2tcp_server.exe "\\Hx-qxb-fs\器械部共享盘\软件包\远程工具\远程串口"
 ::copy /Y .\com2tcp_server.exe "\\Wh-sf\d盘\远程串口"

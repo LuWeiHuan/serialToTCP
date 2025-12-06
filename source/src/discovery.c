@@ -17,8 +17,8 @@
 
 #include "discovery.h"
 #include "main.h"
-#include "logPrint.h"
-#include "public.h"
+#include "log.h"
+#include "commonUtils.h"
 #include "clients.h"
 #include "Command.h"
 #include "hostConnect.h"
@@ -240,7 +240,7 @@ threadRet WINAPI DiscoveryThread(void* lpParam)
     FD_SET(discoverySocket, &readSet);
 
     timeout.tv_sec = 0;
-    timeout.tv_usec = DISCOVERY_INTERVAL_MS * 1000;
+    timeout.tv_usec = DISCOVERY_INTERVAL_MS * 1000; // 转换为微秒
 
     selectResult = select(discoverySocket + 1, &readSet, NULL, NULL, &timeout);
     if (selectResult == SOCKET_ERROR) {
@@ -275,8 +275,9 @@ threadRet WINAPI DiscoveryThread(void* lpParam)
         SafePrintf("Discovery UDP connect Error! code :%d\n", connectRet);
       HandleClientCommand(&discoverySocket, recvBuffer + strlen(CTRL_HEADER));
 
-      UdpDisconnect(discoverySocket);   // 在Linux下需要断开连接以恢复广播能力
+      UdpDisconnect(discoverySocket);   // 需要断开连接以恢复广播能力
 
+      // 这里是进行程序异常退出捕获测试的位置，用于程序自我错误定位
       if( strnicmp(recvBuffer, CTRL_HEADER"errorTest", strlen(CTRL_HEADER"errorTest")) == 0 )
         ErrorCodeTest();
     }

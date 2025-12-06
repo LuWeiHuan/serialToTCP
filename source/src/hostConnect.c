@@ -13,8 +13,8 @@
 
 /*================== 头文件包含     =========================================*/
 #include "hostConnect.h"
-#include "logPrint.h"
-#include "public.h"
+#include "log.h"
+#include "commonUtils.h"
 
 
 #include <string.h>
@@ -117,6 +117,16 @@ int8_t resolveHostname(const char* hostname, char* ipBuffer, uint8_t bufferSize,
   return -2;
 }
 
+/**
+ * @brief 开始以阻塞状态连接到服务器
+ * @param host 主机名或IP地址
+ * @param port 端口号
+ * @param timeoutMs 连接超时时间，单位 ms
+ * @param retSocket 成功后这里会返回套接字
+ * @param retIP     成功后这里会返回具体IP地址
+ * @return 成功返回真，失败返回假。
+ * @attention 一旦发起连接就会有阻塞，直到超时结束
+ */
 bool startConnectToServer(const char* host, uint16_t port, 
         uint16_t timeoutMs, socket_t *retSocket, char *retIP)
 {

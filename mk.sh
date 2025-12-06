@@ -9,80 +9,141 @@ PURPLE='\033[0;35m'
 CYAN='\033[0;36m'
 NC='\033[0m' # No Color
 
-# === 在这里设置您的交叉编译器路径 ===
-# 注意：这里需要设置完整的编译器可执行文件路径，而不是目录路径
-ARM_C_COMPILER="/usr/local/arm/arm-linux-gnueabihf_4.9.4/bin/arm-linux-gnueabihf-gcc"
-# 或者如果是 ARM64：
-#ARM_C_COMPILER="/usr/bin/aarch64-linux-gnu-gcc"
+# 设置交叉编译工具链默认构建 32位还是64位
+DEFAULT_ARM_TARGET_ARCH="64"  # 可选: "32" 或 "64"
 
-# 构建玩后执行额外的脚本，仅提供ARM架构
+# === 交叉编译器默认路径配置 ===
+# 用户可以在这里设置首选路径，如果留空则使用系统默认路径
+# 注意：这是全局设置，会被命令行参数覆盖
+ARM32_C_COMPILER="/usr/local/arm/arm-linux-gnueabihf_4.9.4/bin/arm-linux-gnueabihf-gcc"
+ARM64_C_COMPILER=""
+
+# 系统默认交叉编译器路径（用于备用）
+SYS_ARM32_COMPILER=$(which arm-linux-gnueabihf-gcc)
+SYS_ARM64_COMPILER=$(which aarch64-linux-gnu-gcc)
+
+# 构建后执行额外的脚本，仅提供ARM架构
 EXTRA_SH=fileCopy.sh
 
 # 构建文件夹保存路径
 BUILD_DIR_NAME=build/
 
 # 默认平台检测
-detect_build_dir() {
+getCpuArchName() {
     if [[ "$OSTYPE" == "linux-gnu"* ]]; then
         local arch=$(uname -m)
         case "$arch" in
             "aarch64"|"arm64")
-                echo "${BUILD_DIR_NAME}LinuxARM64"
+                echo "ARM64"
                 ;;
             "armv7l"|"armv6l")
-                echo "${BUILD_DIR_NAME}LinuxARM32"
+                echo "ARM32"
                 ;;
             "x86_64")
-                echo "${BUILD_DIR_NAME}LinuxX64"
+                echo "X64"
                 ;;
             "i386"|"i686")
-                echo "${BUILD_DIR_NAME}LinuxX86"
+                echo "X86"
                 ;;
             *)
-                echo "${BUILD_DIR_NAME}Linux"
+                echo "General"
                 ;;
         esac
     elif [[ "$OSTYPE" == "msys" ]] || [[ "$OSTYPE" == "win32" ]]; then
-        echo "${BUILD_DIR_NAME}Win"
+        echo "ForWin"
     else
-        echo "build"
+        echo "Build"
     fi
 }
 
-# 工具链文件配置
-TOOLCHAIN_FILE_ARM="./toolchain-arm.cmake"
-
 # 平台配置
-CURRENT_PLATFORM="auto"
-BUILD_DIR=$(detect_build_dir)
+CURRENT_PLATFORM="Auto"
+CPU_ARCH_NAME=$(getCpuArchName)
+BUILD_DIR=${BUILD_DIR_NAME}Linux$(getCpuArchName)
 
 # 转换为小写函数
 to_lower() {
     echo "$1" | tr '[:upper:]' '[:lower:]'
 }
 
+# 验证函数
+validate_arm_arch() {
+    local arch="$1"
+    
+    if [[ -z "$arch" ]]; then
+        echo "64"  # 默认值
+        return 0
+    fi
+    
+    # 标准化输入
+    arch=$(echo "$arch" | tr '[:lower:]' '[:upper:]')
+    
+    case "$arch" in
+        "32"|"ARM32"|"ARM")
+            echo "32"
+            return 0
+            ;;
+        "64"|"ARM64"|"AARCH64")
+            echo "64"
+            return 0
+            ;;
+        *)
+            echo "ERROR: Invalid ARM architecture: $arch" >&2
+            echo "64"  # 出错时返回默认值
+            return 1
+            ;;
+    esac
+}
+
+# 在脚本初始化时验证
+DEFAULT_ARM_TARGET_ARCH=$(validate_arm_arch "$DEFAULT_ARM_TARGET_ARCH")
+
+# 查找可用的ARM编译器
+find_arm_compiler() {
+    local target="$1"  # "arm32" 或 "arm64"
+    local compiler=""
+    
+    if [[ "$target" == "arm64" ]]; then
+        # 1. 优先使用用户配置的64位编译器
+        if [[ -n "$ARM64_C_COMPILER" && -x "$ARM64_C_COMPILER" ]]; then
+            compiler="$ARM64_C_COMPILER"
+        # 2. 使用系统默认64位编译器
+        elif [[ -x "$SYS_ARM64_COMPILER" ]]; then
+            compiler="$SYS_ARM64_COMPILER"
+        fi
+    elif [[ "$target" == "arm32" ]]; then
+        # 1. 优先使用用户配置的32位编译器
+        if [[ -n "$ARM32_C_COMPILER" && -x "$ARM32_C_COMPILER" ]]; then
+            compiler="$ARM32_C_COMPILER"
+        # 2. 使用系统默认32位编译器
+        elif [[ -x "$SYS_ARM32_COMPILER" ]]; then
+            compiler="$SYS_ARM32_COMPILER"
+        fi
+    fi
+    
+    echo "$compiler"
+}
+
 # 显示帮助信息
 show_help() {
-    echo "Usage: $0 [clean|rm|release|debug|asan|help|arm|arm64|arm32|x86|cleanBuild]"
+    echo "Usage: $0 [clean|rm|release|debug|asan|help|arm|arm32|arm64|x86|cleanBuild]"
     echo ""
     echo "快速构建命令:"
-    echo "  $0               - 开发版本 (默认，信号处理+符号解析)"
+    echo "  $0               - 开发版本 (信号处理+符号解析)"
     echo "  $0 debug         - 调试版本 (ASAN内存检测)"
     echo "  $0 asan          - ASAN版本 (同debug)"
     echo "  $0 release       - 发布版本 (最优性能，无调试信息)"
     echo ""
     echo "ARM交叉编译:"
-    echo "  当前配置的编译器: ${ARM_C_COMPILER}"
-    echo "  使用: $0 arm cleanBuild"
-    echo ""
-    echo "临时覆盖编译器:"
-    echo "  ARM_C_COMPILER=/new/path/to/compiler-gcc $0 arm cleanBuild"
+    echo "  当前配置的编译器:"
+    echo "    ARM32: ${ARM32_C_COMPILER:-使用系统默认}"
+    echo "    ARM64: ${ARM64_C_COMPILER:-使用系统默认}"
     echo ""
     echo "其他命令:"
     echo "  clean          - 清理构建目录"
     echo "  rm             - 删除构建目录"
     echo "  cleanBuild     - 清理并重新构建"
-    echo "  arm|arm64|arm32|x86 - 指定目标平台"
+    echo "  arm|arm32|arm64|x86 - 指定目标平台"
     echo "  help           - 显示此帮助信息"
     echo ""
     echo "当前平台: ${CURRENT_PLATFORM}"
@@ -92,54 +153,57 @@ show_help() {
 # 设置平台
 set_platform() {
     local platform=$(to_lower "$1")
+    local target_arch=""
+    local compiler=""
+    
     case "$platform" in
-        "arm"|"arm32"|"arm64"|"x86")
-            CURRENT_PLATFORM="arm"
-            # 使用配置的编译器路径推断架构
-            if [[ -n "$ARM_C_COMPILER" ]]; then
-                # 根据编译器名称推断架构
-                if [[ "$ARM_C_COMPILER" == *"aarch64"* ]] || [[ "$ARM_C_COMPILER" == *"arm64"* ]]; then
-                    BUILD_DIR="${BUILD_DIR_NAME}LinuxARM64"    
-                    echo -e "${CYAN}目标平台: ARM64 (根据编译器路径推断)${NC}"
-                else
-                    BUILD_DIR="${BUILD_DIR_NAME}LinuxARM32"    
-                    echo -e "${CYAN}目标平台: ARM32 (根据编译器路径推断)${NC}"
-                fi
-            else
-                local arch=$(uname -m)
-                if [[ "$arch" == "aarch64" || "$arch" == "arm64" ]]; then
-                    BUILD_DIR="${BUILD_DIR_NAME}LinuxARM64"    
-                else
-                    BUILD_DIR="${BUILD_DIR_NAME}LinuxARM32"    
-                fi
-                echo -e "${CYAN}目标平台: ARM (自动检测)${NC}"
-            fi
+        "arm")
+            CURRENT_PLATFORM="ARM${DEFAULT_ARM_TARGET_ARCH}"
+            CPU_ARCH_NAME="ARM${DEFAULT_ARM_TARGET_ARCH}"
+            target_arch="arm${DEFAULT_ARM_TARGET_ARCH}"
+            compiler=$(find_arm_compiler "arm${DEFAULT_ARM_TARGET_ARCH}")
             ;;
-        "x86")
-            CURRENT_PLATFORM="x86"
+        "arm32")
+            CURRENT_PLATFORM="ARM32"
+            CPU_ARCH_NAME="ARM32"
+            target_arch="arm32"
+            compiler=$(find_arm_compiler "arm32")
+            ;;
+        "arm64")
+            CURRENT_PLATFORM="ARM64"
+            CPU_ARCH_NAME="ARM64"
+            target_arch="arm64"
+            compiler=$(find_arm_compiler "arm64")
+            ;;
+        "x86"|"x64")
+            CURRENT_PLATFORM="X86"
             if [[ $(uname -m) == "x86_64" ]]; then
-                BUILD_DIR="${BUILD_DIR_NAME}LinuxX64"          
+                CPU_ARCH_NAME="X64"
             else
-                BUILD_DIR="${BUILD_DIR_NAME}LinuxX86"          
+                CPU_ARCH_NAME="X86"
             fi
-            echo -e "${CYAN}目标平台设置为 x86 (本地编译)${NC}"
+            echo -e "${CYAN}目标平台: ${CPU_ARCH_NAME} (本地编译)${NC}"
             ;;
         *)
-            CURRENT_PLATFORM="auto"
-            BUILD_DIR=$(detect_build_dir)
-            # 修复：显示详细的自动检测信息
-            local arch=$(uname -m)
-            local os_name=""
-            if [[ "$OSTYPE" == "linux-gnu"* ]]; then
-                os_name="Linux"
-            elif [[ "$OSTYPE" == "msys" ]] || [[ "$OSTYPE" == "win32" ]]; then
-                os_name="Windows"
-            else
-                os_name="$OSTYPE"
-            fi
-            echo -e "${CYAN}自动检测平台: ${os_name} ${arch} -> ${BUILD_DIR}${NC}"
+            CURRENT_PLATFORM="Auto"
+            echo -e "${CYAN}自动检测平台: ${CPU_ARCH_NAME} -> ${BUILD_DIR}${NC}"
             ;;
     esac
+    
+    # 如果是ARM交叉编译，检查编译器
+    if [[ "$CURRENT_PLATFORM" =~ ^ARM ]]; then
+        if [[ -z "$compiler" ]]; then
+            echo -e "${RED}错误: 未找到可用的 ${CPU_ARCH_NAME} 交叉编译器${NC}"
+            echo -e "${YELLOW}请确保已安装交叉编译器或设置 ARM${CPU_ARCH_NAME: -2}_C_COMPILER 变量${NC}"
+            exit 1
+        fi
+        
+        # 设置环境变量供CMake使用
+        export CMAKE_C_COMPILER="$compiler"
+        
+        # 可选：根据目标架构设置构建目录
+        BUILD_DIR="${BUILD_DIR_NAME}Linux${CPU_ARCH_NAME}"
+    fi
 }
 
 # 检查参数
@@ -151,234 +215,126 @@ fi
 ORIGINAL_DIR="$(pwd)"
 
 # 处理平台参数和清理参数
+DEL_BUILD=false
 CLEAN_BUILD=false
+CLEAN_EXIT=false
+declare -a OTHER_ARGS=()
+
+# 参数处理循环
 while [[ $# -gt 0 ]]; do
     param_lower=$(to_lower "$1")
     case "$param_lower" in
-        "arm"|"arm32"|"arm64"|"x86")
-            set_platform "$1"
-            shift
-            ;;
-        "cleanbuild")
+        "cleanbuild"|"clean")
             CLEAN_BUILD=true
-            shift
             ;;
-        "clean")
-            echo -e "${YELLOW}Cleaning build directory: ${BUILD_DIR}...${NC}"
-            if [ -d "${BUILD_DIR}" ]; then
-                cd "${BUILD_DIR}"
-                make clean
-                cd "$ORIGINAL_DIR"    # 返回脚本所在目录
-                echo -e "${GREEN}Clean completed.${NC}"
-            else
-                echo -e "${YELLOW}Build directory does not exist.${NC}"
-            fi
-            exit 0
+        "arm"|"arm32"|"arm64"|"x86")
+            set_platform "${param_lower}"
             ;;
         "rm")
-            echo -e "${YELLOW}Removing build directory: ${BUILD_DIR}...${NC}"
-            if [ -d "${BUILD_DIR}" ]; then
-                rm -rf "${BUILD_DIR}"
-                echo -e "${GREEN}Remove completed.${NC}"
-            else
-                echo -e "${YELLOW}Build directory does not exist.${NC}"
-            fi
-            exit 0
+            DEL_BUILD=true
+            CLEAN_EXIT=true
             ;;
         *)
-            # 其他参数（构建类型）留在 $1 中处理
-            break
+            OTHER_ARGS+=("$1")
             ;;
     esac
+    shift
 done
 
 # 执行清理构建（如果指定了 cleanBuild）
 if [ "$CLEAN_BUILD" = true ]; then
-    echo -e "${YELLOW}Clean and Build for directory: ${BUILD_DIR}...${NC}"
+    echo -e "${YELLOW}清理并构建目录: ${BUILD_DIR}...${NC}"
     if [ -d "${BUILD_DIR}" ]; then
         cd "${BUILD_DIR}"
         make clean
-        cd "$ORIGINAL_DIR"    # 返回脚本所在目录
-        echo -e "${GREEN}Clean completed.${NC}"
+        cd "$ORIGINAL_DIR"
+        echo -e "${GREEN}清理完成${NC}"
     else
-        echo -e "${YELLOW}Build directory does not exist.${NC}"
+        echo -e "${YELLOW}构建目录不存在${NC}"
     fi
 fi
 
+# 执行删除构建（如果指定了 cleanBuild）
+if [ "$DEL_BUILD" = true ]; then
+    echo -e "${YELLOW}删除构建目录: ${BUILD_DIR}...${NC}"
+    if [ -d "${BUILD_DIR}" ]; then
+        rm -rf "${BUILD_DIR}"
+        echo -e "${GREEN}删除完成${NC}"
+    else
+        echo -e "${YELLOW}构建目录不存在${NC}"
+    fi
+fi
+
+if [ "$CLEAN_EXIT" = true ]; then
+    exit 0
+fi
+
+# 恢复其他参数
+set -- "${OTHER_ARGS[@]}"
+
+BUILD_VERSIONS="${BLUE}Development 版本 (信号处理+符号解析)"  # 默认构建类型
+CMAKE_BUILD_TYPE=Debug  #版本类型
+ENABLE_MONITOR=ON       #异常监控
+ENABLE_ASAN=OFF         #ASAN 高级内存异常检测
+
 # 设置构建类型
-BUILD_TYPE=""
-build_type_lower=$(to_lower "$1")
-case "$build_type_lower" in
-    "release")
-        BUILD_TYPE="-DCMAKE_BUILD_TYPE=Release -DENABLE_MONITOR=OFF -DENABLE_ASAN=OFF"
-        echo -e "${GREEN}Building RELEASE version (最优性能，无调试信息)...${NC}"
-        ;;
-    "debug"|"asan")
-        BUILD_TYPE="-DCMAKE_BUILD_TYPE=Debug -DENABLE_MONITOR=OFF -DENABLE_ASAN=ON"
-        echo -e "${RED}Building DEBUG version (ASAN内存检测)...${NC}"
-        ;;
-    ""|*)
-        BUILD_TYPE="-DCMAKE_BUILD_TYPE=Debug -DENABLE_MONITOR=ON -DENABLE_ASAN=OFF"
-        echo -e "${BLUE}Building DEVELOPMENT version (信号处理+符号解析)...${NC}"
-        ;;
-esac
+if [ $# -gt 0 ]; then
+    build_type_lower=$(to_lower "$1")
+    case "$build_type_lower" in
+        "release")
+            CMAKE_BUILD_TYPE=Release
+            ENABLE_MONITOR=OFF
+            ENABLE_ASAN=OFF 
+            BUILD_VERSIONS="${GREEN}Release 版本 (最优性能，无调试信息)"
+            ;;
+        "debug"|"asan")
+            ENABLE_MONITOR=OFF
+            ENABLE_ASAN=ON 
+            BUILD_VERSIONS="${RED}Debug 版本 (ASAN内存检测，性能较慢)"
+            ;;
+        *)
+            # 未知参数，保持默认
+            ;;
+    esac
+fi
+
+BUILD_TYPE="-DCMAKE_BUILD_TYPE=${CMAKE_BUILD_TYPE} -DENABLE_MONITOR=${ENABLE_MONITOR} -DENABLE_ASAN=${ENABLE_ASAN}"
 
 # 记录开始时间
 START_TIME=$(date +%s.%N)
 
-# 根据平台设置CMake参数
-CMAKE_EXTRA_ARGS=""
-if [ "$CURRENT_PLATFORM" = "arm" ]; then
-    # 检查工具链文件是否存在
-    if [ ! -f "$TOOLCHAIN_FILE_ARM" ]; then
-        echo -e "${YELLOW}ARM toolchain file not found, creating toolchain file...${NC}"
-        # 创建工具链文件
-        cat > "$TOOLCHAIN_FILE_ARM" << 'EOF'
-# file: toolchain-arm.cmake
-set(CMAKE_SYSTEM_NAME Linux)
+# 准备CMake参数
+CMAKE_ARGS="-B ${BUILD_DIR} -G \"Unix Makefiles\" ${BUILD_TYPE}"
 
-if(DEFINED ENV{ARM_C_COMPILER})
-    set(CMAKE_C_COMPILER "$ENV{ARM_C_COMPILER}")
-else()
-    message(FATAL_ERROR "ARM compiler not specified. Please set ARM_C_COMPILER environment variable.")
-endif()
+C_COMPILER_PATH=$(which gcc)
+C_COMPILER_CROSS="本地"
 
-# 设置系统根目录（sysroot）
-get_filename_component(COMPILER_DIR "${CMAKE_C_COMPILER}" DIRECTORY)
-get_filename_component(TOOLCHAIN_PREFIX "${COMPILER_DIR}" DIRECTORY)
-
-# 设置系统根目录路径
-if(EXISTS "${TOOLCHAIN_PREFIX}/arm-linux-gnueabihf")
-    set(CMAKE_SYSROOT "${TOOLCHAIN_PREFIX}/arm-linux-gnueabihf")
-    set(CMAKE_FIND_ROOT_PATH "${TOOLCHAIN_PREFIX}/arm-linux-gnueabihf")
-elseif(EXISTS "${TOOLCHAIN_PREFIX}/aarch64-linux-gnu")  
-    set(CMAKE_SYSROOT "${TOOLCHAIN_PREFIX}/aarch64-linux-gnu")
-    set(CMAKE_FIND_ROOT_PATH "${TOOLCHAIN_PREFIX}/aarch64-linux-gnu")
-else()
-    set(CMAKE_SYSROOT "${TOOLCHAIN_PREFIX}")
-    set(CMAKE_FIND_ROOT_PATH "${TOOLCHAIN_PREFIX}")
-endif()
-
-# 根据编译器名称推断架构和工具前缀
-get_filename_component(COMPILER_NAME "${CMAKE_C_COMPILER}" NAME)
-
-if(COMPILER_NAME MATCHES "aarch64" OR COMPILER_NAME MATCHES "arm64")
-    set(COMPILER_PREFIX "aarch64-linux-gnu")
-    set(CMAKE_SYSTEM_PROCESSOR aarch64)
-    set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -march=armv8-a")
-    message(STATUS "Using AArch64 compiler: ${CMAKE_C_COMPILER}")
-else()
-    set(COMPILER_PREFIX "arm-linux-gnueabihf")
-    set(CMAKE_SYSTEM_PROCESSOR arm)
-    set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -march=armv7-a -mfloat-abi=hard -mfpu=neon")
-    message(STATUS "Using ARM32 compiler: ${CMAKE_C_COMPILER}")
-endif()
-
-# 设置其他编译器
-set(CMAKE_CXX_COMPILER "${COMPILER_DIR}/${COMPILER_PREFIX}-g++")
-
-# 设置查找路径
-set(CMAKE_FIND_ROOT_PATH_MODE_PROGRAM NEVER)
-set(CMAKE_FIND_ROOT_PATH_MODE_LIBRARY ONLY)
-set(CMAKE_FIND_ROOT_PATH_MODE_INCLUDE ONLY)
-set(CMAKE_FIND_ROOT_PATH_MODE_PACKAGE ONLY)
-
-# 输出配置信息
-message(STATUS "Toolchain prefix: ${TOOLCHAIN_PREFIX}")
-message(STATUS "Sysroot: ${CMAKE_SYSROOT}")
-EOF
-        echo -e "${GREEN}Created ARM toolchain file: ${TOOLCHAIN_FILE_ARM}${NC}"
-    fi
-    
-    # 检查编译器是否存在
-    if [[ ! -f "$ARM_C_COMPILER" ]]; then
-        echo -e "${RED}错误: 配置的编译器不存在: ${ARM_C_COMPILER}${NC}"
-        echo -e "${YELLOW}请修改脚本开头的 ARM_C_COMPILER 变量为正确的编译器可执行文件路径${NC}"
-        echo -e "${YELLOW}例如: /usr/local/arm/arm-linux-gnueabihf_4.9.4/bin/arm-linux-gnueabihf-gcc${NC}"
-        exit 1
-    fi
-    
-    echo -e "${PURPLE}使用配置的编译器: ${ARM_C_COMPILER}${NC}"
-    # 通过环境变量传递编译器路径给CMake
-    export ARM_C_COMPILER="$ARM_C_COMPILER"
-    
-    CMAKE_EXTRA_ARGS="-DCMAKE_TOOLCHAIN_FILE=${TOOLCHAIN_FILE_ARM}"
-    echo -e "${PURPLE}交叉编译 ARM 平台${NC}"
-    
-else
-    echo -e "${PURPLE}本地编译 ${CURRENT_PLATFORM} 平台${NC}"
+# 如果是ARM交叉编译，通过环境变量传递编译器
+if [[ "$CURRENT_PLATFORM" =~ ^ARM ]]; then
+    C_COMPILER_PATH=${CMAKE_C_COMPILER}
+    C_COMPILER_CROSS="交叉"
 fi
 
 # 执行构建命令
-echo -e "${CYAN}Build directory: ${BUILD_DIR}${NC}"
-echo -e "${CYAN}CMake command: cmake -B ${BUILD_DIR} -G \"Unix Makefiles\" ${BUILD_TYPE} ${CMAKE_EXTRA_ARGS}${NC}"
+echo -e "${CYAN}${C_COMPILER_CROSS}编译 ${CPU_ARCH_NAME} 平台${NC}"
+echo -e "${PURPLE}编译器: ${C_COMPILER_PATH}${NC}"
+echo -e "${CYAN}构建目录: ${BUILD_DIR}${NC}"
+echo -e "${CYAN}CMake命令: cmake ${CMAKE_ARGS}${NC}"
 
-cmake -B "${BUILD_DIR}" -G "Unix Makefiles" $BUILD_TYPE $CMAKE_EXTRA_ARGS
+cmake -B "${BUILD_DIR}" -G "Unix Makefiles" $BUILD_TYPE
 
 # 检查CMake配置是否成功
 if [ $? -ne 0 ]; then
-    echo -e "${RED}CMake configuration failed!${NC}"
+    echo -e "${RED}CMake配置失败!${NC}"
     exit 1
 fi
 
 # 获取 CPU 核心数
 CORES=$(nproc 2>/dev/null || echo 4)
-echo -e "Building with ${CORES} parallel jobs..."
+echo -e "使用 ${CORES} 核心并行任务构建..."
 
 # 并行构建
 cmake --build "${BUILD_DIR}" --parallel $CORES
-
-# 检查构建是否成功
-if [ $? -eq 0 ]; then
-    echo -e "${GREEN}Build successful!${NC}"
-    
-    # 显示生成的可执行文件信息
-    EXECUTABLE="${BUILD_DIR}/com2tcp_server"
-    if [ -f "$EXECUTABLE" ]; then
-        echo -e "${GREEN}Executable: ${EXECUTABLE}${NC}"
-        
-        # 显示文件架构信息
-        if command -v file >/dev/null 2>&1; then
-            echo -e "${CYAN}File info:${NC}"
-            file_info=$(file "$EXECUTABLE")
-            echo "$file_info" | fold -s -w 80 | sed "s/^/${CYAN}  ${NC}/"
-        fi
-        
-        # 显示文件大小
-        file_size=$(ls -lh "$EXECUTABLE" | awk '{print $5}')
-        echo -e "${CYAN}File size: ${file_size}${NC}"
-        
-        # 显示构建类型信息
-        case "$build_type_lower" in
-            "release")
-                echo -e "${GREEN}构建类型: Release (最优性能，无调试信息)${NC}"
-                ;;
-            "debug"|"asan")
-                echo -e "${RED}构建类型: Debug (ASAN内存检测)${NC}"
-                echo -e "${YELLOW}注    意: ASAN完整调试版本性能较慢，最好只用于调试${NC}"
-                ;;
-            ""|*)
-                echo -e "${BLUE}构建类型: Development (信号处理+符号解析)${NC}"
-                ;;
-        esac
-        
-        # 显示平台信息
-        case "$CURRENT_PLATFORM" in
-            "arm")
-                echo -e "${CYAN}目标平台: ARM (使用: ${ARM_C_COMPILER})${NC}"
-                ;;
-            "x86")
-                echo -e "${CYAN}目标平台: x86 (本地编译)${NC}"
-                ;;
-            *)
-                echo -e "${CYAN}目标平台: $(uname -s) $(uname -m) -> ${BUILD_DIR}${NC}"
-                ;;
-        esac 
-    fi
-else
-    echo -e "${RED}Build failed!${NC}"
-    exit 1
-fi
 
 # 记录结束时间
 END_TIME=$(date +%s.%N)
@@ -390,18 +346,37 @@ else
     DURATION=$(echo "$END_TIME $START_TIME" | awk '{printf "%.2f", $1 - $2}')
 fi
 
-# 输出构建用时
-echo -e "${GREEN}Build duration: ${DURATION} seconds, Timer: $(date '+%Y-%m-%d %H:%M:%S')${NC}${NC}"
+EXECUTABLE="${BUILD_DIR}/com2tcp_server"
 
+# 检查构建是否成功
+if [ $? -eq 0 ] && [ -f "$EXECUTABLE" ]; then
+    # 显示文件架构信息
+    if command -v file >/dev/null 2>&1; then
+        echo -e "${CYAN}文件信息:${NC}"
+        file_info=$(file "$EXECUTABLE")
+        echo "$file_info" | fold -s -w 80 | sed "s/^/  /"  # 移除颜色代码
+    fi
+    
+    echo -e "${GREEN}构建成功! ${BUILD_VERSIONS}${NC}"
+    echo -e "${GREEN}可执行文件: ${EXECUTABLE}${NC}"
+    echo -e "${CYAN}目标平台: ${CPU_ARCH_NAME} (${C_COMPILER_CROSS}编译) --> ${C_COMPILER_PATH}${NC}"
+
+    # 显示文件大小
+    file_size=$(ls -lh "$EXECUTABLE" | awk '{print $5}')
+    echo -e "${CYAN}文件大小: ${file_size}${NC}"
+fi
+
+# 输出构建用时
+echo -e "${GREEN}构建用时: ${DURATION} 秒, 时间: $(date '+%Y-%m-%d %H:%M:%S')${NC}"
 
 # 检查并执行额外脚本（仅ARM架构）
-if [ $? -eq 0 ] && [ "$CURRENT_PLATFORM" = "arm" ] && [ -f "./$EXTRA_SH" ]; then
-    echo -e "${CYAN}Found $EXTRA_SH and building for ARM, executing...${NC}"
+if [ $? -eq 0 ] && [[ "$CURRENT_PLATFORM" =~ ^ARM ]] && [ -f "./$EXTRA_SH" ]; then
+    echo -e "${CYAN}构建ARM平台 且 找到执行 $EXTRA_SH${NC}"
     chmod +x ./$EXTRA_SH
     ./$EXTRA_SH
     if [ $? -eq 0 ]; then
-        echo -e "${GREEN}$EXTRA_SH executed successfully!${NC}"
+        echo -e "${GREEN}$EXTRA_SH 执行成功!${NC}"
     else
-        echo -e "${RED}$EXTRA_SH execution failed!${NC}"
+        echo -e "${RED}$EXTRA_SH 执行失败!${NC}"
     fi
 fi

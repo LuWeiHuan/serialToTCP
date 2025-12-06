@@ -101,6 +101,9 @@ ctrlInfo:cmdSetLogPollCut,se        匹配不上 recv 或 send 都切换滚动
 让所有客户端下线
 ctrlInfo:KickAllClients
 
+自动打开串口功能，用于快速自动重开串口，程序重启也会自动打开
+ctrlInfo:autoReOpenPort,0   关闭
+ctrlInfo:autoReOpenCOM,1    启用
 
 设置接收串口处理对齐数据，单位 4KByte。
 ctrlInfo:setCOMalignedNum,5               提示：其中5可以自定义数量
@@ -117,7 +120,7 @@ Win 系统通常会出现接收 4~8KByte ，Linux 系统则是 128（低速串�
 
 
 ## 编译
-在 openSrc 文件夹引用了开源几个开源库，可能需要您手动拉取一下。
+在 third_party 文件夹引用了开源几个开源库，可能需要您手动拉取一下。
 确保系统已安装make、Cmake工具，Win系统还要安装MinGW
 执行对应平台的 mk 脚本直接编译。
 Linux环境还需要安装libudev开发包，实现PVID获取、设备插拔检测功能

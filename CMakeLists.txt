@@ -1,24 +1,35 @@
 # 设置最低 CMake 版本要求
 cmake_minimum_required(VERSION 3.15)
-
 # 项目定义
 project(com2tcp_server C)
+
 
 # === 架构检测优化 ===
 # 优先通过工具链检测架构，其次通过系统处理器检测
 if(CMAKE_SYSTEM_PROCESSOR)
     string(TOLOWER "${CMAKE_SYSTEM_PROCESSOR}" SYSTEM_PROCESSOR_LOWER)
-    message(STATUS "System processor: ${CMAKE_SYSTEM_PROCESSOR}")
 endif()
 
 # 设置构建目录基础名称
 set(BUILD_DIR_NAME "build/")
 
+
+if(DEFINED ENV{CMAKE_C_COMPILER} AND EXISTS "$ENV{CMAKE_C_COMPILER}")
+    set(CMAKE_C_COMPILER "$ENV{CMAKE_C_COMPILER}" CACHE FILEPATH "C compiler" FORCE)
+endif()
+
 # 根据平台自动设置构建目录
 if(WIN32)
-    set(PLATFORM_WINDOWS 1)
-    set(DEFAULT_BUILD_DIR "${BUILD_DIR_NAME}Win")
-    message(STATUS "Building for Windows platform")
+    set(PLATFORM_WINDOWS 1) 
+    
+    # 对于 Windows，检测架构
+    if(CMAKE_SIZEOF_VOID_P EQUAL 8)
+        set(DETECTED_ARCH "X64")
+        set(PLATFORM_X64 1)
+    else()
+        set(DETECTED_ARCH "X86")
+        set(PLATFORM_X86 1)
+    endif()
     
     # Windows 特定设置
     add_definitions(-D_WIN32_WINNT=0x0600)
@@ -26,80 +37,77 @@ if(WIN32)
     enable_language(RC)
     
 elseif(UNIX)
-    set(PLATFORM_LINUX 1)
-    set(DEFAULT_BUILD_DIR "${BUILD_DIR_NAME}Linux")
-    message(STATUS "Building for Linux platform")
-    
+    set(PLATFORM_LINUX 1) 
+
     # === 增强的架构检测逻辑 ===
-    # 方法1: 通过编译器目标检测
-    if(CMAKE_C_COMPILER AND NOT CMAKE_CROSSCOMPILING)
+    if(CMAKE_C_COMPILER)
         execute_process(
             COMMAND ${CMAKE_C_COMPILER} -dumpmachine
             OUTPUT_VARIABLE COMPILER_TARGET
             OUTPUT_STRIP_TRAILING_WHITESPACE
+            ERROR_QUIET  # 添加这个避免错误输出
         )
         message(STATUS "Compiler target: ${COMPILER_TARGET}")
         
         if(COMPILER_TARGET MATCHES "aarch64" OR COMPILER_TARGET MATCHES "arm64")
-            set(DETECTED_ARCH "aarch64")
+            set(DETECTED_ARCH "ARM64")
+            # 如果是交叉编译器目标，强制设置为交叉编译
+            if(NOT COMPILER_TARGET STREQUAL "x86_64-linux-gnu" AND 
+              NOT COMPILER_TARGET MATCHES "i[0-9]86")
+                set(CMAKE_CROSSCOMPILING TRUE CACHE BOOL "Cross compiling" FORCE)
+            endif()
         elseif(COMPILER_TARGET MATCHES "arm" OR COMPILER_TARGET MATCHES "gnueabihf")
-            set(DETECTED_ARCH "arm32")
+            set(DETECTED_ARCH "ARM32")
+            # 如果是交叉编译器目标，强制设置为交叉编译
+            if(NOT COMPILER_TARGET STREQUAL "x86_64-linux-gnu" AND 
+              NOT COMPILER_TARGET MATCHES "i[0-9]86")
+                set(CMAKE_CROSSCOMPILING TRUE CACHE BOOL "Cross compiling" FORCE)
+            endif()
         endif()
     endif()
-    
-    # 方法2: 通过系统处理器检测
+
+    # 方法2: 如果编译器检测失败，通过系统处理器检测
     if(NOT DETECTED_ARCH)
         if(SYSTEM_PROCESSOR_LOWER MATCHES "aarch64" OR SYSTEM_PROCESSOR_LOWER MATCHES "arm64")
-            set(DETECTED_ARCH "aarch64")
+            set(DETECTED_ARCH "ARM64")
         elseif(SYSTEM_PROCESSOR_LOWER MATCHES "arm")
-            set(DETECTED_ARCH "arm32")
+            set(DETECTED_ARCH "ARM32")
         elseif(SYSTEM_PROCESSOR_LOWER MATCHES "x86_64" OR SYSTEM_PROCESSOR_LOWER MATCHES "amd64")
-            set(DETECTED_ARCH "x86_64")
+            set(DETECTED_ARCH "X64")
         elseif(SYSTEM_PROCESSOR_LOWER MATCHES "i386" OR SYSTEM_PROCESSOR_LOWER MATCHES "i686")
-            set(DETECTED_ARCH "x86")
+            set(DETECTED_ARCH "X86")
+        endif()
+    endif()
+
+    # 方法3: 通过指针大小检测（最后的手段）
+    if(NOT DETECTED_ARCH)
+        if(CMAKE_SIZEOF_VOID_P EQUAL 8)
+            set(DETECTED_ARCH "X64")
+        else()
+            set(DETECTED_ARCH "X86")
+        endif()
+    endif()
+
+    # 补充检测：如果编译器路径包含交叉编译关键字，强制设置交叉编译
+    if(CMAKE_C_COMPILER AND NOT CMAKE_CROSSCOMPILING)
+        if(CMAKE_C_COMPILER MATCHES "aarch64|arm64|arm-linux-gnueabihf")
+            set(CMAKE_CROSSCOMPILING TRUE CACHE BOOL "Cross compiling" FORCE)
+            message(STATUS "Forced cross-compiling based on compiler path")
         endif()
     endif()
     
-    # 方法3: 通过交叉编译标志检测
-    if(CMAKE_CROSSCOMPILING)
-        message(STATUS "Cross compiling: ${CMAKE_CROSSCOMPILING}")
-        if(CMAKE_SYSTEM_PROCESSOR MATCHES "aarch64" OR CMAKE_SYSTEM_PROCESSOR MATCHES "arm64")
-            set(DETECTED_ARCH "aarch64")
-        elseif(CMAKE_SYSTEM_PROCESSOR MATCHES "arm")
-            set(DETECTED_ARCH "arm32")
-        endif()
-    endif()
-    
-    # 设置架构相关变量
-    if(DETECTED_ARCH STREQUAL "aarch64")
+    # 设置架构相关变量（保持向后兼容）
+    if(DETECTED_ARCH STREQUAL "ARM64")
         set(PLATFORM_ARM 1)
         set(PLATFORM_ARM64 1)
-        set(DEFAULT_BUILD_DIR "${BUILD_DIR_NAME}LinuxARM64")
-        message(STATUS "Target architecture: ARM64 (AArch64)")
-    elseif(DETECTED_ARCH STREQUAL "arm32")
+    elseif(DETECTED_ARCH STREQUAL "ARM32")
         set(PLATFORM_ARM 1)
         set(PLATFORM_ARM32 1)
-        set(DEFAULT_BUILD_DIR "${BUILD_DIR_NAME}LinuxARM32")
-        message(STATUS "Target architecture: ARM32")
-    elseif(DETECTED_ARCH STREQUAL "x86_64")
+    elseif(DETECTED_ARCH STREQUAL "X64")
         set(PLATFORM_X86 1)
         set(PLATFORM_X64 1)
-        set(DEFAULT_BUILD_DIR "${BUILD_DIR_NAME}LinuxX64")
-        message(STATUS "Target architecture: x86_64")
-    elseif(DETECTED_ARCH STREQUAL "x86")
+    elseif(DETECTED_ARCH STREQUAL "X86")
         set(PLATFORM_X86 1)
-        set(PLATFORM_X86 1)
-        set(DEFAULT_BUILD_DIR "${BUILD_DIR_NAME}LinuxX86")
-        message(STATUS "Target architecture: x86")
-    else()
-        # 默认情况
-        if(CMAKE_SIZEOF_VOID_P EQUAL 8)
-            set(DEFAULT_BUILD_DIR "${BUILD_DIR_NAME}LinuxX64")
-            message(STATUS "Target architecture: 64-bit (auto-detected)")
-        else()
-            set(DEFAULT_BUILD_DIR "${BUILD_DIR_NAME}LinuxX86")
-            message(STATUS "Target architecture: 32-bit (auto-detected)")
-        endif()
     endif()
     
     # Linux 通用设置（只在这里设置一次）
@@ -107,12 +115,21 @@ elseif(UNIX)
     set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -pthread")
     
 else()
-    message(FATAL_ERROR "Unsupported platform: ${CMAKE_SYSTEM_NAME}")
+    message(FATAL_ERROR "Unsupported platform: ${CMAKE_SYSTEM_NAME}") 
+    set(DETECTED_ARCH "Generic")
+endif()
+
+if(DETECTED_ARCH STREQUAL "Generic")  # 如果无法检测架构，使用通用名称 
+    message(WARNING "Could not detect architecture, using generic build directory")
 endif()
 
 # 设置构建目录变量
+set(DEFAULT_BUILD_DIR "${BUILD_DIR_NAME}${CMAKE_SYSTEM_NAME}${DETECTED_ARCH}") 
 set(BUILD_DIR "${DEFAULT_BUILD_DIR}" CACHE STRING "Build directory")
-message(STATUS "Build目录: ${BUILD_DIR}")
+message(STATUS "Build directory: ${BUILD_DIR} (${DEFAULT_BUILD_DIR})")
+message(STATUS "Building for ${CMAKE_SYSTEM_NAME} Platform")
+
+
 
 # 设置 C 标准
 set(CMAKE_C_STANDARD 11)
@@ -133,16 +150,16 @@ endif()
 # 基础编译选项
 set(COMMON_C_FLAGS "-Wall -Wextra -MMD -MP")
 
-# 针对 Win+MinGW 组合的特殊处理
+# 针对 Win+MinGW 组合的特殊处理 不要使用 ANSI/ISO C 标准
 if(PLATFORM_WINDOWS AND CMAKE_C_COMPILER_ID MATCHES "GNU")
-    message(STATUS "Win+MinGW组合: 移除-Wpedantic并启用编译器扩展")
+    message(STATUS "Win+MinGW组合: 移除 -Wpedantic 并启用编译器扩展")
     set(COMMON_C_FLAGS "${COMMON_C_FLAGS}")
     set(ENABLE_C_EXTENSIONS ON)
     # 为MinGW添加ANSI stdio支持
     add_definitions(-D__USE_MINGW_ANSI_STDIO=1)
 else()
-    # 其他组合：保留严格检查
-    message(STATUS "其他平台组合: 启用-Wpedantic并禁用编译器扩展")
+    # 其他组合：保留严格检查 ANSI/ISO C 标准
+    message(STATUS "其他平台组合: 启用 -Wpedantic 并禁用编译器扩展")
     set(COMMON_C_FLAGS "${COMMON_C_FLAGS} -Wpedantic")
     set(ENABLE_C_EXTENSIONS OFF)
 endif()
@@ -165,7 +182,6 @@ if(CMAKE_BUILD_TYPE STREQUAL "Debug" AND NOT ENABLE_ASAN)
             OUTPUT_VARIABLE GCC_VERSION
             OUTPUT_STRIP_TRAILING_WHITESPACE
         )
-        message(STATUS "Detected GCC version: ${GCC_VERSION}")
         
         # 扩展版本检测范围：从 5.0 开始的所有版本都需要 -no-pie
         if(GCC_VERSION VERSION_GREATER_EQUAL "8.5")
@@ -217,10 +233,7 @@ else()
 endif()
 
 # 异常监控配置
-if(ENABLE_MONITOR)
-    message(STATUS "Exception monitoring: ENABLED")
-else()
-    message(STATUS "Exception monitoring: DISABLED")
+if(NOT ENABLE_MONITOR)
     add_definitions(-DCLOSE_EXCEPTION_MONITOR)
 endif()
 
@@ -246,7 +259,7 @@ endif()
 if(BUILD_STATIC)
     if(PLATFORM_LINUX)
         set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -static")
-        message(STATUS "Linux静态链接: ENABLED")
+        message(STATUS "Linux Static link: ENABLED")
     elseif(PLATFORM_WINDOWS)
         # Windows 下使用静态链接
         set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -static")
@@ -257,32 +270,40 @@ if(BUILD_STATIC)
             set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -static-libgcc -static-libstdc++")
         endif()
         
-        message(STATUS "Windows静态链接: ENABLED")
+        message(STATUS "Windows Static link: ENABLED")
     endif()
 else()
-    message(STATUS "静态链接: DISABLED")
+    message(STATUS "Static link: DISABLED")
 endif()
 
 # 包含目录设置
 include_directories(
     source/main
+    source/foundation
     source/inc
-    source/middleware
-    source/openSrc/uthash/src
-    source/openSrc/minIni/dev
+    source/NetComm
+    source/utils
+    source/COM
+    source/protocol
+    source/third_party/uthash/src
+    source/third_party/minIni/dev
 )
 
 # 源文件分组
 # 平台通用源文件
 file(GLOB COMMON_SOURCES
     "source/main/*.c"
-    "source/middleware/*.c"
+    "source/NetComm/*.c"
+    "source/utils/*.c"
+    "source/foundation/*.c"
     "source/src/*.c"
+    "source/COM/*.c"
+    "source/protocol/*.c"
 )
 
 # 第三方库源文件
 file(GLOB THIRDPARTY_SOURCES
-    "source/openSrc/minIni/dev/minIni.c"
+    "source/third_party/minIni/dev/minIni.c"
 )
 
 # 平台特定源文件
@@ -334,42 +355,32 @@ elseif(PLATFORM_LINUX)
     
     # 对于ARM交叉编译，设置库搜索路径
     if(PLATFORM_ARM AND CMAKE_CROSSCOMPILING)
-        if(PLATFORM_ARM64)
-            set(ARM_LIB_PATH "${CMAKE_SOURCE_DIR}/source/lib/aarch64")
-            message(STATUS "ARM64 cross compiling, library path: ${ARM_LIB_PATH}")
-        elseif(PLATFORM_ARM32)
-            set(ARM_LIB_PATH "${CMAKE_SOURCE_DIR}/source/lib/arm32")
-            message(STATUS "ARM32 cross compiling, library path: ${ARM_LIB_PATH}")
-        endif()
+        set(ARM_LIB_PATH "${CMAKE_SOURCE_DIR}/source/lib/${DETECTED_ARCH}") 
+ 
+        # 添加库搜索路径
+        set(CMAKE_LIBRARY_PATH "${ARM_LIB_PATH};${CMAKE_LIBRARY_PATH}")
         
-        if(EXISTS "${ARM_LIB_PATH}")
-            # 添加库搜索路径
-            set(CMAKE_LIBRARY_PATH "${ARM_LIB_PATH};${CMAKE_LIBRARY_PATH}")
-            message(STATUS "Library search path: ${CMAKE_LIBRARY_PATH}")
-
-            file(GLOB UDEV_LIB_CANDIDATES "${ARM_LIB_PATH}/libudev.so*")
-            if(UDEV_LIB_CANDIDATES)
-                list(GET UDEV_LIB_CANDIDATES 0 UDEV_LIB)  # 使用第一个找到的文件
-                message(STATUS "Found udev library: ${UDEV_LIB}")
-            else()
-                message(WARNING "No udev library found in ${ARM_LIB_PATH}")
-            endif()
+        file(GLOB UDEV_LIB_CANDIDATES "${ARM_LIB_PATH}/libudev.so*")
+        if(UDEV_LIB_CANDIDATES)
+            list(GET UDEV_LIB_CANDIDATES 0 UDEV_LIB)  # 使用第一个找到的文件
         else()
-            message(WARNING "ARM library path not found: ${ARM_LIB_PATH}")
+            message(WARNING "No udev library found in ${ARM_LIB_PATH}")
         endif()
     endif()
 
-# 统一搜索
-find_library(UDEV_LIB udev)
-if(UDEV_LIB)
-    message(STATUS "Linked udev: ${UDEV_LIB}")
-    target_link_libraries(${PROJECT_NAME} ${UDEV_LIB})
-    add_definitions(-DHAVE_LIBUDEV=1)
-else()
-    message(WARNING "udev not found, using sysfs fallback")
-endif()
+    # 统一搜索
+    find_library(UDEV_LIB udev)
+    if(UDEV_LIB)
+        message(STATUS "Linked udev: ${UDEV_LIB}")
+        target_link_libraries(${PROJECT_NAME} ${UDEV_LIB})
+        add_definitions(-DHAVE_LIBUDEV=1)
+    else()
+        message(WARNING "udev not found, using sysfs fallback")
+    endif()
 
 endif()
+
+message(STATUS "${DETECTED_ARCH} Library Search Path: ${CMAKE_LIBRARY_PATH}")
 
 # 目标属性设置
 set_target_properties(${PROJECT_NAME} PROPERTIES
@@ -392,8 +403,8 @@ if(PLATFORM_LINUX)
     )
     
     # 创建 systemd 服务文件（可选）
-    if(EXISTS "${CMAKE_SOURCE_DIR}/scripts/com2tcp-server.service")
-        install(FILES scripts/com2tcp-server.service
+    if(EXISTS "${CMAKE_SOURCE_DIR}/scripts/${PROJECT_NAME}.service")
+        install(FILES scripts/${PROJECT_NAME}.service
             DESTINATION /source/lib/systemd/system
             COMPONENT systemd
         )
@@ -459,37 +470,7 @@ if(CLANG_FORMAT)
     )
 endif()
 
-# 依赖检查
-# 检查必要的头文件
-#include(CheckIncludeFile)
-#if(PLATFORM_LINUX__)
-#    # 对于交叉编译，设置包含路径
-#    if(CMAKE_CROSSCOMPILING)
-#        # 添加工具链的包含路径
-#        if(EXISTS "${CMAKE_SYSROOT}/usr/include")
-#            include_directories(SYSTEM "${CMAKE_SYSROOT}/usr/include")
-#        endif()
-#        if(EXISTS "${CMAKE_FIND_ROOT_PATH}/usr/include")
-#            include_directories(SYSTEM "${CMAKE_FIND_ROOT_PATH}/usr/include")
-#        endif()
-#    endif()
-#    
-#    check_include_file("pthread.h" HAVE_PTHREAD_H)
-#    check_include_file("sys/socket.h" HAVE_SYS_SOCKET_H)
-#    check_include_file("arpa/inet.h" HAVE_ARPA_INET_H)
-#    check_include_file("termios.h" HAVE_TERMIOS_H)
-#    
-#    if(NOT HAVE_PTHREAD_H)
-#        message(FATAL_ERROR "pthread.h not found - required for Linux build. Please check your cross-compilation toolchain installation.")
-#    endif()
-#    if(NOT HAVE_SYS_SOCKET_H)
-#        message(FATAL_ERROR "sys/socket.h not found - required for networking. Please check your cross-compilation toolchain installation.")
-#    endif()
-#    if(NOT HAVE_TERMIOS_H)
-#        message(FATAL_ERROR "termios.h not found - required for serial port support. Please check your cross-compilation toolchain installation.")
-#    endif()
-#endif()
-
+ 
 # 编译器特性检查
 include(CheckCCompilerFlag)
 if(PLATFORM_LINUX)
@@ -500,24 +481,20 @@ if(PLATFORM_LINUX)
 endif()
 
 # 输出构建摘要
-message(STATUS "")
+message(STATUS "") 
 message(STATUS "=== Build Configuration Summary ===")
 message(STATUS "Project: ${PROJECT_NAME}")
-message(STATUS "Platform: ${CMAKE_SYSTEM_NAME}")
-message(STATUS "Architecture: ${CMAKE_SYSTEM_PROCESSOR}")
-if(PLATFORM_ARM64)
-    message(STATUS "Target: ARM64 (AArch64)")
-elseif(PLATFORM_ARM32)
-    message(STATUS "Target: ARM32")
-elseif(PLATFORM_X64)
-    message(STATUS "Target: x86_64")
-elseif(PLATFORM_X86)
-    message(STATUS "Target: x86")
-endif()
+message(STATUS "Target Platform: ${CMAKE_SYSTEM_NAME} ${DETECTED_ARCH}")
+message(STATUS "Host Architecture: ${CMAKE_HOST_SYSTEM_PROCESSOR}")  # 添加主机架构
+message(STATUS "Target Architecture: ${CMAKE_SYSTEM_PROCESSOR}")    # 添加目标架构
 message(STATUS "Compiler: ${CMAKE_C_COMPILER_ID} ${CMAKE_C_COMPILER_VERSION}")
+message(STATUS "Compiler path: ${CMAKE_C_COMPILER}")  # 添加编译器路径
 message(STATUS "Build type: ${CMAKE_BUILD_TYPE}")
 message(STATUS "Exception monitoring: ${ENABLE_MONITOR}")
 message(STATUS "Static linking: ${BUILD_STATIC}")
 message(STATUS "C Extensions: ${ENABLE_C_EXTENSIONS}")
 message(STATUS "Cross compiling: ${CMAKE_CROSSCOMPILING}")
+if(CMAKE_CROSSCOMPILING)
+    message(STATUS "Cross compiler: ${CMAKE_C_COMPILER}")  # 显示交叉编译器
+endif()
 message(STATUS "===================================")

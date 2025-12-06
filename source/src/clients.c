@@ -23,17 +23,19 @@
 /*================== 头文件包含     =========================================*/
 #include "clients.h"
 #include "main.h"
-#include "public.h"
-#include "logPrint.h"
+#include "commonUtils.h"
+#include "log.h"
 #include "COM.h"
+#include "COMAutoReOpen.h"
 #include "COMinfo.h"
 #include "TrafficStats.h"
 #include "Command.h"
 #include "configSave.h"
 
+#include "uthash.h"
+
 #include <stdio.h>
 #include <stdarg.h>
-#include "uthash.h"
 
 #ifdef _WIN32
 #include <process.h>
@@ -70,6 +72,8 @@ typedef struct {
   ClientsNum_t  num;
 } ClientList_t;
 
+/*================== 本地宏定义      ========================================*/
+/*================== 本地常量声明    ========================================*/
 /*================== 本地变量声明    ========================================*/
 static mutex_type csClient; 
 static ClientNode_t *clientPool = NULL, *socketHashTable = NULL;
@@ -103,6 +107,7 @@ const socket_t *getClientSocket(uint16_t index)
   return clientPool[index].socket != INVALID_SOCKET_VALUE ? &clientPool[index].socket : NULL;
 }
 
+// 通过套接字获取客户端索引，返回真代表这个索引有效
 bool getClientIndex(const socket_t *Socket, uint16_t *retIndex)
 { 
   if( Socket == NULL )
@@ -116,10 +121,12 @@ bool getClientIndex(const socket_t *Socket, uint16_t *retIndex)
   return targetClient ? true : false; 
 }
 
+// 使用套接字的方式关闭客户端，传统搜索过程效率低
 void CloseClientSocket(const socket_t *socket, const char *reason)
 { 
-  EnterCriticalSection_Wrapper(&csClient); 
-  ClientNode_t* nodeAddr = FindClientBySocket(socket, true);
+  EnterCriticalSection_Wrapper(&csClient);
+  // 保存客户端节点副本
+  ClientNode_t* nodeAddr = FindClientBySocket(socket, true); 
   char *socketCloseInfo = getPrintf("关闭套接字，节点%s，%s",
       nodeAddr ? "存在":"没有", reason ? reason:"未知"); 
   LeaveCriticalSection_Wrapper(&csClient);
@@ -152,6 +159,7 @@ void ClientResourceInit(bool start)
   }
 }
 
+// 获取最早的客户端
 static ClientNode_t* ClientList_GetOldest(void) 
 {
   ClientNode_t* oldest = NULL; 
@@ -166,7 +174,7 @@ static ClientNode_t* ClientPool_Alloc(void)
   for (uint16_t i = 0; i < clientList.num.max; i++) 
     if (clientPool[i].socket == INVALID_SOCKET_VALUE) 
       return &clientPool[i];
-  return NULL;
+  return NULL;  // 池满
 }
 
 static void ClientPool_Free(ClientNode_t* node) 
@@ -175,7 +183,8 @@ static void ClientPool_Free(ClientNode_t* node)
     node->socket = INVALID_SOCKET_VALUE;
     node->hThread = (thread_t)0;
     node->sendTempUnav = 0;
-    node->tempUnavStart = 0;
+    node->tempUnavStart = 0;   // 重置时间计数器
+  //memset(node->ip, 0, sizeof node->ip);
   }
 }
 
@@ -217,6 +226,9 @@ static void ClientList_Remove(ClientNode_t* node)
   ClientPool_Free(node);
 }
 
+// 通过Socket查找节点
+// isHASH 传入真快速搜索，存在客户端列表的套接字，不一定能搜索到
+// isHASH 传入假普通搜索，存在客户端列表的套接字，基本都能搜索到
 static ClientNode_t* FindClientBySocket(const socket_t *socket, bool isHASH)
 {
   if( socket == NULL )
@@ -234,6 +246,7 @@ static ClientNode_t* FindClientBySocket(const socket_t *socket, bool isHASH)
   return found;
 }
 
+// 初始化空闲池
 static void ClientList_Init(void) {
   clientList.head = NULL;
   clientList.tail = NULL;
@@ -267,7 +280,7 @@ static threadRet WINAPI ClientRecvDataThread(void *param)
 
   // 设置socket为非阻塞模式
 #ifdef _WIN32
-  u_long mode = 1;
+  u_long mode = 1;  // 1表示非阻塞，0表示阻塞
   int block = ioctlsocket(clientInfo->socket, FIONBIO, &mode);
 #else
   int flags = fcntl(clientInfo->socket, F_GETFL, 0);
@@ -279,8 +292,9 @@ static threadRet WINAPI ClientRecvDataThread(void *param)
     threadExitInfo = getPrintf("线程退出，设置非阻塞失败。错误代码：%d ", error); 
   }
   
+  // 发送连接成功消息
   printfSend(&clientInfo->socket, "%s! your index %d\n", block==0?"OK":"Fail", clientInfo->index);
-  sendComPortsListToClient( &clientInfo->socket, true );
+  sendComPortsListToClient( &clientInfo->socket, true ); // 向该客户端发送可用端口号
 
   while ( block == 0 ) {
     if (clientInfo->socket == INVALID_SOCKET_VALUE){
@@ -302,13 +316,13 @@ static threadRet WINAPI ClientRecvDataThread(void *param)
           bytesReceived, error);
       break;
     }
-    else if (retSelect == 0) { 
+    else if (retSelect == 0) {  // 超时，没有数据可读，继续循环
       updataConsoleTitle(titleString);
       continue;
     }
 
     bytesReceived = recv(clientInfo->socket, tcpRecvBuffer, sizeof tcpRecvBuffer - 1, 0);
-    if (bytesReceived == 0) {
+    if (bytesReceived == 0) { // 客户端正常关闭连接
       error = GetLastError();
       threadExitInfo = getPrintf("线程退出，优雅地断开连接。错误代码：%d，接收：%d", 
           error, bytesReceived); 
@@ -321,7 +335,7 @@ static threadRet WINAPI ClientRecvDataThread(void *param)
 #else
       if (error == EWOULDBLOCK || error == EAGAIN)
 #endif
-        continue;
+        continue; // 非阻塞模式下没有数据是正常情况
 #ifdef _WIN32
       else if (error == WSAECONNRESET || error == WSAECONNABORTED) {
 #else
@@ -331,15 +345,16 @@ static threadRet WINAPI ClientRecvDataThread(void *param)
             error, bytesReceived);
         break;
       }
-      else {
+      else {  // 其他错误，断开连接
         threadExitInfo = getPrintf("线程退出，接收错误。错误代码：%d，接收：%d", 
             error, bytesReceived);
         break;
       }
     }
+     // 正常接收到数据
+    tcpRecvBuffer[bytesReceived] = '\0';  // 防止命令解析异常
 
-    tcpRecvBuffer[bytesReceived] = '\0';
-
+    // 检查是否是控制命令
     if (strnicmp(tcpRecvBuffer, CTRL_HEADER, strlen(CTRL_HEADER)) == 0) {
       if (saveInfo.serverPrintData == 3) 
         SafePrintf("Client [%-2d]IP:%s len:%d cmd: %-60s\n", 
@@ -349,14 +364,17 @@ static threadRet WINAPI ClientRecvDataThread(void *param)
       continue;
     }
     
+    // 判断串口是否已经打开
     if (getComIsOpen() == false) {
       printfSend(&clientInfo->socket, "COM not open !\n");
       continue;
     }
 
+    // 发送独占检查
     if( sendMonopolizeExamine(clientInfo) )
         continue;
-        
+    
+    // 普通数据，发送到串口
     uint32_t getError = 0;
     bytesWritten = ComPortSendData((uint8_t*)tcpRecvBuffer, bytesReceived, &getError);
     if( bytesWritten != bytesReceived )
@@ -377,7 +395,7 @@ static threadRet WINAPI ClientRecvDataThread(void *param)
         printHex((uint8_t*)tcpRecvBuffer, bytesReceived, 40, 2);
     }
     
-    #ifdef __TRAFFIC_STATS_H_
+    #ifdef __TRAFFIC_STATS_H_ // 流量统计
     trafficStats.net.totalBytesReceived += bytesReceived;
     trafficStats.com.totalBytesSent += bytesWritten;
     #endif
@@ -387,6 +405,8 @@ static threadRet WINAPI ClientRecvDataThread(void *param)
   return (threadRet)0;
 }
 
+// 客户端数据给串口独占检查
+// 返回：真 请结束循环不要发给串口，假 放行继续
 static bool sendMonopolizeExamine(ClientNode_t* client)
 {
   if( client == NULL )
@@ -423,7 +443,7 @@ bool addNewClient(socket_t socket, const char *ip)
   EnterCriticalSection_Wrapper(&csClient);
   
   ClientNode_t* newNode = ClientPool_Alloc();
-  if (!newNode) {
+  if (!newNode) { // 池满，踢掉最老的
     newNode = ClientList_GetOldest();
     if (newNode) {
       printfSend(&newNode->socket, "You are kicked due to server full! "
@@ -451,7 +471,6 @@ bool addNewClient(socket_t socket, const char *ip)
   #endif
 
   newNode->hThread = threadCreate(&newNode->threadId, ClientRecvDataThread, newNode);
-  
   if (newNode->hThread) {
     static uint64_t connectCount = 0;
     SafePrintf("Client [%-2d]IP:%-16s Connected %d/%d Count:%" PRIu64 "\n",
@@ -464,6 +483,7 @@ bool addNewClient(socket_t socket, const char *ip)
   return true;
 }
 
+// 获取所有客户端IP和索引
 void getAllClientIPandIndexInfo(char *retStr, uint16_t len) 
 {
   if(retStr == NULL || len == 0)
@@ -499,6 +519,7 @@ static void CloseClient(ClientNode_t* node, const char *reason)
   EnterCriticalSection_Wrapper(&csClient); 
   bool isSelfCall = (node->threadId == GetCurrentThreadId_Wrapper());
 
+  // 使用原子操作确保只有一个线程执行关闭
   #ifdef _WIN32
   if (InterlockedCompareExchange(&node->isClosing, 1, 0)) {
   #else
@@ -511,7 +532,8 @@ static void CloseClient(ClientNode_t* node, const char *reason)
     return;
   }
 
-  thread_t closeThread = node->hThread;
+  thread_t closeThread = node->hThread; // 暂存线程副本
+  //先关闭套接字，促使客户端接收线程退出，异步关闭的话要尽快促使线程退出
   int closeSocketRet = -1;
   if (node->socket != INVALID_SOCKET_VALUE)  
     closeSocketRet = closeSocket(node->socket); 
@@ -521,7 +543,9 @@ static void CloseClient(ClientNode_t* node, const char *reason)
   
   const char *CloseInfo = " ";
 
+  // 如果是线程自己调用的关闭，不等待也不立即关闭句柄
   if (closeThread && isSelfCall == false) {
+    // 外部调用，等待线程退出
     DWORD waitResult = WaitForSingleObject_Wrapper(closeThread, 1000); 
     if (waitResult == WAIT_TIMEOUT) {
       SafePrintf("Client [%-2d]IP:%-16s recv thread wait timeout\n", 
@@ -582,17 +606,19 @@ static void sendFailErrorHandle(bool wide, ClientNode_t *ClientInfo, int error,
   }
 }
 
+// Socket 如果为空就会发送给所有客户端，不为空且有效的话就会只发送给指定的客户端
 int sendDataToClients(const socket_t *socket, const char* buff, int len) 
 {
   EnterCriticalSection_Wrapper(&csClient);
   int sendRet = 0, error = 0; 
   uint64_t currentTime = 0; 
   
+  // 收集需要关闭的客户端，在临界区外处理
   uint16_t closeCount = 0;
   static int errorList[ MAX_CLIENTS ] = {0};
   static ClientNode_t *clientsToClose[ MAX_CLIENTS ] = {0};
 
-  if (socket && *socket != INVALID_SOCKET_VALUE) {
+  if (socket && *socket != INVALID_SOCKET_VALUE) {  // 单播 发送给指定客户端
     do {
       sendRet = send(*socket, buff, len, 0);
       if ( sendRet > 0 ) 
@@ -600,11 +626,13 @@ int sendDataToClients(const socket_t *socket, const char* buff, int len)
       
       error = GetLastError();
 
+      // 使用静态变量缓存上次找到的客户端节点
       static ClientNode_t *lastFoundClient = NULL;
       ClientNode_t *targetClient = NULL;
+      // 首先检查是否是上次找到的客户端
       if (lastFoundClient && lastFoundClient->socket == *socket) 
         targetClient = lastFoundClient;
-      else
+      else  // 如果不是上次的客户端，重新搜索
         targetClient = lastFoundClient = FindClientBySocket(socket, true);
 
       sendFailErrorHandle(false, targetClient, error, &closeCount, 
@@ -612,14 +640,14 @@ int sendDataToClients(const socket_t *socket, const char* buff, int len)
       if( closeCount && targetClient == lastFoundClient )
         lastFoundClient = NULL;
     } while (0);
-  }
+  }       // 广播 发送给所有客户端
   else for (ClientNode_t *next, *curr = clientList.head; curr; curr = next ) {
-    next = curr->next;
+    next = curr->next;  // 先保存下一个节点，因为curr可能在循环中被删除
     if( curr->socket == INVALID_SOCKET_VALUE ) 
       continue;
     
     int ret = send(curr->socket, buff, len, 0);
-    if (ret > 0) {
+    if (ret > 0) {  // 发送成功，重置计数器
       curr->tempUnavStart = curr->sendTempUnav = false;
       sendRet += ret;
       continue;
@@ -636,6 +664,7 @@ int sendDataToClients(const socket_t *socket, const char* buff, int len)
 
   LeaveCriticalSection_Wrapper(&csClient);
   
+   // 在临界区外处理关闭客户端的请求
   for (uint16_t i = 0; i < closeCount; i++) {
     char *sendFailInfo = getPrintf("%s播发送失败，持续不可用时间：%" PRIu64 " ms，错误代码：%d",
         socket? "单" : "广", currentTime - clientsToClose[i]->tempUnavStart, errorList[i]);
@@ -645,9 +674,16 @@ int sendDataToClients(const socket_t *socket, const char* buff, int len)
   return sendRet;
 }
 
+/**
+ * @brief  套接字发送字符串，使用类似于printf函数
+ * @param 
+ *		@arg Socket：指定发给客户端套接字指针，如果为孔就不指定客户端发送给所有客户端
+ *		@arg fmt: printf 格式
+ * @retval 
+ */
 int printfSend(const socket_t *Socket, const char *fmt, ...)
 {
-    static __thread char stringBuff[1024 * 4 + sizeof(uint32_t)];
+    static __thread char stringBuff[1024 * 4 + sizeof(uint32_t)];  // 字符串缓冲区
     strcpy(stringBuff, CTRL_HEADER);
     static uint8_t ctrlHeaderLen = sizeof CTRL_HEADER - 1; // 减去字符串结尾的 '\0'
 
@@ -656,10 +692,12 @@ int printfSend(const socket_t *Socket, const char *fmt, ...)
     int retLen = vsnprintf(stringBuff + ctrlHeaderLen, 
           sizeof stringBuff - ctrlHeaderLen - sizeof(uint32_t), fmt, args);
     va_end(args);
-
-    uint32_t totalLength = ctrlHeaderLen + retLen;
-    uint8_t paddingZeros = sizeof(uint64_t);
     
+    // 在字符串后添加多个空字符作为终止符，帮助接收方识别消息边界
+    uint32_t totalLength = ctrlHeaderLen + retLen;
+    uint8_t paddingZeros = sizeof(uint64_t);   // 增加空字符数量，例如使用8个空字符
+    
+    // 确保不超出缓冲区
     if (totalLength + paddingZeros > sizeof stringBuff)
         paddingZeros = sizeof stringBuff - totalLength;
     
@@ -668,6 +706,12 @@ int printfSend(const socket_t *Socket, const char *fmt, ...)
     return sendDataToClients(Socket, stringBuff, totalLength + sizeof(uint16_t)); 
 }
 
+/**
+ * @brief 踢掉所有已连接的客户端。
+ * @param reason 踢掉客户端的原因（可选，可为NULL）
+ * @attention 不能同步调用，也就是不能由任何客户端发起，
+ *  如果要用。必须异步调用或者由不在客户端列表里的成员发起，比如UDP搜索服务。
+ */
 void KickAllClients(const char* reason)
 {
   const char* kickReason = reason? reason : "NULL";
@@ -682,6 +726,13 @@ void KickAllClients(const char* reason)
   clientList.num.count = 0;
   runInfo.monopolizeComSendIndex = NULL;
   runInfo.monopolizeComRecvIndex = NULL;
+}
+
+// 这是一个函数会被外部调用
+void usbDeviceChange(void)
+{
+  sendComPortsListToClient(NULL, true);
+  COM_AutoReOpen_OnDeviceChange();
 }
 
 void sendComPortsListToClient(socket_t *socket, bool VPID)

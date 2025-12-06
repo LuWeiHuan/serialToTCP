@@ -16,6 +16,7 @@ extern "C" {
 #define RECV_4K_MAX         (RECV_BUFFER_SIZE) - 4096 - 1
 
 #define VERSIONS            "V0.5"
+#define SAVE_DIR            "./serverInfo"
 
 #if MAX_CLIENTS<3
 #error "建议不要把客户端数量设置那么少，至少给3个嘛，老铁！"

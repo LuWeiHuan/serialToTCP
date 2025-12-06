@@ -19,8 +19,8 @@
 
 #include "main.h"
 #include "Queue.h"
-#include "logPrint.h"
-#include "public.h"
+#include "log.h"
+#include "commonUtils.h"
 #include "COM.h"
 #include "DCM.h"
 #include "TrafficStats.h"
@@ -66,25 +66,29 @@ int main(int argc, char const *argv[])
   PlatformSpecificInit(); // 平台通用初始化 
   printBuildInfo();
 
-  if( !logFileInit() ) // 初始化日志文件
-    return -1;
-
   // 初始化异常监控，它会设置信号处理
   ProcessExceptionMonitorInit(); 
   microFuncCodeTest();
-  loadConfig();       // 加载配置信息
 
-  if( !startServer(argc, argv) ) // 启动服务器
+  SafePrintResourceInit(true);
+
+  if( !startServer(argc, argv) )  // 启动服务器
     return -1;
+
+  if( !logFileInit() )            // 初始化日志文件
+    return -1;
+
+  loadConfig();                 // 加载配置信息
   
   // 启动各种服务 
   DiscoveryService(true);       // 启动发现服务
   startAsyncFuncHandle(true);   // 启动异步函数处理
-  startTrafficMonitor();        // 流量统计
   ClientResourceInit(true);     // 客户端管理初始化
   ComPortResourceInit(true);    // 串口资源初始化
   DeviceChangeMonitor(true);    // 启动设备插拔变化监听 
   ServerConnectInit(true);      // 服务器连接初始化
+  start1SecRunOneThread();      // 启动1秒执行一次的线程
+  
   // 主事件循环 
   while( true ) {
     
@@ -124,6 +128,7 @@ int main(int argc, char const *argv[])
   Platform_Cleanup();
   PlatformSpecificCleanup();
   
+
   SafePrintf("程序正常退出\n");
   return 0;
 }
@@ -137,8 +142,7 @@ void voluntaryWithdrawal(const char *reason)
 }
 
 static bool logFileInit(void)
-{
-  SafePrintResourceInit(true);
+{ 
   char *platform = "Win";
   #ifdef __linux
   platform = "Linux";
@@ -151,7 +155,7 @@ static bool logFileInit(void)
 #endif
 
   const char *logFileName = getPrintf("logFile%s-PORT%d", platform, mainServer.port); 
-  bool start = logStorageInit("./log", logFileName, logLevel, 2, 5, 200);
+  bool start = logStorageInit(SAVE_DIR, logFileName, logLevel, 2, 5, 200);
 
   if(!start)
     printf("Failed to initialize log storage\n");
@@ -240,7 +244,7 @@ static void microFuncCodeTest(void)
   Sleep(10);  // 跨平台的Sleep
   uint16_t end_time = getRuningTimeMs();
 
-  SafePrintf("内存分配测试: %s，时间函数测试: 耗时 %d/10 ms，微功能测试结束。已经运行：%d ms。\n", 
+  printf("内存分配测试: %s，时间函数测试: 耗时 %d/10 ms，微功能测试结束。已经运行：%d ms。\n", 
     test_ptr? "成功":"失败", end_time - start_time, (uint16_t)getRuningTimeMs());
 }
 

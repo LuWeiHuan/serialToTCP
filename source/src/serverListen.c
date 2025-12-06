@@ -30,7 +30,7 @@
 #endif
 
 #include "main.h"
-#include "logPrint.h"
+#include "log.h"
 #include "serverListen.h"
 
 /*================== 本地宏定义     =========================================*/
@@ -143,6 +143,17 @@ bool serverStart(serverInfo_t *server)
   return true;
 }
 
+/*=============================================================================
+ 功   能：监听新客户端连接
+ 参   数：ServerSocket  --> 服务端套接字
+					retSocket		  --> 有新的客户端连接这里会返回客户端套接字
+					retIP 	      --> 有新的客户端连接这里会返回客户端IP 
+ 返   回：-2  请传递有效的服务端结构体
+          -1  这个服务端套接字是无效的，建议重新创建服务端套接字
+           0  则是有新的客户端连接
+      大于 0  的话请重新监听
+ 描   述：无
+=============================================================================*/
 int8_t listenNewClientConnect(serverInfo_t *server)
 {    
   if( server == NULL ) 
@@ -184,6 +195,9 @@ int8_t listenNewClientConnect(serverInfo_t *server)
   return 0; // 有新的客户端连接
 }
 
+// 解析命令行参数获取端口号
+// 参数: argc - 参数个数, argv - 参数数组, defaultPort - 默认端口号
+// 返回值: 解析成功的端口号，如果无效则返回0
 uint16_t ParsePortParameter(int argc, char const* argv[]) 
 {
   for (int i = 1; i < argc; i++) {

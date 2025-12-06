@@ -21,8 +21,8 @@
 
 /*================== 头文件包含     =========================================*/
 #include "ServerConnect.h"
-#include "logPrint.h"
-#include "public.h"
+#include "log.h"
+#include "commonUtils.h"
 
 #include "clients.h"
 #include "hostConnect.h"
@@ -71,9 +71,9 @@ threadRet WINAPI ConnectServerThread(void * lpParam);
 
 void ServerConnectInit(bool start)
 {
-  if( start )
+  if( start ) // 初始化临界区（在程序启动时调用）
     InitializeCriticalSection_Wrapper(&csClient);
-  else
+  else        // 清理资源（在程序退出时调用）
     DeleteCriticalSection_Wrapper(&csClient);
 }
 
@@ -86,16 +86,27 @@ static void DisconnectingServer(void)
   const char* DisconnectServerInfo = getPrintf("断开之前连接的服务器，套接字：%s%s效", 
       ret? "存在":"没有", client.socket == INVALID_SOCKET_VALUE? "无":"有"); 
   if (ret == false || client.socket == INVALID_SOCKET_VALUE) {
+    // SafePrintf("%s\n", DisconnectServerInfo);
     LeaveCriticalSection_Wrapper(&csClient);
     return;
   }
 
   printfSend(&client.socket, "Connect New Server, You are Disconnect!\n" ); 
   CloseClientSocket( &client.socket, DisconnectServerInfo);
+  // closesocket(client.socket);
   client.socket = INVALID_SOCKET_VALUE;
   LeaveCriticalSection_Wrapper(&csClient);
 }
 
+/**
+ * @brief 连接到服务器
+ * @param host 主机名或IP地址，当主机名为 "disconnect" 或空 表示断开服务器连接
+ * @param port 端口号          当端口号为 0 表示断开服务器连接
+ * @param ResultCallback 连接结果通知回调
+ * @param arg   连接结果通知回调 携带的参数
+ * @return 无
+ * @attention 连接新服务器之前，如果之前已经连接会断开
+ */
 void ConnectToServer(const char* host, uint16_t port, 
           connectResultCallback ResultCallback, void *arg)
 { 
@@ -145,7 +156,7 @@ threadRet WINAPI ConnectServerThread(void * lpParam)
       clientInfo->serverPort, CONNECT_TIMEOUT_MS, 
       &clientInfo->socket, clientInfo->serverIP);
 
-  if( ConnectRet ){  // 连接成功将连接交给clients.c管理
+  if( ConnectRet ){  // 连接成功将连接交给 clients.c 管理
     ConnectRet = addNewClient(clientInfo->socket, clientInfo->serverIP);
     if (ConnectRet == false) {
       SafePrintf("Failed to add client to management\n");
