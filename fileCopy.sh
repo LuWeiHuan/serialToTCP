@@ -65,18 +65,25 @@ local_copy() {
 ssh_copy() {
     local source_file="$1"
     local password_file="$2"
-    local remote_host="192.168.1.40"
-    local remote_path="/home/cat/software/com2TCP/com2tcp_server.new"
-    
+    local password_value=$(cat "$password_file" | tr -d '\n\r')
+    local remote_host="$3"
+    local remote_path="/home/cat/software/com2tcp_server"
+    local temp_path="${remote_path}.tmp"
+
     if check_file "$password_file"; then
         log_info "通过SSH推送到远程主机..."
-        
+        # log_info "密码: $password_value"
         # 先检查网络连通性
         if ping -c 1 -W 2 "$remote_host" &> /dev/null; then
             # 使用更安全的SSH选项
-            if sshpass -f "$password_file" scp -o StrictHostKeyChecking=accept-new -o ConnectTimeout=10 \
-                "$source_file" "root@$remote_host:$remote_path"; then
+            if sshpass -f "$password_file" scp -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
+                  -o ConnectTimeout=3 "$source_file" "root@$remote_host:$temp_path"; then
+                
                 log_success "SSH推送成功"
+
+                sshpass -f "$password_file" ssh -o StrictHostKeyChecking=no \
+                -o UserKnownHostsFile=/dev/null "root@$remote_host" \
+                "mv -f $temp_path $remote_path"
             else
                 log_error "SSH推送失败"
                 return 1
@@ -105,9 +112,9 @@ main() {
     # 本地复制
     local_copy "$source_file" "/mnt/NFS"
     local_copy "$source_file" "/mnt/tftp"
-    
+
     # SSH复制
-    ssh_copy "$source_file" "password.txt"
+    ssh_copy "$source_file" "password.txt" "192.168.1.150"
     
     log_success "文件分发完成"
 }

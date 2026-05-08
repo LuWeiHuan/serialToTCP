@@ -19,6 +19,7 @@ typedef struct {
   uint8_t   serverPrintData;    // 0，不显示，1为字符串显示，2为Hex显示，3只显示命令
   uint32_t  COMalignedRecv4K;   // 设置串口接收多少个对齐数据包就发送
   char      hostName[50];       // 保存的主机名
+  char      passwordMD5[32];    // 密码MD5值
 } saveInfo_t;
 
 typedef struct {

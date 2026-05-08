@@ -32,11 +32,26 @@
 #include <stdlib.h>
 #include <unistd.h>
 #include <sys/wait.h>
+#include <ctype.h>
 #endif
 
 
 /*================== 全局共享变量    ========================================*/
 /*================== 本地常量声明    ========================================*/
+// 执行一条系统命令，想要执行需线先验证密码，默认密码在 mian.h 中定义
+// 免验证密码即可执行的命令列表
+static bool passwordVerify = false;
+static const char* freeCommandsList[] = {
+    "cls",
+    "clear",
+    // 后续可在此添加更多命令，例如：
+    // "help",
+    // "dir",
+    // "ls",
+    // "pwd",
+    // "echo",
+};
+
 /*================== 本地变量声明    ========================================*/
 /*================== 本地数据类型   =========================================*/
 typedef void (*CmdHandlerFunc)(socket_t*, char*);
@@ -45,6 +60,12 @@ typedef struct {
     const char* cmdName;
     CmdHandlerFunc handler;
 } CommandEntry;
+
+typedef struct{
+  char cmd[1024];
+  socket_t *Socket;
+  bool getResult;
+}asyncExecuteSystemCommands_t;
 
 /*================== 本地宏定义     =========================================*/
 #define DECOLLATOR    ",\n"
@@ -59,6 +80,8 @@ static void cmdSetComAsyncRecv(socket_t*, char*);
 static void cmdPrintAllclientIP(socket_t*, char*);
 static void cmdSetMonopolize(socket_t*, char*);
 static void cmdDataPrintMode(socket_t*, char*);
+static void cmdUpdatePassword(socket_t *, char*);
+static void cmdVerifyPassword(socket_t*, char*);
 static void cmdRunSystemCmd(socket_t*, char*);
 static void cmdServerConnect(socket_t*, char*);
 static void cmdOpenSerialCom(socket_t*, char*);
@@ -68,30 +91,34 @@ static void cmdKickAllClients(socket_t*, char*);
 static void cmdsetCOMalignedNum(socket_t*, char*);
 static void cmdAutoReOpenPort(socket_t*, char*);
 
-
 /*================== 命令映射表     =========================================*/
 static const CommandEntry cmdTable[] = {
-  {"comlistVPID",           cmdComlist},
-  {"comlistID",             cmdComlist},
-  {"comlist",               cmdComlist},
-  {"runNewServer",          cmdRunNewServer},
-  {"PrintAllclientIP",      cmdPrintAllclientIP},
-  {"setCOMasyncSend",       cmdSetComAsyncSend},
-  {"setCOMasyncRecv",       cmdSetComAsyncRecv},
-  {"setCOMalignedNum",      cmdsetCOMalignedNum},
-  {"setCOMdata",            cmdSetMonopolize},
-  {"exit",                  cmdServerOverExit},
-  {"serverPrintData",       cmdDataPrintMode},
-  {"SystemCommands",        cmdRunSystemCmd},
-  {"ExecuteSystemCommands", cmdRunSystemCmd},
-  {"serverConnect",         cmdServerConnect},
-  {"OK! your index",        cmdDoNotConnectCOM2TCP},
-  {"Not Command",           cmdDoNotConnectCOM2TCP},
-  {"SetLogPollCut",         cmdSetLogPollCut},
-  {"KickAllClients",        cmdKickAllClients},
-  {"autoReOpenPort",        cmdAutoReOpenPort},
-  {"autoReOpenCOM",         cmdAutoReOpenPort},
-  {"open",                  cmdOpenSerialCom}
+  {"comlistVPID",                     cmdComlist},
+  {"comlistID",                       cmdComlist},
+  {"comlist",                         cmdComlist},
+  {"runNewServer",                    cmdRunNewServer},
+  {"PrintAllclientIP",                cmdPrintAllclientIP},
+  {"setCOMasyncSend",                 cmdSetComAsyncSend},
+  {"setCOMasyncRecv",                 cmdSetComAsyncRecv},
+  {"setCOMalignedNum",                cmdsetCOMalignedNum},
+  {"setCOMdata",                      cmdSetMonopolize},
+  {"exit",                            cmdServerOverExit},
+  {"serverPrintData",                 cmdDataPrintMode},
+  {"SystemCommands",                  cmdRunSystemCmd},
+  {"SystemCommandsResult",            cmdRunSystemCmd},
+  {"ExecuteSystemCommandsResult",     cmdRunSystemCmd},
+  {"SystemCommandsGetResult",         cmdRunSystemCmd},
+  {"ExecuteSystemCommandsGetResult",  cmdRunSystemCmd},
+  {"UpdatePassword",                  cmdUpdatePassword},
+  {"VerifyPassword",                  cmdVerifyPassword},
+  {"serverConnect",                   cmdServerConnect},
+  {"OK! your index",                  cmdDoNotConnectCOM2TCP},
+  {"Not Command",                     cmdDoNotConnectCOM2TCP},
+  {"SetLogPollCut",                   cmdSetLogPollCut},
+  {"KickAllClients",                  cmdKickAllClients},
+  {"autoReOpenPort",                  cmdAutoReOpenPort},
+  {"autoReOpenCOM",                   cmdAutoReOpenPort},
+  {"open",                            cmdOpenSerialCom}
 };
 
 /**
@@ -396,14 +423,138 @@ static void cmdDataPrintMode(socket_t *Socket, char* commandData)
   broadcastSendHandleResult(Socket, setInfo);
 }
 
-// 执行一条系统命令
+
+
+static bool isPasswordFreeCommand(const char* cmd) 
+{
+  if (cmd == NULL) 
+    return false;
+  while (isspace((uint8_t)*cmd)) cmd++;   // 跳过开头的空格
+  
+  for (uint8_t i = 0; i < sizeof(freeCommandsList) / sizeof(freeCommandsList[0]); i++) {
+    const char* freeCmd = freeCommandsList[i];
+    size_t freeCmdLen = strlen(freeCmd);
+    
+    // 比较命令名（不区分大小写）
+    if (strnicmp(cmd, freeCmd, freeCmdLen) == 0) {
+        // 确保命令后面是结束符、空格或参数分隔符
+        char nextChar = cmd[freeCmdLen];
+        if (nextChar == '\0' || isspace((uint8_t)nextChar))
+            return true;
+    }
+  }
+  return false;
+}
+
+static void trueExecuteSystemCommands(void *argc)
+{
+  asyncExecuteSystemCommands_t *aesc = (asyncExecuteSystemCommands_t*)argc;
+  int ret;
+  static char executeResult[2048];
+
+  if( aesc->getResult == false )
+    ret = system(aesc->cmd);
+  else{
+    memset(executeResult, 0, sizeof executeResult);// 清空输出缓冲区
+    strcpy(executeResult, ", Result:\n");
+    uint8_t len = strlen(executeResult);
+    ret = (int)!executeCommand(aesc->cmd, executeResult + len, sizeof executeResult - len);
+  }
+  printfSend(aesc->Socket, "Execute [%s] Command %s(%d)%s\n", 
+    aesc->cmd, ret == 0 ? "Success" : "Failed", ret, aesc->getResult? executeResult:".");
+
+  aesc->Socket = NULL;
+}
+
+// 执行一条系统命令，想要执行需先验证密码，
+// 但 freeCommandsList 列表里的命令可以免密码执行
 static void cmdRunSystemCmd(socket_t *Socket, char* commandData)
 {
+  static asyncExecuteSystemCommands_t aesc = {.Socket = NULL};
+
   char *token = strtok(commandData, DECOLLATOR);
   token = strtok(NULL, DECOLLATOR);
-  int ret = system(token);
-  printfSend(Socket, "execute system cmd %s :%d\n", 
-      ret == 0? "success": "failed", ret);
+  
+  if (token == NULL) {
+      printfSend(Socket, "No command specified\n");
+      return;
+  }
+  
+  // 检查是否为免验证密码的命令
+  bool isFreeCommand = isPasswordFreeCommand(token);
+  
+  // 需要密码验证的命令
+  if (passwordVerify == false && isFreeCommand == false) {
+      printfSend(Socket, "Please Verify Password\n");
+      return;
+  }
+
+  if( aesc.Socket != NULL ){
+    printfSend(Socket, "Please Wait Last Command Executing\n");
+    return;
+  }
+
+  aesc.Socket = Socket;
+  aesc.getResult = stristr( commandData, "Result") == NULL? false:true;
+  memset(aesc.cmd, 0, sizeof aesc.cmd);
+  memcpy(aesc.cmd, token, strlen(token) < sizeof aesc.cmd? strlen(token) : sizeof aesc.cmd - 1);
+  addAsyncFuncHandle(trueExecuteSystemCommands, &aesc);
+}
+
+static void cmdVerifyPassword(socket_t *Socket, char* commandData)
+{
+  static const uint8_t MaxVerifyNum = 30;
+  static uint8_t verifyNum = MaxVerifyNum;
+
+  if( verifyNum <= 0 ){
+    printfSend(Socket, "Password Verify Number Zero\n");
+    return;
+  }
+  char *token = strtok(commandData, DECOLLATOR);
+  token = strtok(NULL, DECOLLATOR);
+  uint8_t steLen = token == NULL? 0 : strlen(token);
+  if( steLen != sizeof saveInfo.passwordMD5 ){
+    printfSend(Socket, "Password MD5 Value unequal %d/%d\n", 
+      steLen, sizeof saveInfo.passwordMD5);
+    return;
+  }
+  
+  passwordVerify = strncmp(token, saveInfo.passwordMD5, sizeof saveInfo.passwordMD5) == 0 ? true:false;
+  verifyNum = passwordVerify? MaxVerifyNum:verifyNum - 1;
+
+  char *setInfo = getPrintf(", Verify Number %d/%d\n", verifyNum, MaxVerifyNum);
+  printfSend(Socket, "Password Verify %s%s\n", 
+    passwordVerify? "Success":"Failed", passwordVerify? " ":setInfo);
+}
+
+static void cmdUpdatePassword(socket_t *Socket, char* commandData)
+{
+  if( passwordVerify == false ){
+    printfSend(Socket, "Please Verify Password\n");
+    return;
+  }
+
+  char *token = strtok(commandData, DECOLLATOR);
+  token = strtok(NULL, DECOLLATOR);
+
+  uint8_t steLen = token == NULL? 0 : strlen(token);
+  if( steLen != sizeof saveInfo.passwordMD5 ){
+    printfSend(Socket, "Password MD5 Value unequal %d/%d\n", 
+      steLen, sizeof saveInfo.passwordMD5);
+    return;
+  }
+
+  if( isValidHexRange(token) == false ){
+    printfSend(Socket, "Password MD5 Value is not a valid hexadecimal range.\n");
+    return;
+  }
+
+  bool retCmp = strcmp(token, saveInfo.passwordMD5) == 0 ? true:false;
+  strcpy(saveInfo.passwordMD5, token);
+  if( retCmp == false )
+    saveConfig();
+  printfSend(Socket, "Update Password %s! Value:%s\n",
+    retCmp? "OK":"Done", saveInfo.passwordMD5);
 }
 
 // 连接服务器结果回调

@@ -34,6 +34,7 @@
 #include <arpa/inet.h>
 #include <unistd.h>
 #include <fcntl.h>
+#include <stdlib.h>
 #endif
 
 /*================== 本地数据类型   =========================================*/
@@ -60,7 +61,7 @@ static void DiscoveryServiceStop(void);
 threadRet WINAPI DiscoveryThread(void*);
 static bool InitializeDiscoverySocket(void);
 static void SendDiscoveryResponse(struct sockaddr_in* clientAddr);
-
+static bool TestBroadcastCapability(socket_t sock);
 
 
 void DiscoveryService(bool start)
@@ -69,6 +70,21 @@ void DiscoveryService(bool start)
     DiscoveryServiceStart();
   else
     DiscoveryServiceStop();
+}
+
+void TestBroadcastCapabilityIsOK(void *arg)
+{ 
+  #ifdef _WIN32 
+  SafePrintf("\n\nBroadcast test \n\n");
+  #endif
+  (void)arg;
+  // 测试广播能力（可选，测试失败可选择退出）
+  if (!TestBroadcastCapability(discoverySocket)) {
+    int err = GetLastError();
+    SafePrintf("Broadcast test failed, discovery may not work properly\n");
+    logPrint("Warning: Broadcast test failed (err=%d), may cause issues\n", err);
+    exit(1);  // 搜索服务不能正常工作直接退出程序让服务保活重启 
+  }
 }
 
 socket_t getDiscoverySocket(void)
@@ -216,6 +232,53 @@ static bool InitializeDiscoverySocket(void)
   return true;
 }
 
+// 广播测试函数
+static bool TestBroadcastCapability(socket_t sock)
+{
+  struct sockaddr_in testAddr;
+  char testMsg[] = "TEST";
+  char dummyBuf[64];
+  
+  // 设置临时阻塞模式以接收测试包
+#ifdef _WIN32
+  u_long blocking = 0;
+  ioctlsocket(sock, FIONBIO, &blocking);
+
+  int tv = 1000; // 设置2秒接收超时
+  setsockopt(sock, SOL_SOCKET, SO_RCVTIMEO, (const char*)&tv, sizeof(tv));
+#else
+  int flags = fcntl(sock, F_GETFL, 0);
+  fcntl(sock, F_SETFL, flags & ~O_NONBLOCK);
+
+  struct timeval tv;  // 设置2秒接收超时
+  tv.tv_sec = 1;
+  tv.tv_usec = 0;
+  setsockopt(sock, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv));
+#endif
+  
+  // 发送测试广播包
+  memset(&testAddr, 0, sizeof(testAddr));
+  testAddr.sin_family = AF_INET;
+  testAddr.sin_addr.s_addr = htonl(INADDR_BROADCAST);
+  testAddr.sin_port = htons(DISCOVERY_PORT);
+  
+  int sendRet = sendto(sock, testMsg, sizeof(testMsg), 0,
+                        (struct sockaddr*)&testAddr, sizeof(testAddr));
+  
+  if (sendRet == SOCKET_ERROR) {
+      int err = GetLastError();
+      logPrint("Warning: Broadcast test failed (err=%d), may cause issues\n", err);
+      SafePrintf("Warning: Broadcast test failed (err=%d), may cause issues\n", err);
+      return false;
+  }
+  
+  // 读取测试包（清除干扰）
+  int retLen = recvfrom(sock, dummyBuf, sizeof(dummyBuf), 0, NULL, NULL);
+  
+  SafePrintf("Broadcast Test Passed (Len:%d):%s\n", retLen, dummyBuf);
+  return true;
+}
+
 // 发现服务线程
 threadRet WINAPI DiscoveryThread(void* lpParam)
 {
@@ -259,7 +322,9 @@ threadRet WINAPI DiscoveryThread(void* lpParam)
     if (bytesReceived <= 0) 
       continue;
     recvBuffer[bytesReceived] = '\0';
-    
+    // SafePrintf("UDP [%s]:%d %s\n", inet_ntoa(newClientInfo.sin_addr), 
+    //         ntohs(newClientInfo.sin_port), recvBuffer);
+
     // 检查是否是有效的发现请求
     if (strnicmp(recvBuffer, "discover_com2tcp_server", strlen("discover_com2tcp_server")) == 0){
       SendDiscoveryResponse(&newClientInfo); // 发送响应
@@ -295,7 +360,7 @@ static void SendDiscoveryResponse(struct sockaddr_in* clientAddr)
   EnterCriticalSection_Wrapper(&csDiscovery);
   
   bool getIPmethod = true;   // 获取IP的方法
-  const char *getServerIP = "NULL IP"; 
+  const char *getServerIP = "NULL IP";
   if( getIPmethod == true )   // 方法1：使用socket连接方式获取正确IP（更可靠）
     getServerIP = GetMatchingSubnetIP(clientAddr);
   else                        // 方法2：或者使用网段匹配算法
@@ -314,8 +379,9 @@ static void SendDiscoveryResponse(struct sockaddr_in* clientAddr)
   int sendResult = sendto(discoverySocket, responseBuffer, strlen(responseBuffer), 
                 0, (struct sockaddr*)clientAddr, sizeof *clientAddr);
 
-  SafePrintf("Discovery response Sent to %s:%d -> Server IP: %s:%d  %s:%ld  count:%-5d\r",
+  SafePrintf("Discovery response Sent to %s:%d -> Server IP: %s:%d  %s:%ld  count:%-5d%c",
             inet_ntoa(clientAddr->sin_addr), ntohs(clientAddr->sin_port),
             getServerIP, getMainServerPort(), 
-            sendResult == SOCKET_ERROR? "failed":"succeed", GetLastError(), ++count);
+            sendResult == SOCKET_ERROR? "failed":"succeed", 
+            GetLastError(), ++count, is_running_as_service()? '\n':'\r');
 }

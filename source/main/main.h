@@ -18,6 +18,9 @@ extern "C" {
 #define VERSIONS            "V0.5"
 #define SAVE_DIR            "./serverInfo"
 
+// 密码默认是字符串 "COM2TCP" 进行MD5运算后的结果
+#define PASSWORD_MD5        "6F3FFB85142742B12F764E7FEC286BFB"
+
 #if MAX_CLIENTS<3
 #error "建议不要把客户端数量设置那么少，至少给3个嘛，老铁！"
 #endif

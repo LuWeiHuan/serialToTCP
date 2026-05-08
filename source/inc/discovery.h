@@ -24,7 +24,7 @@ void DiscoveryService(bool start);
 socket_t getDiscoverySocket(void);
 const char *getDiscoveryNewClientIPAddr(void);
 uint16_t getDiscoveryNewClientPort(void);
-
+void TestBroadcastCapabilityIsOK(void*);
 #ifdef __cplusplus
 }
 #endif

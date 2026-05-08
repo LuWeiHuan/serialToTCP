@@ -431,7 +431,8 @@ void Time1SecCheckAndRotateLogFile(void) {
         
         g_logFile = fopen(g_logFullPath, "a");
         if(g_logFile != NULL) {
-            setvbuf(g_logFile, NULL, _IOLBF, 0);
+            if (setvbuf(g_logFile, NULL, _IOLBF, 4096) != 0)
+              setvbuf(g_logFile, NULL, _IONBF, 0);
             
             char newTimeStr[32] = {0};
             getCurrentTimeString(newTimeStr, sizeof(newTimeStr));
@@ -503,7 +504,7 @@ bool logStorageInit(const char* logDir, const char* logFileName, LogLevel_t leve
         return false;
     }
     
-    setvbuf(g_logFile, NULL, _IOLBF, 0);
+    setvbuf(g_logFile, NULL, _IOFBF, 4096);
     
     // 写入初始信息
     char timeStr[32] = {0};

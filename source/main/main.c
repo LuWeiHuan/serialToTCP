@@ -62,7 +62,7 @@ static bool logFileInit(void);
  描   述：无
 =============================================================================*/
 int main(int argc, char const *argv[])
-{   
+{ 
   PlatformSpecificInit(); // 平台通用初始化 
   printBuildInfo();
 
@@ -78,19 +78,22 @@ int main(int argc, char const *argv[])
   if( !logFileInit() )            // 初始化日志文件
     return -1;
 
-  loadConfig();                 // 加载配置信息
+  loadConfig();                   // 加载配置信息
+
+  // 启动各种服务   
+  DiscoveryService(true);         // 启动发现服务
+    
+  startAsyncFuncHandle(true);     // 启动异步函数处理
+  ClientResourceInit(true);       // 客户端管理初始化
+  ComPortResourceInit(true);      // 串口资源初始化
+  DeviceChangeMonitor(true);      // 启动设备插拔变化监听 
+  ServerConnectInit(true);        // 服务器连接初始化
+  start1SecRunOneThread();        // 启动1秒执行一次的线程
   
-  // 启动各种服务 
-  DiscoveryService(true);       // 启动发现服务
-  startAsyncFuncHandle(true);   // 启动异步函数处理
-  ClientResourceInit(true);     // 客户端管理初始化
-  ComPortResourceInit(true);    // 串口资源初始化
-  DeviceChangeMonitor(true);    // 启动设备插拔变化监听 
-  ServerConnectInit(true);      // 服务器连接初始化
-  start1SecRunOneThread();      // 启动1秒执行一次的线程
-  
-  // 主事件循环 
-  while( true ) {
+  // 测试广播功能是否正常
+  addAsyncFuncHandle(TestBroadcastCapabilityIsOK, NULL);  
+
+  while( true ) {                 // 主事件循环 循环
     
     // 检查是否有新的客户端连接
     int8_t listenStartRet = listenNewClientConnect(&mainServer);
@@ -105,7 +108,6 @@ int main(int argc, char const *argv[])
       continue;
     }
     
-    // 添加新客户端
     bool addRet = addNewClient(mainServer.newSocket, mainServer.newIP);
     if( addRet == false ) {
       SafePrintf("添加新客户端失败，关闭套接字\n");
@@ -248,8 +250,7 @@ static void microFuncCodeTest(void)
     test_ptr? "成功":"失败", end_time - start_time, (uint16_t)getRuningTimeMs());
 }
 
-
-
+// 检查 Linux 环境是否为 root
 static void linuxPlatformIsRoot(void)
 {
 #ifndef _WIN32
@@ -272,5 +273,3 @@ static void linuxPlatformIsRoot(void)
 
 #endif
 }
-
-

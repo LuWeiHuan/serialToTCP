@@ -29,12 +29,14 @@
 #include <winsock2.h>
 #include <wchar.h>
 #include <windows.h>
+#include <shlwapi.h>
 #else
 #include <unistd.h>
 #include <ifaddrs.h>
 #include <netdb.h>
 #include <stdlib.h>
 #include <arpa/inet.h>
+#include <ctype.h>
 #endif
 
 /*================== 本地变量    ========================================*/
@@ -526,6 +528,21 @@ static threadRet WINAPI run1SecThread(void* lpParam)
     return (threadRet)0;
 }
 
+// systemd 设置的环境变量
+bool is_running_as_service() 
+{
+  bool isInit = false;
+  static bool ret;
+  if (isInit) 
+    return ret;
+
+  const char *invocation_id = getenv("INVOCATION_ID");
+  const char *journal_stream = getenv("JOURNAL_STREAM");
+  ret = (invocation_id != NULL || journal_stream != NULL)? true:false;
+  isInit = true;
+  return ret;
+}
+
 void start1SecRunOneThread(void)
 { 
   static volatile bool g_logMonitorRunning = false;
@@ -571,3 +588,98 @@ void start1SecRunOneThread(void)
 }
 
 
+// 执行命令并获取输出结果。执行成功返回真，执行失败返回假
+bool executeCommand(const char* cmd, char* result, size_t resultSize) 
+{
+  if( cmd == NULL || result == NULL || resultSize <= 0)
+    return false;
+  char buffer[1024];
+
+  // 重定向标准输出和错误输出
+  char full_cmd[2048];
+  snprintf(full_cmd, sizeof(full_cmd), "%s 2>&1", cmd);
+  
+  FILE* fp = popen(full_cmd, "r");
+  if (fp == NULL) {
+      snprintf(result, resultSize, "Error: Failed to execute command");
+      return false;
+  }
+  
+  // 读取所有输出
+  size_t total_len = 0;
+  while (fgets(buffer, sizeof(buffer), fp) != NULL) {
+      size_t chunk_len = strlen(buffer);
+      
+      // 检查缓冲区是否足够
+      if (total_len + chunk_len + 1 >= resultSize) {
+          // 缓冲区不足，截断并添加提示
+          snprintf(result + total_len, resultSize - total_len, 
+                    "\n... (output truncated)");
+          break;
+      }
+      
+      strcpy(result + total_len, buffer);
+      total_len += chunk_len;
+  }
+  
+  pclose(fp);
+  
+  // 如果没有输出
+  if (total_len == 0) 
+      snprintf(result, resultSize, "(no output)");
+  return total_len? true:false; 
+}
+
+
+// 忽略大小写的字符串匹配
+char* stristr(const char* haystack, const char* needle) {
+    if (!haystack || !needle) return NULL;
+    if (!*needle) return (char*)haystack;
+
+#if defined(_WIN32) || defined(_WIN64)
+    /* Windows 平台：使用 StrStrIA */
+    return StrStrIA(haystack, needle);
+    
+#elif defined(__linux__) || defined(__unix__)
+    /* Linux 平台：使用 strcasestr */
+    return strcasestr(haystack, needle);
+    
+#else
+    /* 通用实现（其他平台） */
+    size_t needle_len = strlen(needle);
+    size_t haystack_len = strlen(haystack);
+    
+    for (size_t i = 0; i <= haystack_len - needle_len; i++) {
+        size_t j;
+        for (j = 0; j < needle_len; j++) {
+            if (tolower((unsigned char)haystack[i + j]) != 
+                tolower((unsigned char)needle[j]))
+                break;
+        }
+        if (j == needle_len)
+            return (char*)&haystack[i];
+    }
+    return NULL;
+#endif
+}
+
+/**
+ * 验证字符串是否为合法的十六进制范围
+ * @param str 待验证的字符串
+ * @return true 表示合法，false 表示非法
+ */
+bool isValidHexRange(const char *str) 
+{
+  if (str == NULL || *str == '\0')
+    return false;
+  bool isRange = false;
+  for (const char *p = str; *p; p++){
+    if( *p == '-' || *p == ',' || *p == ' ' )
+      continue;
+    isRange = true;
+    if ( !isxdigit((uint8_t)*p) ) 
+      return false;  // 包含非十六进制字符
+  }
+    
+  return isRange;
+}

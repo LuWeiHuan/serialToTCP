@@ -36,7 +36,10 @@ bool EnableVTMode(void);
 #endif
 
 void ErrorCodeTest(void);
-
+bool is_running_as_service();
+bool executeCommand(const char* cmd, char* output, size_t output_size);
+char* stristr(const char* haystack, const char* needle);
+bool isValidHexRange(const char *str);
 #ifdef __cplusplus
 }
 #endif

@@ -5,7 +5,7 @@ chcp 65001 >nul
 set TARGET_NAME=com2tcp_server
 
 :: 构建目录
-set BUILD_DIR=build/Win
+set BUILD_DIR=build/WinX64
 
 :: 是否执行外部脚本
 set EXTRA_BAT=fileCopy.bat
