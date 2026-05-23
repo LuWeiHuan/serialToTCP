@@ -87,8 +87,9 @@ void COM_AutoReOpen_OnDeviceChange(void)
 /**
  * @brief 尝试打开上次的串口 处理等待打开的逻辑（需要每隔1秒调用一次）
  */
-void Time1SecProcessPendingOpen(void)
+void Time1SecProcessPendingOpen(void *arg)
 { 
+  (void)arg;
   if( autoReOpenMgr.delaySave && --autoReOpenMgr.delaySave <= 0)
       SaveConfigToFile();
   

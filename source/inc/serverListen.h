@@ -25,7 +25,7 @@ typedef struct {
 /*================== 外部函数声明		=========================================*/
 uint16_t ParsePortParameter(int argc, char const* argv[]); 
 bool serverStart(serverInfo_t*);
-int8_t listenNewClientConnect(serverInfo_t*);
+int8_t listenNewClientConnect(serverInfo_t*, uint8_t);
 void serverCleanup(serverInfo_t *server); 
 
 #ifdef __cplusplus

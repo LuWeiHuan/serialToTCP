@@ -65,31 +65,55 @@ local_copy() {
 ssh_copy() {
     local source_file="$1"
     local password_file="$2"
-    local password_value=$(cat "$password_file" | tr -d '\n\r')
     local remote_host="$3"
     local remote_path="/home/cat/software/com2tcp_server"
     local temp_path="${remote_path}.tmp"
+    local ssh_host="$remote_host"
+    local ip_version=""  # 用于存储 -4 或 -6 选项
 
     if check_file "$password_file"; then
         log_info "通过SSH推送到远程主机..."
-        # log_info "密码: $password_value"
-        # 先检查网络连通性
-        if ping -c 1 -W 2 "$remote_host" &> /dev/null; then
-            # 使用更安全的SSH选项
-            if sshpass -f "$password_file" scp -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
-                  -o ConnectTimeout=3 "$source_file" "root@$remote_host:$temp_path"; then
-                
-                log_success "SSH推送成功"
-
-                sshpass -f "$password_file" ssh -o StrictHostKeyChecking=no \
+        
+        # 判断IP版本
+        if [[ "$remote_host" =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            # IPv4地址
+            ip_version="-4"
+            log_info "检测到IPv4地址: $remote_host"
+        elif [[ "$remote_host" =~ .*:.* ]]; then
+            # IPv6地址
+            ip_version="-6"
+            ssh_host="[$remote_host]"
+            log_info "检测到IPv6地址: $remote_host"
+            log_info "SSH连接格式: $ssh_host"
+        else
+            # 域名，不指定版本
+            ip_version=""
+            log_info "检测到域名: $remote_host"
+        fi
+        
+        log_info "正在连接并推送文件..."
+        
+        # 使用检测到的IP版本
+        if sshpass -f "$password_file" scp $ip_version -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
+              -o ConnectTimeout=5 "$source_file" "root@$ssh_host:$temp_path" 2>&1; then
+            
+            log_success "SCP推送成功"
+            
+            # SSH连接也使用相同的IP版本
+            if sshpass -f "$password_file" ssh $ip_version -o StrictHostKeyChecking=no \
                 -o UserKnownHostsFile=/dev/null "root@$remote_host" \
-                "mv -f $temp_path $remote_path"
+                "mv -f $temp_path $remote_path" 2>&1; then
+                log_success "远程文件移动成功"
             else
-                log_error "SSH推送失败"
+                log_error "远程文件移动失败"
                 return 1
             fi
         else
-            log_error "无法连接到远程主机 $remote_host"
+            log_error "SSH推送失败，请检查:"
+            log_error "  1. 网络是否连通"
+            log_error "  2. 目标主机是否运行SSH服务"
+            log_error "  3. 密码文件是否正确"
+            log_error "  4. 目标路径是否可写"
             return 1
         fi
     else
@@ -114,7 +138,7 @@ main() {
     local_copy "$source_file" "/mnt/tftp"
 
     # SSH复制
-    ssh_copy "$source_file" "password.txt" "192.168.1.150"
+    ssh_copy "$source_file" "password.txt" "192.168.1.166"
     
     log_success "文件分发完成"
 }

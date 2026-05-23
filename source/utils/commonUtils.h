@@ -14,7 +14,6 @@ extern "C" {
 
 
 /*================== 外部函数声明    ========================================*/
-void start1SecRunOneThread(void);
 void printBuildInfo(void);
 uint64_t getRuningTimeMs(void);
 char *getCurrentTimeStringSec(void);
@@ -27,8 +26,8 @@ const char *GetSystemUniqueIdentifier(void);
 uint8_t getWindowsVersionSimple(char *retStr);
 
 // 平台函数
-bool Platform_Initialize(void);
-void Platform_Cleanup(void);
+bool platformInitialize(void);
+void platformCleanup(void);
 
 #ifdef _WIN32
 bool SetConsoleFontSize(int width, int height);
@@ -40,6 +39,7 @@ bool is_running_as_service();
 bool executeCommand(const char* cmd, char* output, size_t output_size);
 char* stristr(const char* haystack, const char* needle);
 bool isValidHexRange(const char *str);
+uint64_t getSystemUptimeSeconds(void);
 #ifdef __cplusplus
 }
 #endif

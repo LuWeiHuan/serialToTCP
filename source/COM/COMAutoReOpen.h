@@ -39,7 +39,7 @@ void COM_AutoReOpen_OnDeviceChange(void);
 /**
  * @brief 定时1秒调用
  */
-void Time1SecProcessPendingOpen(void);
+void Time1SecProcessPendingOpen(void *arg);
 
 /**
  * @brief 保存当前打开的串口信息

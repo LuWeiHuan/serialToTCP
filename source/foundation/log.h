@@ -38,7 +38,7 @@ void logStorageUninit(void);
 void logPrintFull(LogLevel_t level, const char* format, ...) __attribute__((format(printf, 2, 3)));
 void logPrint(const char* format, ...) __attribute__((format(printf, 1, 2)));
 
-void Time1SecCheckAndRotateLogFile(void);
+void Time1SecCheckAndRotateLogFile(void *arg);
 #ifdef __cplusplus
 }
 #endif

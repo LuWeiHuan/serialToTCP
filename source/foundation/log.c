@@ -399,7 +399,9 @@ static void deleteOldestLogFiles(void) {
 }
 
 // 检查并滚动日志文件
-void Time1SecCheckAndRotateLogFile(void) {
+void Time1SecCheckAndRotateLogFile(void *arg) 
+{   
+    (void)arg;
     static uint8_t SecCount = 0;
     if( ++SecCount < g_checkIntervalSec )
       return ;

@@ -3,7 +3,7 @@
   * @author  作者 
   * @version 版本 V1.0
   * @date    日期 2025-08-17
-  * @brief   简介 跨平台封装线程
+  * @brief   简介 跨平台线程封装和一些高精度延迟和时间戳函数
   * 
   ******************************************************************************
   * @attention 注意
@@ -20,10 +20,11 @@
 #include <unistd.h>
 #endif
 
+#include <stdlib.h>
 #include "platform.h"
 
 // 平台初始化
-bool Platform_Initialize(void)
+bool platformInitialize(void)
 {
 #ifdef _WIN32
     WSADATA wsaData;
@@ -35,7 +36,7 @@ bool Platform_Initialize(void)
 #endif
 }
 
-void Platform_Cleanup(void)
+void platformCleanup(void)
 {
 #ifdef _WIN32
     WSACleanup();
@@ -134,5 +135,102 @@ DWORD WaitForSingleObject_Wrapper(thread_t hHandle, uint32_t dwMilliseconds)
         usleep(10000); // 10ms
     }
     
+#endif
+}
+
+
+/**
+ * @brief 信号量操作
+ */
+void* semaphoreCreate(int initialCount, int maxCount)
+{
+#ifdef _WIN32
+    return CreateSemaphore(NULL, initialCount, maxCount, NULL);
+#else
+    (void)maxCount; // Linux的信号量不需要指定最大值
+    sem_t* sem = (sem_t*)malloc(sizeof(sem_t));
+    if (sem) sem_init(sem, 0, initialCount);
+    return sem;
+#endif
+}
+
+void semaphoreDestroy(void* sem)
+{
+    if (!sem) return;
+#ifdef _WIN32
+    CloseHandle((HANDLE)sem);
+#else
+    sem_destroy((sem_t*)sem);
+    free(sem);
+#endif
+}
+
+void semaphorePost(void* sem)
+{
+#ifdef _WIN32
+    ReleaseSemaphore((HANDLE)sem, 1, NULL);
+#else
+    sem_post((sem_t*)sem);
+#endif
+}
+
+void semaphoreWait(void* sem)
+{
+#ifdef _WIN32
+    WaitForSingleObject((HANDLE)sem, INFINITE);
+#else
+    sem_wait((sem_t*)sem);
+#endif
+}
+/**
+ * @brief 获取当前高精度时间戳(毫秒)
+ */
+uint64_t getTickMs(void)
+{
+  return getTickUs() / 1000;
+}
+
+/**
+ * @brief 获取当前高精度时间戳(微秒)
+ */
+uint64_t getTickUs(void)
+{
+#ifdef _WIN32
+  LARGE_INTEGER frequency;
+  LARGE_INTEGER counter;
+  QueryPerformanceFrequency(&frequency);
+  QueryPerformanceCounter(&counter);
+  return (uint64_t)((counter.QuadPart * 1000000) / frequency.QuadPart);
+#else
+  struct timespec ts;
+  clock_gettime(CLOCK_MONOTONIC, &ts);
+  return (uint64_t)ts.tv_sec * 1000000 + ts.tv_nsec / 1000;
+#endif
+}
+
+/**
+ * @brief 高精度微秒级睡眠
+ */
+void preciseSleepUs(uint64_t us)
+{
+  if (us == 0) return;
+    
+#ifdef _WIN32 // Windows 使用高精度等待
+    LARGE_INTEGER due_time;
+    due_time.QuadPart = -((LONGLONG)us * 10);  // 100ns单位
+    HANDLE timer = CreateWaitableTimer(NULL, TRUE, NULL);
+    if (timer) {
+        SetWaitableTimer(timer, &due_time, 0, NULL, NULL, FALSE);
+        WaitForSingleObject(timer, INFINITE);
+        CloseHandle(timer);
+    } 
+    else {
+        Sleep((DWORD)(us / 1000));
+    }
+#else // Linux 使用 nanosleep
+    struct timespec ts;
+    ts.tv_sec = us / 1000000;
+    ts.tv_nsec = (us % 1000000) * 1000;
+    nanosleep(&ts, NULL);
 #endif
 }

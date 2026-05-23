@@ -36,8 +36,9 @@ GlobalTrafficStats_t trafficStats;
 static void formatSpeedString(uint64_t bytesPerSec, char* output, uint16_t retMax) ;
 
 // 定时1s更新一次流量统计
-void Time1SesUpdataTrafficMonitor(void)
-{
+void Time1SecUpdataTrafficMonitor(void *arg)
+{ 
+  (void)arg;
   static uint64_t lastComSent = 0, lastComReceived = 0;
   static uint64_t lastNetSent = 0, lastNetReceived = 0;
 

@@ -6,7 +6,8 @@
   * @brief   简介 UDP服务发现功能
   ******************************************************************************
   * @attention 注意
-  *
+  * 搜索服务在回复搜索请求的时候，就已经有本机IP地址了，
+  * 如果本机提供的不对，可以使客户端可以直接用 socket 中获取IP即可。
   *
   *******************************************************************************
 */
@@ -23,6 +24,7 @@
 #include "Command.h"
 #include "hostConnect.h"
 #include "configSave.h"
+#include "threadPool.h"
 
 #include <stdio.h>
 #include <string.h>
@@ -55,13 +57,18 @@ static socket_t discoverySocket = INVALID_SOCKET_VALUE;
 static mutex_type csDiscovery;
 static struct sockaddr_in newClientInfo;
 
+static char *broadcastMsg = "Broadcast Test Message";
+static bool broadcastTestOK = false;
+
 /*================== 本地函数声明    ========================================*/
 static void DiscoveryServiceStart(void);
 static void DiscoveryServiceStop(void);
 threadRet WINAPI DiscoveryThread(void*);
 static bool InitializeDiscoverySocket(void);
 static void SendDiscoveryResponse(struct sockaddr_in* clientAddr);
-static bool TestBroadcastCapability(socket_t sock);
+
+static void readyExamineBroadcastTask(void *arg);
+static void startSendBroadcast(void *arg);
 
 
 void DiscoveryService(bool start)
@@ -72,19 +79,23 @@ void DiscoveryService(bool start)
     DiscoveryServiceStop();
 }
 
-void TestBroadcastCapabilityIsOK(void *arg)
+// 测试广播是否能正常使用
+void broadcastTestIsNormal(void)
 { 
-  #ifdef _WIN32 
-  SafePrintf("\n\nBroadcast test \n\n");
+  // 在 100 ms 后向广播发送一条测试消息
+  static ThreadTask asyncSendBroadcast;
+  #ifdef _WIN32
+  threadTaskInit(&asyncSendBroadcast, startSendBroadcast, (void*)discoverySocket, 200, 0);
+  #else
+  threadTaskInit(&asyncSendBroadcast, startSendBroadcast, &discoverySocket, 200, 0);
   #endif
-  (void)arg;
-  // 测试广播能力（可选，测试失败可选择退出）
-  if (!TestBroadcastCapability(discoverySocket)) {
-    int err = GetLastError();
-    SafePrintf("Broadcast test failed, discovery may not work properly\n");
-    logPrint("Warning: Broadcast test failed (err=%d), may cause issues\n", err);
-    exit(1);  // 搜索服务不能正常工作直接退出程序让服务保活重启 
-  }
+  threadTtaskStart(gThreadPool, &asyncSendBroadcast);
+
+  static ThreadTask readyExamineBroadcast;
+  threadTaskInit(&readyExamineBroadcast, readyExamineBroadcastTask, NULL, 1000, 0);
+  threadTtaskStart(gThreadPool, &readyExamineBroadcast);
+
+  SafePrintf("Broadcast Test Message...");
 }
 
 socket_t getDiscoverySocket(void)
@@ -179,6 +190,7 @@ static void DiscoveryServiceStop(void)
 // 初始化发现Socket
 static bool InitializeDiscoverySocket(void)
 { 
+  int socketRet;
   discoverySocket = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
   if (discoverySocket == INVALID_SOCKET_VALUE) {
     SafePrintf("Discovery socket creation failed: %ld\n", GetLastError());
@@ -187,8 +199,9 @@ static bool InitializeDiscoverySocket(void)
 
   // 设置Socket选项：允许广播和地址重用
   int broadcast = 1;
-  if (setsockopt(discoverySocket, SOL_SOCKET, SO_BROADCAST, 
-                (char*)&broadcast, sizeof(broadcast)) == SOCKET_ERROR) {
+  socketRet = setsockopt(discoverySocket, SOL_SOCKET, SO_BROADCAST, 
+                (char*)&broadcast, sizeof broadcast);
+  if ( socketRet== SOCKET_ERROR) {
     SafePrintf("Set SO_BROADCAST failed: %ld\n", GetLastError());
     closeSocket(discoverySocket);
     discoverySocket = INVALID_SOCKET_VALUE;
@@ -196,8 +209,9 @@ static bool InitializeDiscoverySocket(void)
   }
 
   int reuseAddr = 1;
-  if (setsockopt(discoverySocket, SOL_SOCKET, SO_REUSEADDR, 
-                (char*)&reuseAddr, sizeof(reuseAddr)) == SOCKET_ERROR) {
+  socketRet = setsockopt(discoverySocket, SOL_SOCKET, SO_REUSEADDR, 
+                (char*)&reuseAddr, sizeof reuseAddr);
+  if (socketRet == SOCKET_ERROR) {
     SafePrintf("Set SO_REUSEADDR failed: %ld\n", GetLastError());
   }
 
@@ -207,8 +221,8 @@ static bool InitializeDiscoverySocket(void)
   serverAddr.sin_family = AF_INET;
   serverAddr.sin_addr.s_addr = htonl(INADDR_ANY);
   serverAddr.sin_port = htons(DISCOVERY_PORT);
-
-  if (bind(discoverySocket, (struct sockaddr*)&serverAddr, sizeof(serverAddr)) == SOCKET_ERROR) {
+  socketRet = bind(discoverySocket, (struct sockaddr*)&serverAddr, sizeof serverAddr);
+  if ( socketRet == SOCKET_ERROR) {
     SafePrintf("Discovery bind failed: %ld\n", GetLastError());
     closeSocket(discoverySocket);
     discoverySocket = INVALID_SOCKET_VALUE;
@@ -218,11 +232,12 @@ static bool InitializeDiscoverySocket(void)
   // 设置非阻塞模式
 #ifdef _WIN32
   u_long nonBlocking = 1;
-  if (ioctlsocket(discoverySocket, FIONBIO, &nonBlocking) == SOCKET_ERROR) {
+  socketRet = ioctlsocket(discoverySocket, FIONBIO, &nonBlocking);
 #else
   int flags = fcntl(discoverySocket, F_GETFL, 0);
-  if (fcntl(discoverySocket, F_SETFL, flags | O_NONBLOCK) == -1) {
+  socketRet = fcntl(discoverySocket, F_SETFL, flags | O_NONBLOCK);
 #endif
+  if (socketRet == SOCKET_ERROR) {  
     SafePrintf("Set non-blocking failed: %ld\n", GetLastError());
     closeSocket(discoverySocket);
     discoverySocket = INVALID_SOCKET_VALUE;
@@ -232,51 +247,50 @@ static bool InitializeDiscoverySocket(void)
   return true;
 }
 
-// 广播测试函数
-static bool TestBroadcastCapability(socket_t sock)
+static void startSendBroadcast(void *arg)
 {
+  //ThreadTask *task = ((ThreadPoolArgWrapper*)arg)->threadTask;
+  #ifdef _WIN32
+  socket_t sock = (socket_t)((ThreadPoolArgWrapper*)arg)->arg;
+  #else
+  socket_t sock = *((socket_t*)(((ThreadPoolArgWrapper*)arg)->arg));
+  #endif
+
   struct sockaddr_in testAddr;
-  char testMsg[] = "TEST";
-  char dummyBuf[64];
-  
-  // 设置临时阻塞模式以接收测试包
-#ifdef _WIN32
-  u_long blocking = 0;
-  ioctlsocket(sock, FIONBIO, &blocking);
-
-  int tv = 1000; // 设置2秒接收超时
-  setsockopt(sock, SOL_SOCKET, SO_RCVTIMEO, (const char*)&tv, sizeof(tv));
-#else
-  int flags = fcntl(sock, F_GETFL, 0);
-  fcntl(sock, F_SETFL, flags & ~O_NONBLOCK);
-
-  struct timeval tv;  // 设置2秒接收超时
-  tv.tv_sec = 1;
-  tv.tv_usec = 0;
-  setsockopt(sock, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv));
-#endif
-  
-  // 发送测试广播包
   memset(&testAddr, 0, sizeof(testAddr));
   testAddr.sin_family = AF_INET;
   testAddr.sin_addr.s_addr = htonl(INADDR_BROADCAST);
   testAddr.sin_port = htons(DISCOVERY_PORT);
-  
-  int sendRet = sendto(sock, testMsg, sizeof(testMsg), 0,
+
+  // 发送测试广播包
+  int sendRet = sendto(sock, broadcastMsg, strlen(broadcastMsg), 0,
                         (struct sockaddr*)&testAddr, sizeof(testAddr));
-  
+
   if (sendRet == SOCKET_ERROR) {
       int err = GetLastError();
       logPrint("Warning: Broadcast test failed (err=%d), may cause issues\n", err);
       SafePrintf("Warning: Broadcast test failed (err=%d), may cause issues\n", err);
-      return false;
   }
-  
-  // 读取测试包（清除干扰）
-  int retLen = recvfrom(sock, dummyBuf, sizeof(dummyBuf), 0, NULL, NULL);
-  
-  SafePrintf("Broadcast Test Passed (Len:%d):%s\n", retLen, dummyBuf);
-  return true;
+}
+
+// 检测是否收到广播包
+static void readyExamineBroadcastTask(void *arg)
+{
+  (void)arg;
+  if( broadcastTestOK )
+    return;
+ 
+  SafePrintf("Examine Broadcast Test Message %s!System Uptime:%"PRIu64" s\n", 
+      broadcastTestOK?"OK":"FAIL", getSystemUptimeSeconds());
+  int err = GetLastError();
+  SafePrintf("Broadcast test failed, discovery may not work properly!!!!\n");
+  logPrint("Warning: Broadcast test failed (err=%d), may cause issues!!!!\n", err);
+  Sleep(2000);
+
+  // 系统开机5分钟内的广播测试失败则直接退出程序
+  // 有的Linux开机启动这个程序，网络可能还没有准备好，广播功能会失效，建议重启
+  if( getSystemUptimeSeconds() < 3000) 
+    exit(1);  // 搜索服务不能正常工作直接退出程序让服务保活重启
 }
 
 // 发现服务线程
@@ -318,12 +332,14 @@ threadRet WINAPI DiscoveryThread(void* lpParam)
     // 接收发现请求
     bytesReceived = recvfrom(discoverySocket, recvBuffer, sizeof(recvBuffer) - 1, 0, 
                             (struct sockaddr*)&newClientInfo, &clientAddrLen);
-    
-    if (bytesReceived <= 0) 
+    if (bytesReceived <= 0)
       continue;
     recvBuffer[bytesReceived] = '\0';
-    // SafePrintf("UDP [%s]:%d %s\n", inet_ntoa(newClientInfo.sin_addr), 
-    //         ntohs(newClientInfo.sin_port), recvBuffer);
+
+    #if 0
+    SafePrintf("UDP [%s]:%d %s\n", inet_ntoa(newClientInfo.sin_addr), 
+            ntohs(newClientInfo.sin_port), recvBuffer);
+    #endif
 
     // 检查是否是有效的发现请求
     if (strnicmp(recvBuffer, "discover_com2tcp_server", strlen("discover_com2tcp_server")) == 0){
@@ -339,12 +355,20 @@ threadRet WINAPI DiscoveryThread(void* lpParam)
       if( connectRet != 0 )
         SafePrintf("Discovery UDP connect Error! code :%d\n", connectRet);
       HandleClientCommand(&discoverySocket, recvBuffer + strlen(CTRL_HEADER));
-
       UdpDisconnect(discoverySocket);   // 需要断开连接以恢复广播能力
 
-      // 这里是进行程序异常退出捕获测试的位置，用于程序自我错误定位
+      // 这里是进行程序异常退出捕获的测试位置，用于测试程序自我错误定位能力
       if( strnicmp(recvBuffer, CTRL_HEADER"errorTest", strlen(CTRL_HEADER"errorTest")) == 0 )
         ErrorCodeTest();
+    }
+    else if( strnicmp(recvBuffer, broadcastMsg, strlen(broadcastMsg)) == 0 ){
+      static uint16_t count = 0;
+      if( broadcastTestOK == false ){
+        broadcastTestOK = true;
+        SafePrintf("\rBroadcast Test Message...OK! (MsgLen:%d)\n", bytesReceived);
+      }
+      else
+        SafePrintf("Don't Broadcast Test Message, Number:%-5d\r", ++count);
     }
   }
   
@@ -359,7 +383,7 @@ static void SendDiscoveryResponse(struct sockaddr_in* clientAddr)
   static uint16_t count = 0;
   EnterCriticalSection_Wrapper(&csDiscovery);
   
-  bool getIPmethod = true;   // 获取IP的方法
+  bool getIPmethod = true;    // 获取IP的方法
   const char *getServerIP = "NULL IP";
   if( getIPmethod == true )   // 方法1：使用socket连接方式获取正确IP（更可靠）
     getServerIP = GetMatchingSubnetIP(clientAddr);

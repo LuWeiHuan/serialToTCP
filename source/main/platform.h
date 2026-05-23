@@ -17,6 +17,7 @@
     #define closeSocket           closesocket
     #define SOCKET_ERROR_CODE     WSAGetLastError()
 
+    typedef HANDLE      semaphore_t;
     typedef HANDLE      thread_t;
     typedef DWORD       threadID_t;
     typedef CRITICAL_SECTION      mutex_type; 
@@ -26,13 +27,17 @@
     // Linux 特定头文件和定义
     #include <pthread.h>
     #include <errno.h>
+    #include <semaphore.h>
 
-    #ifndef __arm__
+    #if defined(__aarch64__) || defined(_M_ARM64)// ARM 64位 
     #define PRIu64 "lu"
-    #else
+    #elif defined(__arm__) || defined(_M_ARM)// ARM 32位 
     #define PRIu64 "llu"
+    #else// 其他架构 
+    #define PRIu64 "lu"
     #endif
 
+    typedef sem_t * semaphore_t;
     typedef int socket_t;
     #define INVALID_SOCKET_VALUE      (-1)
     #define SOCKET_ERROR_CODE         errno 
@@ -77,8 +82,8 @@ extern "C" {
 #endif
 
 // 平台初始化函数
-bool Platform_Initialize(void);
-void Platform_Cleanup(void);
+bool platformInitialize(void);
+void platformCleanup(void);
 
 // 线程管理函数
 thread_t threadCreate(threadID_t* lpThreadId,
@@ -149,6 +154,25 @@ static inline threadID_t GetCurrentThreadId_Wrapper(void)
 // 获取最后错误代码 
 static inline DWORD GetLastError(void)  { return errno; }
 #endif
+
+/**
+ * @brief 信号量操作
+ */
+void* semaphoreCreate(int initial_count, int max_count);
+void semaphoreDestroy(void* sem);
+void semaphorePost(void* sem);
+void semaphoreWait(void* sem);
+
+/**
+ * @brief 高精度微秒级睡眠
+ */
+void preciseSleepUs(uint64_t us);
+
+/**
+ * @brief 获取当前高精度时间戳(微秒和毫秒)
+ */
+uint64_t getTickUs(void);
+uint64_t getTickMs(void);
 
 #ifdef __cplusplus
 }

@@ -48,6 +48,36 @@ time_t getCurrentTimeSec(void)
     return time(NULL) - startTimeSec;
 }
 
+/**
+ * 获取系统已经运行的秒数（跨平台）
+ * @return 系统已运行秒数，失败返回 0
+ */
+uint64_t getSystemUptimeSeconds(void) {
+#ifdef _WIN32
+    // Windows 平台：使用 GetTickCount()
+    DWORD ms = GetTickCount();
+    // 注意：GetTickCount 在 49.7 天后会归零
+    // 需要更精确可改用 GetTickCount64()
+    return ms / 1000;
+#elif defined(__linux__)
+    // Linux 平台：读取 /proc/uptime
+    FILE *fp = fopen("/proc/uptime", "r");
+    if (fp == NULL) 
+        return 0;
+    
+    double uptime_sec;
+    if (fscanf(fp, "%lf", &uptime_sec) != 1) {
+        fclose(fp);
+        return 0;
+    }
+    fclose(fp);
+    return (time_t)uptime_sec;
+#else
+    // 其他平台（如 macOS 等）不支持
+    return 0;
+#endif
+}
+
 // 获取从运行到现在的间戳（毫秒）程序运行要调用一次
 // 这个函数会由于 mian 函数之前执行
 __attribute__((constructor)) uint64_t getRuningTimeMs(void) 
@@ -507,26 +537,7 @@ uint8_t getWindowsVersionSimple(char *retStr)
 }
 
 
-// 这是一条每秒执行一次的线程
-static threadRet WINAPI run1SecThread(void* lpParam) 
-{
-    (void)lpParam;
-    
-    while (true) {
-      Sleep(1000);// 使用跨平台的 Sleep
 
-      #ifdef __TRAFFIC_STATS_H_
-      Time1SesUpdataTrafficMonitor();
-      #endif 
-
-      Time1SecCheckAndRotateLogFile();  // 执行日志文件检查
-
-      #ifdef __COM_AUTO_REOPEN_H_
-      Time1SecProcessPendingOpen();
-      #endif
-    }
-    return (threadRet)0;
-}
 
 // systemd 设置的环境变量
 bool is_running_as_service() 
@@ -543,49 +554,7 @@ bool is_running_as_service()
   return ret;
 }
 
-void start1SecRunOneThread(void)
-{ 
-  static volatile bool g_logMonitorRunning = false;
 
-  static thread_t g_logMonitorThread = 0;  // 使用 platform.h 的 thread_t
-  // 启动监控线程
-  if (g_logMonitorRunning == false) {
-      threadID_t threadId;    // 使用 platform.h 的线程创建函数
-      g_logMonitorThread = threadCreate(&threadId, run1SecThread, NULL);
-      g_logMonitorRunning = (g_logMonitorThread == 0) ? false:true;
-  }
-
-#if 0
-  // 停止监控线程 - 使用 platform.h 的线程等待函数
-
-    if (!g_logMonitorRunning) {
-        return;
-    }
-    
-    g_logMonitorRunning = false;
-    
-    // 等待线程结束（最多等待5秒）
-    if (g_logMonitorThread != 0) {
-        SafePrintf("等待日志监控线程结束...\n");
-        
-        DWORD waitResult = WaitForSingleObject_Wrapper(g_logMonitorThread, 5000);
-        if (waitResult == WAIT_OBJECT_0) {
-            SafePrintf("日志监控线程已正常结束\n");
-        } else if (waitResult == WAIT_TIMEOUT) {
-            SafePrintf("日志监控线程等待超时，强制结束\n");
-        } else {
-            SafePrintf("等待日志监控线程时发生错误: %lu\n", waitResult);
-        }
-        
-        // 在 Windows 下需要关闭线程句柄
-#ifdef _WIN32
-        CloseHandle(g_logMonitorThread);
-#endif
-        g_logMonitorThread = 0;
-    }
-#endif
-
-}
 
 
 // 执行命令并获取输出结果。执行成功返回真，执行失败返回假

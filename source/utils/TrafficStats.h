@@ -31,7 +31,7 @@ typedef struct {
 extern GlobalTrafficStats_t trafficStats;
 
 /*================== 外部函数声明		=========================================*/
-void Time1SesUpdataTrafficMonitor(void);
+void Time1SecUpdataTrafficMonitor(void* arg);
 
 #ifdef __cplusplus
 }

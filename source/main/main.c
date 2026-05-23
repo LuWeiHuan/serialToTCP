@@ -30,6 +30,8 @@
 #include "ServerConnect.h"
 #include "exception.h"
 #include "configSave.h"
+#include "threadPool.h"
+#include "COMAutoReOpen.h"
 
 #ifndef _WIN32
 #include <unistd.h>
@@ -53,6 +55,7 @@ static void PlatformSpecificInit(void);
 static void PlatformSpecificCleanup(void);
 static void linuxPlatformIsRoot(void);
 static bool logFileInit(void);
+static void startTimeTask(void);
 
 /*=============================================================================
  功   能：主函数
@@ -62,7 +65,7 @@ static bool logFileInit(void);
  描   述：无
 =============================================================================*/
 int main(int argc, char const *argv[])
-{ 
+{
   PlatformSpecificInit(); // 平台通用初始化 
   printBuildInfo();
 
@@ -88,15 +91,14 @@ int main(int argc, char const *argv[])
   ComPortResourceInit(true);      // 串口资源初始化
   DeviceChangeMonitor(true);      // 启动设备插拔变化监听 
   ServerConnectInit(true);        // 服务器连接初始化
-  start1SecRunOneThread();        // 启动1秒执行一次的线程
-  
-  // 测试广播功能是否正常
-  addAsyncFuncHandle(TestBroadcastCapabilityIsOK, NULL);  
+  globalThreadPoolInit(20);       // 启动带有定时功能的线程池
+  startTimeTask();                // 启动定时任务
+  broadcastTestIsNormal();        // 测试广播功能是否正常
 
   while( true ) {                 // 主事件循环 循环
     
     // 检查是否有新的客户端连接
-    int8_t listenStartRet = listenNewClientConnect(&mainServer);
+    int8_t listenStartRet = listenNewClientConnect(&mainServer, 2);
     
     if( listenStartRet == -1 ) {
       SafePrintf("服务器监听套接字无效，退出主循环\n");
@@ -127,9 +129,9 @@ int main(int argc, char const *argv[])
   logStorageUninit();
   SafePrintResourceInit(false);
   CleanupProcessExceptionMonitor();
-  Platform_Cleanup();
+  platformCleanup();
   PlatformSpecificCleanup();
-  
+  threadPoolDestroy(gThreadPool);
 
   SafePrintf("程序正常退出\n");
   return 0;
@@ -203,7 +205,7 @@ static void PlatformSpecificInit(void)
   // 设置控制台标题
   SetConsoleTitleA("串口转TCP服务器 - 启动中...");
 
-  if( !Platform_Initialize() )
+  if( !platformInitialize() )
     printf("平台初始化失败\n");
 #else
   // Linux 特定初始化
@@ -230,8 +232,6 @@ static void PlatformSpecificCleanup(void)
     }
 #endif
 }
-
-
 
 // 微功能代码测试（可用于调试和测试）
 static void microFuncCodeTest(void)
@@ -272,4 +272,58 @@ static void linuxPlatformIsRoot(void)
   exit(EXIT_SUCCESS); // 子进程成功启动后退出原进程
 
 #endif
+}
+
+//#define TEST_TIME_TASK
+#if defined(TEST_TIME_TASK)
+static void timeTaskTestCallback(void *arg)
+{
+  ThreadTask *task = ((ThreadPoolArgWrapper*)arg)->threadTask;
+  int* counter = ((ThreadPoolArgWrapper*)arg)->arg;
+   
+  SafePrintf("Times %p Task Executed: count=%-5d, repeat=%-5d ms, executed=%-5u\n", 
+           (void*)task, (*counter)++, task->repeat, task->executed_count);
+  
+  if( task->executed_count > 5 ){
+    SafePrintf("定时任务 %p 停止，已执行 %d 次\n", (void*)task, task->executed_count);
+    threadTtaskStop(gThreadPool, task);
+  }
+}
+#endif
+
+// 启动定时任务
+static void startTimeTask(void)
+{
+  static ThreadTask task[3];
+
+  #ifdef __TRAFFIC_STATS_H_     // 定时更新标题栏信息
+  threadTaskInit(&task[0], Time1SecUpdataTrafficMonitor, NULL, 1100, 1000);
+  threadTtaskStart(gThreadPool, &task[0]);
+  #endif
+  
+  #ifdef __LOG_PRINT_H_         // 执行日志文件检查
+  threadTaskInit(&task[1], Time1SecCheckAndRotateLogFile, NULL, 1200, 1000);
+  threadTtaskStart(gThreadPool, &task[1]);
+  #endif
+
+  #ifdef __COM_AUTO_REOPEN_H_   // 串口自动打开
+  threadTaskInit(&task[2], Time1SecProcessPendingOpen, NULL, 1300, 1000);
+  threadTtaskStart(gThreadPool, &task[2]);
+  #endif
+
+
+  #if defined(TEST_TIME_TASK)
+  SafePrintf("timeTaskTestCallback Task Started\n"); 
+  static int counter[2] = {2, 4};
+  static ThreadTask  timeTaskTest[2];
+  threadTaskInit(&timeTaskTest[0], timeTaskTestCallback, &counter[0], 300, 200);
+  threadTtaskStart(gThreadPool, &timeTaskTest[0]);
+  threadTaskInit(&timeTaskTest[1], timeTaskTestCallback, &counter[1], 300, 100);
+  threadTtaskStart(gThreadPool, &timeTaskTest[1]);
+
+  SafePrintf("accuracyTest Task Started\n");
+  static ThreadTask accuracyTestTimeTask;
+  threadTaskInit(&accuracyTestTimeTask, threadPoolAccuracyTest, gThreadPool, 0, 100);
+  threadTtaskStart(gThreadPool, &accuracyTestTimeTask);
+  #endif
 }

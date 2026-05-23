@@ -18,6 +18,7 @@
 #include "clients.h"
 #include "log.h"
 #include "Queue.h"
+#include "threadPool.h"
 #include "ServerConnect.h"
 #include "discovery.h"
 #include "main.h"
@@ -446,9 +447,10 @@ static bool isPasswordFreeCommand(const char* cmd)
   return false;
 }
 
-static void trueExecuteSystemCommands(void *argc)
+static void trueExecuteSystemCommands(void *arg)
 {
-  asyncExecuteSystemCommands_t *aesc = (asyncExecuteSystemCommands_t*)argc;
+  //ThreadTask *task = ((ThreadPoolArgWrapper*)arg)->threadTask; 
+  asyncExecuteSystemCommands_t *aesc = ((ThreadPoolArgWrapper*)arg)->arg;
   int ret;
   static char executeResult[2048];
 
@@ -498,12 +500,15 @@ static void cmdRunSystemCmd(socket_t *Socket, char* commandData)
   aesc.getResult = stristr( commandData, "Result") == NULL? false:true;
   memset(aesc.cmd, 0, sizeof aesc.cmd);
   memcpy(aesc.cmd, token, strlen(token) < sizeof aesc.cmd? strlen(token) : sizeof aesc.cmd - 1);
-  addAsyncFuncHandle(trueExecuteSystemCommands, &aesc);
+
+  static ThreadTask  asyncExecuteSystemCommandsTime;
+  threadTaskInit(&asyncExecuteSystemCommandsTime, trueExecuteSystemCommands, &aesc, 0, 0);
+  threadTtaskStart(gThreadPool, &asyncExecuteSystemCommandsTime);
 }
 
 static void cmdVerifyPassword(socket_t *Socket, char* commandData)
 {
-  static const uint8_t MaxVerifyNum = 30;
+  #define MaxVerifyNum      30
   static uint8_t verifyNum = MaxVerifyNum;
 
   if( verifyNum <= 0 ){

@@ -145,16 +145,15 @@ bool serverStart(serverInfo_t *server)
 
 /*=============================================================================
  功   能：监听新客户端连接
- 参   数：ServerSocket  --> 服务端套接字
-					retSocket		  --> 有新的客户端连接这里会返回客户端套接字
-					retIP 	      --> 有新的客户端连接这里会返回客户端IP 
+ 参   数：server  --> 服务端信息
+					timeout --> 监听超时时间，单位秒
  返   回：-2  请传递有效的服务端结构体
           -1  这个服务端套接字是无效的，建议重新创建服务端套接字
            0  则是有新的客户端连接
       大于 0  的话请重新监听
  描   述：无
 =============================================================================*/
-int8_t listenNewClientConnect(serverInfo_t *server)
+int8_t listenNewClientConnect(serverInfo_t *server, uint8_t timeOut)
 {    
   if( server == NULL ) 
     return -2;
@@ -164,7 +163,7 @@ int8_t listenNewClientConnect(serverInfo_t *server)
   FD_SET(server->socket, &readSet);
 
   struct timeval timeout;
-  timeout.tv_sec = 2;
+  timeout.tv_sec = timeOut;
   timeout.tv_usec = 0;
 
   int selRet = select(server->socket + 1, &readSet, NULL, NULL, &timeout);
