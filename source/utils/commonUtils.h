@@ -5,15 +5,14 @@
 #include <stdbool.h>
 #include <time.h>
 
-#ifdef __cplusplus  
-extern "C" {
-#endif
-
 /*================== 数据类型声明    ========================================*/
 /*================== 外部变量声明    ========================================*/
 
 
 /*================== 外部函数声明    ========================================*/
+#ifdef __cplusplus  
+extern "C" {
+#endif
 void printBuildInfo(void);
 uint64_t getRuningTimeMs(void);
 char *getCurrentTimeStringSec(void);

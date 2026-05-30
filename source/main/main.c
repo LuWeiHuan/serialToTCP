@@ -311,6 +311,16 @@ static void startTimeTask(void)
   threadTtaskStart(gThreadPool, &task[2]);
   #endif
 
+#ifdef __linux
+  if( getSystemUptimeSeconds() < 40){
+    SafePrintf("Linux 环境开机40秒内，内不运行程序，"
+      "因为网络可能没准备好，导致不能被搜索到，程序将与2秒后主动退出\n"); 
+    logPrintFull(LOG_LEVEL_WARN, "Linux 环境开机40秒内，内不运行程序，"
+      "因为网络可能没准备好，导致不能被搜索到\n");
+    Sleep(2000);
+    exit(0);
+  }
+#endif
 
   #if defined(TEST_TIME_TASK)
   SafePrintf("timeTaskTestCallback Task Started\n"); 

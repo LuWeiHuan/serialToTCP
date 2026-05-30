@@ -11,7 +11,7 @@ typedef struct {
 } ThreadPoolArgWrapper; 
 
 // 回调函数类型
-typedef void (*ThreadTaskCallback_t)(void* arg);
+typedef void (*ThreadTaskCallback_t)(void* argWrapper);
 
 // 线程池任务结构
 typedef struct ThreadTask {

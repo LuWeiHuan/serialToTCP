@@ -189,61 +189,73 @@ static void DiscoveryServiceStop(void)
 
 // 初始化发现Socket
 static bool InitializeDiscoverySocket(void)
-{ 
-  int socketRet;
-  discoverySocket = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
-  if (discoverySocket == INVALID_SOCKET_VALUE) {
-    SafePrintf("Discovery socket creation failed: %ld\n", GetLastError());
+{
+	int socketRet;
+  uint8_t retryCount = 0;
+  socket_t sock = INVALID_SOCKET_VALUE;
+  
+  while (sock == INVALID_SOCKET_VALUE && retryCount < 5) {
+    sock = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
+    if (sock == INVALID_SOCKET_VALUE) {
+      SafePrintf("Socket creation failed, retry %d\n", retryCount);
+      Sleep(1);
+      retryCount++;
+      continue;
+    }
+    
+    int broadcast = 1;
+    socketRet = setsockopt(sock, SOL_SOCKET, SO_BROADCAST, (char*)&broadcast, sizeof broadcast);
+    if ( socketRet== SOCKET_ERROR) {
+      SafePrintf("Set SO_BROADCAST failed: %ld\n", GetLastError());
+      //closeSocket(discoverySocket);
+      //discoverySocket = INVALID_SOCKET_VALUE;
+      //return false;
+    }
+  
+    int reuseAddr = 1;
+    socketRet = setsockopt(sock, SOL_SOCKET, SO_REUSEADDR, (char*)&reuseAddr, sizeof reuseAddr);
+    if (socketRet == SOCKET_ERROR) 
+      SafePrintf("Set SO_REUSEADDR failed: %ld\n", GetLastError());
+    
+#ifdef __linux // Linux下使用 SO_REUSEPORT 允许多个socket绑定同一端口
+    int reusePort = 1;
+    socketRet = setsockopt(sock, SOL_SOCKET, SO_REUSEPORT, &reusePort, sizeof reusePort);
+    if (socketRet == SOCKET_ERROR) 
+      SafePrintf("Set SO_REUSEPORT failed: %ld\n", GetLastError());
+#endif
+    
+    struct sockaddr_in serverAddr;
+    memset(&serverAddr, 0, sizeof(serverAddr));
+    serverAddr.sin_family = AF_INET;
+    serverAddr.sin_addr.s_addr = htonl(INADDR_ANY);
+    serverAddr.sin_port = htons(DISCOVERY_PORT);
+    
+    if (bind(sock, (struct sockaddr*)&serverAddr, sizeof(serverAddr)) == 0) {
+      break;// bind成功，保持这个socket
+    }
+    else {
+      int err = errno;
+      SafePrintf("Bind failed: %s (errno=%d), retry %d\n", strerror(err), err, retryCount);
+      closeSocket(sock);
+      sock = INVALID_SOCKET_VALUE;
+      Sleep(2);
+      retryCount++;
+    }
+  }
+  
+  if (sock == INVALID_SOCKET_VALUE) 
     return false;
-  }
-
-  // 设置Socket选项：允许广播和地址重用
-  int broadcast = 1;
-  socketRet = setsockopt(discoverySocket, SOL_SOCKET, SO_BROADCAST, 
-                (char*)&broadcast, sizeof broadcast);
-  if ( socketRet== SOCKET_ERROR) {
-    SafePrintf("Set SO_BROADCAST failed: %ld\n", GetLastError());
-    closeSocket(discoverySocket);
-    discoverySocket = INVALID_SOCKET_VALUE;
-    return false;
-  }
-
-  int reuseAddr = 1;
-  socketRet = setsockopt(discoverySocket, SOL_SOCKET, SO_REUSEADDR, 
-                (char*)&reuseAddr, sizeof reuseAddr);
-  if (socketRet == SOCKET_ERROR) {
-    SafePrintf("Set SO_REUSEADDR failed: %ld\n", GetLastError());
-  }
-
-  // 绑定到发现端口
-  struct sockaddr_in serverAddr;
-  memset(&serverAddr, 0, sizeof(serverAddr));
-  serverAddr.sin_family = AF_INET;
-  serverAddr.sin_addr.s_addr = htonl(INADDR_ANY);
-  serverAddr.sin_port = htons(DISCOVERY_PORT);
-  socketRet = bind(discoverySocket, (struct sockaddr*)&serverAddr, sizeof serverAddr);
-  if ( socketRet == SOCKET_ERROR) {
-    SafePrintf("Discovery bind failed: %ld\n", GetLastError());
-    closeSocket(discoverySocket);
-    discoverySocket = INVALID_SOCKET_VALUE;
-    return false;
-  }
-
-  // 设置非阻塞模式
+  
+  // 设置非阻塞
 #ifdef _WIN32
   u_long nonBlocking = 1;
-  socketRet = ioctlsocket(discoverySocket, FIONBIO, &nonBlocking);
+  ioctlsocket(sock, FIONBIO, &nonBlocking);
 #else
-  int flags = fcntl(discoverySocket, F_GETFL, 0);
-  socketRet = fcntl(discoverySocket, F_SETFL, flags | O_NONBLOCK);
+  int flags = fcntl(sock, F_GETFL, 0);
+  fcntl(sock, F_SETFL, flags | O_NONBLOCK);
 #endif
-  if (socketRet == SOCKET_ERROR) {  
-    SafePrintf("Set non-blocking failed: %ld\n", GetLastError());
-    closeSocket(discoverySocket);
-    discoverySocket = INVALID_SOCKET_VALUE;
-    return false;
-  }
-
+  
+  discoverySocket = sock;
   return true;
 }
 
@@ -345,7 +357,7 @@ threadRet WINAPI DiscoveryThread(void* lpParam)
     if (strnicmp(recvBuffer, "discover_com2tcp_server", strlen("discover_com2tcp_server")) == 0){
       SendDiscoveryResponse(&newClientInfo); // 发送响应
     }
-    else if (strnicmp(recvBuffer, CTRL_HEADER, strlen(CTRL_HEADER)) == 0){
+    else if (strnicmp(recvBuffer, CONTROL_HEADER, strlen(CONTROL_HEADER)) == 0){
       if (saveInfo.serverPrintData == 3)
         SafePrintf("UDP [%s]:%d CMD: %-60s\n", inet_ntoa(newClientInfo.sin_addr), 
                 ntohs(newClientInfo.sin_port), recvBuffer);
@@ -354,11 +366,11 @@ threadRet WINAPI DiscoveryThread(void* lpParam)
       int connectRet = connect(discoverySocket, (struct sockaddr*)&newClientInfo, sizeof newClientInfo);
       if( connectRet != 0 )
         SafePrintf("Discovery UDP connect Error! code :%d\n", connectRet);
-      HandleClientCommand(&discoverySocket, recvBuffer + strlen(CTRL_HEADER));
+      HandleClientCommand(&discoverySocket, recvBuffer + strlen(CONTROL_HEADER));
       UdpDisconnect(discoverySocket);   // 需要断开连接以恢复广播能力
 
       // 这里是进行程序异常退出捕获的测试位置，用于测试程序自我错误定位能力
-      if( strnicmp(recvBuffer, CTRL_HEADER"errorTest", strlen(CTRL_HEADER"errorTest")) == 0 )
+      if( strnicmp(recvBuffer, CONTROL_HEADER"errorTest", strlen(CONTROL_HEADER"errorTest")) == 0 )
         ErrorCodeTest();
     }
     else if( strnicmp(recvBuffer, broadcastMsg, strlen(broadcastMsg)) == 0 ){

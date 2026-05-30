@@ -30,10 +30,10 @@ build 文件夹里有几个平台的发行版本的可执行文件，如果没�
 在命令行中运行服务端程序：
 
 # Windows
-.\com2tcp_server.exe
+.\com2tcp_server.exe -p 9000
 
 # Linux
-./com2tcp_server
+./com2tcp_server -p 9000
 默认监听端口为 9000，若被占用则自动递增。
 可通过 -p 参数指定端口号，例如：./com2tcp_server -p 5000。
 
@@ -128,10 +128,10 @@ USB 串口设备的插入/拔出事件，会以 ctrlInfo:串口号异常关闭�
 
 ### 编译指南
 环境依赖
-构建工具：make、CMake
+构建工具：make、CMake、python
 
 编译器：
-Windows：MinGW (GCC)
+Windows：MinGW (本人用的是 GCC 8.1.0，测试GCC 15.0.0 也可以)
 Linux：GCC
 Linux 依赖库：libudev-dev (用于设备信息获取与热插拔检测)
 
@@ -142,64 +142,62 @@ sudo apt-get install libudev-dev
 Linux环境还需要安装libudev开发包，实现PVID获取、设备插拔检测功能
 sudo apt-get install libudev-dev
 
-构建脚本 (Linux是mk.sh，Win 是 mk.bat )
-项目提供了统一的构建脚本 mk.sh，支持灵活的构建组合。
+构建脚本 (使用的是 Python语言作为进行快速跨平台构建)
+项目提供了跨平台统一的构建 mk.py，支持灵活的构建组合。
+参数不区分先后顺序和大小写！
 
 基础命令示例
-./mk.sh              # 默认调试构建（性能较好）
-./mk.sh debug        # 完整调试模式（含内存检测，仅 Linux）
-./mk.sh asan         # ASAN 内存检测模式（仅 Linux）
-./mk.sh release      # 发布版本（生产环境优化）
+./mk.py              # 默认调试构建（性能较好）
+./mk.py debug        # 完整调试模式（含内存检测，仅 Linux）
+./mk.py asan         # ASAN 内存检测模式（仅 Linux）
+./mk.py release      # 发布版本（生产环境优化）
 
 平台特定构建
-./mk.sh x86          # x86 平台本地编译
-./mk.sh arm          # ARM 平台交叉编译
-./mk.sh x86 release  # x86 平台发布版本
+./mk.py x86          # x86 平台本地编译
+./mk.py arm          # ARM 平台交叉编译
+./mk.py x86 release  # x86 平台发布版本
 
 清理与管理
-./mk.sh rm           # 删除整个构建目录
-./mk.sh clean        # 清理构建产物（保留目录）
-./mk.sh cleanBuild   # 清理并重新构建（开发版）
+./mk.py rm           # 删除整个构建目录
+./mk.py clean        # 清理构建产物（保留目录）
+./mk.py cleanBuild   # 清理并重新构建（开发版）
 灵活的参数组合
 
 脚本支持不同参数的自由组合（平台、构建类型、清理命令），例如：
-./mk.sh x86 debug cleanBuild   # x86 平台，调试模式，清理并重建
-./mk.sh arm cleanBuild release # ARM 平台，发布模式，清理并重建
+./mk.py x86 debug cleanBuild   # x86 平台，调试模式，清理并重建
+./mk.py arm cleanBuild release # ARM 平台，发布模式，清理并重建
 注意：Windows 环境下暂不支持交叉编译 ARM 版本。
 
 
-
-
-
 ## == 基础构建命令
-./mk.sh               # 默认调试构建 信号处理+符号解析（日常开发 性能较好）
-./mk.sh debug         # 完整调试（内存检测，比较吃性能）仅Linux支持，Win还是符号解析
-./mk.sh asan          # ASAN版本（同 debug 内存检测）
-./mk.sh release       # 发布版本（生产环境） 
+./mk.py               # 默认调试构建 信号处理+符号解析（日常开发 性能较好）
+./mk.py debug         # 完整调试（内存检测，比较吃性能）仅Linux支持，Win还是符号解析
+./mk.py asan          # ASAN版本（同 debug 内存检测）
+./mk.py release       # 发布版本（生产环境） 
 
 ## == 平台特定构建
-./mk.sh arm                     # ARM平台交叉编译
-./mk.sh x86                     # x86平台本地编译
-./mk.sh arm release             # ARM平台发布版本
-./mk.sh x86 release             # x86平台发布版本
+./mk.py arm                     # ARM平台交叉编译
+./mk.py x86                     # x86平台本地编译
+./mk.py arm release             # ARM平台发布版本
+./mk.py x86 release             # x86平台发布版本
 
 ## == 清理和管理命令
-./mk.sh rm                  # 删除构建目录
-./mk.sh clean               # 清理构建（保留目录）
-./mk.sh cleanBuild debug    # 清理并构建调试版本
+./mk.py rm                  # 删除构建目录
+./mk.py clean               # 清理构建（保留目录）
+./mk.py cleanBuild debug    # 清理并构建调试版本
 
 ## == 更多参数组合 
-./mk.sh arm clean debug           # ARM清理构建并构建完整调试版本
-./mk.sh x86 cleanBuild            # x86平台清理并构建开发版本
-./mk.sh arm cleanBuild debug      # ARM平台清理并构建调试版本
-./mk.sh x86 cleanBuild debug      # x86删除构建并构建调试版本
-./mk.sh x86 cleanBuild release    # x86平台清理并构建发布版本
+./mk.py arm clean debug           # ARM清理构建并构建完整调试版本
+./mk.py x86 cleanBuild            # x86平台清理并构建开发版本
+./mk.py arm cleanBuild debug      # ARM平台清理并构建调试版本
+./mk.py x86 cleanBuild debug      # x86删除构建并构建调试版本
+./mk.py x86 cleanBuild release    # x86平台清理并构建发布版本
 
 ## == 任意顺序组合，Win下面还不能实现构建ARM版本
-./mk.sh x86 debug cleanBuild      # 平台→类型→清理
-./mk.sh cleanBuild x86 debug      # 清理→平台→类型
-./mk.sh debug cleanBuild x86      # 类型→清理→平台
-./mk.sh x86 cleanBuild debug      # 平台→清理→类型
+./mk.py x86 debug cleanBuild      # 平台→类型→清理
+./mk.py cleanBuild x86 debug      # 清理→平台→类型
+./mk.py debug cleanBuild x86      # 类型→清理→平台
+./mk.py x86 cleanBuild debug      # 平台→清理→类型
 
 ### 项目结构
 src/ - 源代码目录
@@ -207,8 +205,8 @@ build/ - 预编译的可执行文件存放目录
 测试工具/ - 包含网络调试助手等辅助工具
 局域网搜索服务端/ - 服务端发现工具的使用说明和程序
 third_party/ - 第三方依赖库 (uthash, mimIni)
-mk.sh - Linux台构建脚本
-mk.bat - Win台构建脚本
+mk.py - Python 构建脚本
+
 
 已知限制与注意事项
 串口独占：一个服务端进程同时只能打开一个串口。如需管理多个串口，请启动多个服务端实例。

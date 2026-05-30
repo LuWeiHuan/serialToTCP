@@ -2,9 +2,6 @@
 #ifndef __DCM_H_
 #define __DCM_H_
 
-#ifdef __cplusplus  
-extern "C" {
-#endif
 
 /*================== 头文件包含			=========================================*/
 #include <stdbool.h>
@@ -19,6 +16,10 @@ extern "C" {
 //extern
 
 /*================== 外部函数声明		=========================================*/
+#ifdef __cplusplus  
+extern "C" {
+#endif
+
 void DeviceChangeMonitor(bool state);
 
 #ifdef __cplusplus

@@ -95,7 +95,7 @@ ssh_copy() {
         
         # 使用检测到的IP版本
         if sshpass -f "$password_file" scp $ip_version -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
-              -o ConnectTimeout=5 "$source_file" "root@$ssh_host:$temp_path" 2>&1; then
+              -o ConnectTimeout=2 "$source_file" "root@$ssh_host:$temp_path" 2>&1; then
             
             log_success "SCP推送成功"
             
@@ -110,10 +110,10 @@ ssh_copy() {
             fi
         else
             log_error "SSH推送失败，请检查:"
-            log_error "  1. 网络是否连通"
-            log_error "  2. 目标主机是否运行SSH服务"
-            log_error "  3. 密码文件是否正确"
-            log_error "  4. 目标路径是否可写"
+            log_error " 1. 网络是否连通"
+            log_error " 2. 目标主机是否运行SSH服务"
+            log_error " 3. 密码文件是否正确"
+            log_error " 4. 目标路径是否可写"
             return 1
         fi
     else

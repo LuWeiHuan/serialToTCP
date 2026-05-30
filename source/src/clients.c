@@ -355,12 +355,12 @@ static threadRet WINAPI ClientRecvDataThread(void *param)
     tcpRecvBuffer[bytesReceived] = '\0';  // 防止命令解析异常
 
     // 检查是否是控制命令
-    if (strnicmp(tcpRecvBuffer, CTRL_HEADER, strlen(CTRL_HEADER)) == 0) {
+    if (strnicmp(tcpRecvBuffer, CONTROL_HEADER, strlen(CONTROL_HEADER)) == 0) {
       if (saveInfo.serverPrintData == 3) 
         SafePrintf("Client [%-2d]IP:%s len:%d cmd: %-60s\n", 
             clientInfo->index, clientInfo->ip, bytesReceived, tcpRecvBuffer);
       
-      HandleClientCommand(&clientInfo->socket, tcpRecvBuffer + strlen(CTRL_HEADER));
+      HandleClientCommand(&clientInfo->socket, tcpRecvBuffer + strlen(CONTROL_HEADER));
       continue;
     }
     
@@ -677,15 +677,15 @@ int sendDataToClients(const socket_t *socket, const char* buff, int len)
 /**
  * @brief  套接字发送字符串，使用类似于printf函数
  * @param 
- *		@arg Socket：指定发给客户端套接字指针，如果为孔就不指定客户端发送给所有客户端
+ *		@arg Socket：指定发给客户端套接字指针，如果为空就发送给所有客户端
  *		@arg fmt: printf 格式
  * @retval 
  */
 int printfSend(const socket_t *Socket, const char *fmt, ...)
 {
-    static __thread char stringBuff[1024 * 4 + sizeof(uint32_t)];  // 字符串缓冲区
-    strcpy(stringBuff, CTRL_HEADER);
-    static uint8_t ctrlHeaderLen = sizeof CTRL_HEADER - 1; // 减去字符串结尾的 '\0'
+    static __thread char stringBuff[4096 + sizeof(uint64_t)];  // 字符串缓冲区
+    strcpy(stringBuff, CONTROL_HEADER);
+    static uint8_t ctrlHeaderLen = sizeof CONTROL_HEADER - 1; // 减去字符串结尾的 '\0'
 
     va_list args; 
     va_start(args, fmt);

@@ -384,7 +384,7 @@ void threadTtaskStop(ThreadPool * pool, ThreadTask* task)
   EnterCriticalSection_Wrapper(&pool->task_mutex);
   
   task->repeat = 0; // 停止重复
-  for (ThreadTask *prev, * curr = pool->task_head; curr != NULL; curr = curr->next){
+  for (ThreadTask *prev = NULL, * curr = pool->task_head; curr != NULL; curr = curr->next){
     if (curr == task) { // 从链表中移除任务
       if (prev == NULL) { // 移除的是头节点
         pool->task_head = curr->next;

@@ -325,6 +325,23 @@ set(ALL_SOURCES
     ${PLATFORM_SOURCES}
 )
 
+# === 添加资源文件（图标）===
+if(PLATFORM_WINDOWS)
+    # Windows 资源文件
+    set(RESOURCE_FILES "${CMAKE_SOURCE_DIR}/resources/resources.rc")
+    
+    # 如果存在 .rc 文件，添加到源文件列表
+    if(EXISTS ${RESOURCE_FILES})
+        set(ALL_SOURCES ${ALL_SOURCES} ${RESOURCE_FILES})
+        message(STATUS "Windows resource file added: ${RESOURCE_FILES}")
+    else()
+        message(WARNING "Resource file not found: ${RESOURCE_FILES}")
+    endif()
+elseif(PLATFORM_LINUX)
+    # Linux 可以使用 .desktop 文件，稍后处理
+    message(STATUS "Linux: Icon will be handled via .desktop file")
+endif()
+
 # 创建可执行文件
 add_executable(${PROJECT_NAME} ${ALL_SOURCES})
 

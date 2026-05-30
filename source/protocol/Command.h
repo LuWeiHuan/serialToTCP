@@ -11,7 +11,7 @@ extern "C" {
 #include "platform.h"
 
 /*================== 宏定义声明			=========================================*/
-#define CTRL_HEADER         "ctrlInfo:"
+#define CONTROL_HEADER         "ctrlInfo:"
 
 /*================== 数据类型声明		=========================================*/
 //struct enum union
