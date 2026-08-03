@@ -55,7 +55,7 @@ bool globalThreadPoolInit(uint16_t num)
   gThreadPool = threadPoolCreate(num);
   if (gThreadPool == NULL){
     platformCleanup(); 
-    SafePrintf("Failed to create thread pool!\n");
+    SafePrintf("Create Thread Pool Failed!\n");
   }
   
   return gThreadPool == NULL? false : true;
@@ -384,7 +384,7 @@ void threadTtaskStop(ThreadPool * pool, ThreadTask* task)
   EnterCriticalSection_Wrapper(&pool->task_mutex);
   
   task->repeat = 0; // 停止重复
-  for (ThreadTask *prev = NULL, * curr = pool->task_head; curr != NULL; curr = curr->next){
+  for (ThreadTask *prev = NULL, *curr = pool->task_head; curr != NULL; curr = curr->next){
     if (curr == task) { // 从链表中移除任务
       if (prev == NULL) { // 移除的是头节点
         pool->task_head = curr->next;
@@ -438,11 +438,8 @@ uint32_t threadPoolGetPendingCount(ThreadPool* pool)
     
     uint32_t count = 0;
     EnterCriticalSection_Wrapper(&pool->task_mutex);
-    ThreadTask* task = pool->task_head;
-    while (task != NULL) {
+    for (ThreadTask* task = pool->task_head; task != NULL; task = task->next)
         count++;
-        task = task->next;
-    }
     LeaveCriticalSection_Wrapper(&pool->task_mutex);
     return count;
 }

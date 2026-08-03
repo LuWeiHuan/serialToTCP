@@ -53,8 +53,8 @@ bool startAsyncQueue(AsyncQueue_t *queue, outDataCallBack_t CallBack,
 bool AddDataToAsyncQueue(AsyncQueue_t *queue, const uint8_t *data, uint32_t len);
 void FreeAsyncQueue(AsyncQueue_t *queue);
 
-int GetAsyncQueueRemainingSpace(AsyncQueue_t *queue);
-int GetAsyncQueueCurrentSize(AsyncQueue_t *queue);
+int getAsyncQueueRemainingSpace(AsyncQueue_t *queue);
+int getAsyncQueueCurrentSize(AsyncQueue_t *queue);
 
 bool startAsyncFuncHandle(bool start);
 bool addAsyncFuncHandle(void(*CallBack)(void*) , void *arg);

@@ -17,6 +17,7 @@
 #include "log.h"
 #include <stdio.h>
 #include <string.h>
+#include "COM.h"
 
 #ifdef _WIN32
 #include <windows.h>
@@ -243,13 +244,15 @@ long get_usb_speed_mbps(const char* device_name) {
 // VPID 是否需要PID、VID和REV信息，真需要，否不需要
 const char *getComPortList(bool VPID) 
 {
-    static char response[4096];
-    size_t pos = 0;
-    
+    static char response[4096]; 
+    memset(response, 0, sizeof response);
     // 初始化响应
-    const char *header = VPID ? "COM Ports:\n" : "COM Ports: ";
-    strcpy(response, header);
-    pos = strlen(header);
+    if( getComIsOpen() )
+        sprintf(response, "Opened %s, %s", getComName(), VPID? "COM List:\n": "COM List: ");
+    else
+        sprintf(response, "%s", VPID? "COM List:\n": "COM List: ");
+    size_t pos = strlen(response);
+    
     
     DIR *dir;
     struct dirent *entry;
@@ -315,8 +318,8 @@ const char *getComPortList(bool VPID)
     closedir(dir);
     
     if (!exist) {
-        if (pos + strlen("No COM ports found") < sizeof(response)) {
-            strcat(response + pos, "No COM ports found");
+        if (pos + strlen("No COM Ports found") < sizeof(response)) {
+            strcat(response + pos, "No COM Ports found");
         }
     }
     
@@ -331,21 +334,17 @@ const char *getComPortList(bool VPID)
   // EnterCriticalSection_Wrapper(&csComPort);
   HDEVINFO hDevInfo = SetupDiGetClassDevs(&GUID_DEVCLASS_PORTS, NULL, NULL, DIGCF_PRESENT);
   if (hDevInfo == INVALID_HANDLE_VALUE) 
-    return "COM Ports: GUID_DEVCLASS_PORTS NULL";
+    return "COM List: GUID_DEVCLASS_PORTS NULL";
       
   bool exist = false;  
-  static char response[2048];
+  static char response[4096];
   memset(response, 0, sizeof response);
 
-  #if 1
-  strcpy(response, VPID? "COM Ports:\n": "COM Ports: ");
-  #else
-  sprintf(response, "[%s %s] %s",
-    comPort.isOpen? comPort.portName:"COM",
-    comPort.isOpen? "has been opened":"not open",
-    VPID? "COM Ports:\n": "COM Ports: "); 
-  #endif
-
+  if( getComIsOpen() )
+      sprintf(response, "Opened %s, %s", getComName(), VPID? "COM List:\n": "COM List: ");
+  else
+      sprintf(response, "%s", VPID? "COM List:\n": "COM List: ");
+  
   SP_DEVINFO_DATA deviceInfoData;
   deviceInfoData.cbSize = sizeof deviceInfoData;
   BYTE buffer[256];
@@ -401,7 +400,7 @@ const char *getComPortList(bool VPID)
   SetupDiDestroyDeviceInfoList(hDevInfo);
 
   if (exist == false)
-    strcat(response, "No COM ports found");
+    strcat(response, "No COM Ports Found");
 
   // LeaveCriticalSection_Wrapper(&csComPort);
   return response;

@@ -22,7 +22,7 @@ typedef enum {
 } ConnectState_t;
 
 typedef void(*connectResultCallback)(ConnectState_t state, 
-    void*arg, const char *IP, uint16_t port, uint16_t residueTimeMs);
+    const void*arg, const char *IP, uint16_t port, uint16_t residueTimeMs);
 
 /*================== 外部变量声明   =========================================*/
 //extern
@@ -30,10 +30,7 @@ typedef void(*connectResultCallback)(ConnectState_t state,
 /*================== 外部函数声明   =========================================*/
 void ServerConnectInit(bool);
 void ConnectToServer(const char* host, uint16_t port, 
-          connectResultCallback connectResult, void *arg);
-
-bool ResolveDomainName(const char* domain, char* ipBuffer, uint8_t bufferSize);
-
+          connectResultCallback connectResult, const void *arg);
 #ifdef __cplusplus
 }
 #endif

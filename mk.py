@@ -30,24 +30,34 @@ class Colors:
 if platform.system() == 'Windows':
   os.system('color')
 
+# ARM默认架构（模块级常量，供参数解析和构建管理器共用）
+DEFAULT_ARM_TARGET_ARCH = "64"  # 可选: "32" 或 "64"
+
+
 class BuildManager:
-  def __init__(self):
+  def __init__(self, current_arch=None, build_type="development"):
+    """
+    Args:
+      current_arch: None=本地架构, 'arm32', 'arm64'
+      build_type:   'development' | 'debug' | 'release'
+    """
     self.target_name = "com2tcp_server"
-    self.extra_script = "fileCopy.bat" if platform.system() == "Windows" else "fileCopy.sh"
+    self.extra_script = "pushFile.py"
     self.start_time = None  # 将在构建开始时设置
     
     # 平台特定配置
     self.is_windows = platform.system() == "Windows"
     self.exe_ext = ".exe" if self.is_windows else ""
     
-    # ARM默认架构（与原脚本一致）
-    self.default_arm_target_arch = "64"  # 可选: "32" 或 "64"
-    
     # ARM编译器配置
     self.arm32_compiler = "/usr/local/arm/arm-linux-gnueabihf_4.9.4/bin/arm-linux-gnueabihf-gcc"
     self.arm64_compiler = ""
     
-    # 构建目录（稍后根据平台设置）
+    # 当前构建配置（必须在 _init_build_dir 之前设置）
+    self.current_arch = current_arch
+    self.build_type = build_type
+    
+    # 构建目录（根据 current_arch 确定）
     self.build_dir = None
     self.cmake_generator = "MinGW Makefiles" if self.is_windows else "Unix Makefiles"
     
@@ -58,11 +68,7 @@ class BuildManager:
       "release": {"CMAKE_BUILD_TYPE": "Release", "ENABLE_MONITOR": "OFF", "ENABLE_ASAN": "OFF", "BUILD_STATIC": "ON"}
     }
     
-    # 当前构建配置
-    self.current_arch = None  # None表示本地架构，'arm32', 'arm64'
-    self.build_type = "development"
-    
-    # 初始化构建目录
+    # 初始化构建目录（此时 current_arch 已确定）
     self._init_build_dir()
     
     # 获取CPU核心数用于并行构建
@@ -72,10 +78,8 @@ class BuildManager:
     """获取CPU核心数"""
     try:
       if self.is_windows:
-        # Windows: 使用NUMBER_OF_PROCESSORS环境变量
         cores = os.cpu_count()
         if cores is None:
-          # 备用方法
           result = subprocess.run(['wmic', 'cpu', 'get', 'NumberOfCores'], 
                                  capture_output=True, text=True)
           if result.returncode == 0:
@@ -85,7 +89,6 @@ class BuildManager:
             cores = 4
         return cores
       else:
-        # Linux: 使用nproc命令
         result = subprocess.run(['nproc'], capture_output=True, text=True)
         if result.returncode == 0:
           return int(result.stdout.strip())
@@ -122,10 +125,8 @@ class BuildManager:
   def _find_arm_compiler(self, arch):
     """查找ARM编译器"""
     if arch == "arm32":
-      # 优先使用配置的编译器
       if self.arm32_compiler and Path(self.arm32_compiler).exists():
         return self.arm32_compiler
-      # 尝试系统路径
       try:
         result = subprocess.run(['which', 'arm-linux-gnueabihf-gcc'], 
                                capture_output=True, text=True)
@@ -134,10 +135,8 @@ class BuildManager:
       except:
         pass
     elif arch == "arm64":
-      # 优先使用配置的编译器
       if self.arm64_compiler and Path(self.arm64_compiler).exists():
         return self.arm64_compiler
-      # 尝试系统路径
       try:
         result = subprocess.run(['which', 'aarch64-linux-gnu-gcc'], 
                                capture_output=True, text=True)
@@ -222,12 +221,10 @@ class BuildManager:
       return
     
     if full_clean:
-      # 完全清理：直接删除整个构建目录
       print(f"{Colors.CYAN}[INFO] 执行完全清理（删除整个构建目录）...{Colors.NC}")
       shutil.rmtree(self.build_dir)
       print(f"{Colors.GREEN}[SUCCESS] 完全清理完成{Colors.NC}")
     else:
-      # 普通清理：仅make clean
       if self.is_windows:
         original_dir = os.getcwd()
         os.chdir(self.build_dir)
@@ -252,20 +249,7 @@ class BuildManager:
     Args:
       force_reconfigure: True=强制重新CMake配置并重新编译
     """
-    # 记录开始时间
     self.start_time = time.time()
-    
-    # 重新初始化构建目录（根据当前架构）
-    old_build_dir = self.build_dir
-    self._init_build_dir()
-    
-    # 检查构建目录是否改变（架构切换）
-    if old_build_dir != self.build_dir and old_build_dir and old_build_dir.exists():
-      print(f"{Colors.YELLOW}[INFO] 架构已改变，清理旧的构建目录...{Colors.NC}")
-      print(f"{Colors.YELLOW}[INFO] 旧目录: {old_build_dir}{Colors.NC}")
-      print(f"{Colors.YELLOW}[INFO] 新目录: {self.build_dir}{Colors.NC}")
-      # 删除旧的构建目录
-      shutil.rmtree(old_build_dir)
     
     # 如果是ARM架构，设置交叉编译环境
     if self.current_arch and not self.is_windows:
@@ -274,7 +258,7 @@ class BuildManager:
     
     # 如果需要强制重新配置，删除构建目录
     if force_reconfigure and self.build_dir.exists():
-      print(f"{Colors.CYAN}[INFO] 强制重新配置，删除现有构建目录...{Colors.NC}")
+      print(f"{Colors.CYAN}[INFO] 强制重新配置，删除现有构建目录: {self.build_dir}{Colors.NC}")
       shutil.rmtree(self.build_dir)
     
     # 终止进程
@@ -292,14 +276,12 @@ class BuildManager:
     if self.is_windows:
       cmake_flags += f'-DBUILD_STATIC={flags["BUILD_STATIC"]} '
     
-    # 构建类型提示
     build_tips = {
       "development": "(信号处理+符号解析)",
       "debug": "(ASAN内存检测，性能较慢)",
       "release": "(最优性能，无调试信息)"
     }
 
-    # 根据构建类型选择颜色
     build_type_colors = {
       "development": Colors.CYAN,
       "debug": Colors.YELLOW,      # DEBUG 使用黄色
@@ -327,7 +309,6 @@ class BuildManager:
     print(f"{Colors.CYAN}[INFO] 构建项目...{Colors.NC}")
     print(f"{Colors.CYAN}[INFO] 使用 {self.cpu_cores} 核心并行构建{Colors.NC}")
     
-    # 构建命令：Windows和Linux都支持 --parallel
     build_cmd = f'cmake --build "{self.build_dir}"'
     if self.cpu_cores > 1:
       build_cmd += f' --parallel {self.cpu_cores}'
@@ -385,7 +366,6 @@ class BuildManager:
       subprocess.run(f'./{self.extra_script}', shell=True)
       print(f"{Colors.GREEN}[SUCCESS] 脚本执行完成{Colors.NC}")
     elif extra_path.exists() and self.is_windows and not self.current_arch:
-      # Windows平台总是执行fileCopy.bat（与原bat脚本行为一致）
       print(f"\n{Colors.CYAN}[INFO] 执行 {self.extra_script}...{Colors.NC}")
       subprocess.run(self.extra_script, shell=True)
       print(f"{Colors.GREEN}[SUCCESS] 脚本执行完成{Colors.NC}")
@@ -396,9 +376,9 @@ def parse_arguments():
   """解析命令行参数（不区分大小写，支持任意顺序）"""
   args = sys.argv[1:]
   
-  # 参数映射（不区分大小写）
   param_map = {
     'cleanbuild': 'cleanbuild',
+    'cb': 'cleanbuild',
     'release': 'release',
     'debug': 'debug',
     'clean': 'clean',
@@ -420,7 +400,6 @@ def parse_arguments():
     'do_remove': False  # 是否删除
   }
   
-  # 解析参数
   for arg in args:
     normalized = arg.lower()
     mapped = param_map.get(normalized, normalized)
@@ -443,7 +422,6 @@ def parse_arguments():
       result['build_type'] = 'debug'
       result['action'] = 'build'
     elif mapped in ['arm', 'arm32', 'arm64']:
-      # 处理ARM参数
       if mapped == 'arm':
         result['target_arch'] = None  # 稍后使用默认值
       else:
@@ -451,11 +429,9 @@ def parse_arguments():
     elif normalized == 'build':
       result['action'] = 'build'
   
-  # 如果指定了arm但没有指定具体架构，使用默认值
-  if result['target_arch'] is None and any(a.lower() in ['arm'] for a in args):
-    # 需要获取默认架构（从BuildManager）
-    temp_manager = BuildManager()
-    result['target_arch'] = f"arm{temp_manager.default_arm_target_arch}"
+  # 裸 arm：使用默认架构（不再构造临时 BuildManager）
+  if result['target_arch'] is None and any(a.lower() == 'arm' for a in args):
+    result['target_arch'] = f"arm{DEFAULT_ARM_TARGET_ARCH}"
   
   return result
 
@@ -472,6 +448,7 @@ def show_help():
 ║                                                                 ║
 ║  组合命令 (参数不区分先后顺序):                                 ║
 ║    python3 mk.py cleanBuild debug arm    - 完全清理并构建ARM调试║
+║    python3 mk.py cb debug arm            - 完全清理并构建ARM调试║
 ║    python3 mk.py arm release cleanBuild  - 完全清理并构建ARM发布║
 ║    python3 mk.py arm32 debug             - 构建ARM32调试版本    ║
 ║    python3 mk.py debug arm64             - 构建ARM64调试版本    ║
@@ -480,6 +457,7 @@ def show_help():
 ║    clean          - 清理构建目录（仅make clean）                ║
 ║    rm             - 删除整个构建目录                            ║
 ║    cleanBuild     - 完全清理并重新构建                          ║
+║    cb             - 完全清理并重新构建                          ║
 ║    help           - 显示此帮助信息                              ║
 ║                                                                 ║
 ║  ARM交叉编译说明:                                               ║
@@ -501,40 +479,37 @@ def main():
     show_help()
     return
   
-  # 创建构建管理器
-  manager = BuildManager()
+  # 创建构建管理器（构造时即确定 build_dir，避免后续重算导致误删其他架构目录）
+  manager = BuildManager(
+    current_arch=config['target_arch'],
+    build_type=config['build_type']
+  )
   
-  # 设置构建类型
-  manager.build_type = config['build_type']
-  
-  # 设置目标架构
+  # 打印目标平台信息
   if config['target_arch']:
-    manager.current_arch = config['target_arch']
     print(f"{Colors.CYAN}目标平台: {config['target_arch'].upper()}{Colors.NC}")
   else:
     print(f"{Colors.CYAN}目标平台: 本地架构{Colors.NC}")
   
   # 执行动作
   if config['action'] == 'clean':
-    # 普通清理：仅make clean
     manager.clean(full_clean=False)
   elif config['action'] == 'remove':
     manager.remove()
   elif config['action'] == 'build':
-    # 如果是cleanBuild，删除整个构建目录再构建
     if config['do_cleanbuild']:
-      # 先删除构建目录（如果存在）
+      # cleanBuild：只删除当前目标架构对应的构建目录
       if manager.build_dir and manager.build_dir.exists():
         print(f"\n{Colors.BLUE}[INFO] cleanBuild: 删除构建目录 {manager.build_dir}{Colors.NC}")
         shutil.rmtree(manager.build_dir)
         print(f"{Colors.GREEN}[SUCCESS] 构建目录已删除{Colors.NC}")
-      # 然后构建（force_reconfigure会自动创建新目录）
       manager.build(force_reconfigure=True)
     else:
       manager.build(force_reconfigure=False)
   else:
     print(f"{Colors.RED}[ERROR] 未知操作: {config['action']}{Colors.NC}")
     sys.exit(1)
+
 
 if __name__ == '__main__':
   try:

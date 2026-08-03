@@ -10,6 +10,7 @@
   * 传递服务器IP端口号，如果之前已经就断开之前的连接，防止多进程调用造成频繁连接
   * 
   * 连接服务器      serverConnect,192.168.1.100,9000
+  * 连接服务器      serverConnect,ffea:6a2:c52:8610:2a48:5561:7657:b,9000
   * 域名解析测试    serverConnect,google.com,80 
   * 断开连接        serverConnect,disconnect
   ******************************************************************************
@@ -44,12 +45,12 @@ typedef struct {
   ConnectState_t  state;
   uint64_t        startTimeMs;
   socket_t        socket;
-  char            serverIP[46];    // 支持IPv6的最大长度
+  char            serverIP[ INET6_ADDRSTRLEN ];    // 支持IPv6的最大长度
   uint16_t        serverPort;
   thread_t        thread;
   char            hsot[256];
   connectResultCallback Callback;
-  void            *arg;
+  const void      *arg;
 } connectServer_t;
 
 /*================== 本地变量声明   =========================================*/
@@ -108,7 +109,7 @@ static void DisconnectingServer(void)
  * @attention 连接新服务器之前，如果之前已经连接会断开
  */
 void ConnectToServer(const char* host, uint16_t port, 
-          connectResultCallback ResultCallback, void *arg)
+          connectResultCallback ResultCallback, const void *arg)
 { 
   EnterCriticalSection_Wrapper(&csClient);  
 
@@ -150,11 +151,11 @@ threadRet WINAPI ConnectServerThread(void * lpParam)
     clientInfo->thread = (thread_t)0;
     return (threadRet)0;
   }
-
+  int addrFamily; // IPv4 or IPv6
   clientInfo->startTimeMs = getRuningTimeMs();
   bool ConnectRet = startConnectToServer(clientInfo->hsot, 
       clientInfo->serverPort, CONNECT_TIMEOUT_MS, 
-      &clientInfo->socket, clientInfo->serverIP);
+      &clientInfo->socket, clientInfo->serverIP, &addrFamily);
 
   if( ConnectRet ){  // 连接成功将连接交给 clients.c 管理
     ConnectRet = addNewClient(clientInfo->socket, clientInfo->serverIP);
@@ -178,14 +179,3 @@ threadRet WINAPI ConnectServerThread(void * lpParam)
   return (threadRet)0;
 }
 
-// 域名解析
-bool ResolveDomainName(const char* domain, char* ipBuffer, uint8_t bufferSize)
-{
-  int getErr = 0;
-  int8_t ret = resolveHostname(domain, ipBuffer, bufferSize, &getErr);
-  if( ret == -1 )
-    SafePrintf("Domain resolution failed: %s\n", gai_strerror(getErr));
-  if( ret == -2 )
-    SafePrintf("No valid IP address found for: %s, code:%d\n", domain, getErr);
-  return ret==0? true:false;
-}
