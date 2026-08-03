@@ -399,6 +399,7 @@ def parse_arguments():
   # 参数映射（不区分大小写）
   param_map = {
     'cleanbuild': 'cleanbuild',
+    'cb': 'cleanbuild',
     'release': 'release',
     'debug': 'debug',
     'clean': 'clean',
@@ -472,6 +473,7 @@ def show_help():
 ║                                                                 ║
 ║  组合命令 (参数不区分先后顺序):                                 ║
 ║    python3 mk.py cleanBuild debug arm    - 完全清理并构建ARM调试║
+║    python3 mk.py cb debug arm            - 完全清理并构建ARM调试║
 ║    python3 mk.py arm release cleanBuild  - 完全清理并构建ARM发布║
 ║    python3 mk.py arm32 debug             - 构建ARM32调试版本    ║
 ║    python3 mk.py debug arm64             - 构建ARM64调试版本    ║
@@ -479,7 +481,8 @@ def show_help():
 ║  其他命令:                                                      ║
 ║    clean          - 清理构建目录（仅make clean）                ║
 ║    rm             - 删除整个构建目录                            ║
-║    cleanBuild     - 完全清理并重新构建                          ║
+║    cleanBuild     - 完全清理并重新构建 
+║    cb             - 完全清理并重新构建                         ║
 ║    help           - 显示此帮助信息                              ║
 ║                                                                 ║
 ║  ARM交叉编译说明:                                               ║

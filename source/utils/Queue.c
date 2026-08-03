@@ -371,7 +371,7 @@ bool AddDataToAsyncQueue(AsyncQueue_t *queue, const uint8_t *data, uint32_t len)
 }
 
 // 获取队列当前元素数量
-int GetAsyncQueueCurrentSize(AsyncQueue_t *queue) 
+int getAsyncQueueCurrentSize(AsyncQueue_t *queue) 
 {
   if (!queue || !queue->running || !queue->hMutex) 
       return -1;
@@ -398,9 +398,9 @@ int GetAsyncQueueCurrentSize(AsyncQueue_t *queue)
 }
 
 // 获取队列剩余可用数量
-int GetAsyncQueueRemainingSpace(AsyncQueue_t *queue) 
+int getAsyncQueueRemainingSpace(AsyncQueue_t *queue) 
 {
-  int currentSize = GetAsyncQueueCurrentSize(queue); 
+  int currentSize = getAsyncQueueCurrentSize(queue); 
   return currentSize < 0? -1:queue->capacity - currentSize - 1;
 }
 
@@ -434,7 +434,7 @@ bool startAsyncFuncHandle(bool start)
 {
   if( start )
     return startAsyncQueue(&AsyncFuncHandleQueue, AsyncFuncHandleCallBack, 
-                  100, sizeof(funcHandle_t) + 10, "Async function Handle");
+                  100, sizeof(funcHandle_t) + 10, "Async Function Handle");
   else
     FreeAsyncQueue(&AsyncFuncHandleQueue);
   return true;

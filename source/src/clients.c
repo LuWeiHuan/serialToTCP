@@ -33,6 +33,7 @@
 #include "configSave.h"
 
 #include "uthash.h"
+#include "discovery.h"
 
 #include <stdio.h>
 #include <stdarg.h>
@@ -57,7 +58,8 @@ typedef struct ClientNode {
   thread_t           hThread;
   threadID_t         threadId;
   uint16_t           index;
-  char               ip[50];
+  char               ip[INET6_ADDRSTRLEN];  // 支持 IPv6
+  int                addrFamily;            // 地址族 AF_INET/AF_INET6
   uint64_t           connectTime;
   bool               sendTempUnav;
   uint64_t           tempUnavStart;
@@ -357,7 +359,7 @@ static threadRet WINAPI ClientRecvDataThread(void *param)
     // 检查是否是控制命令
     if (strnicmp(tcpRecvBuffer, CONTROL_HEADER, strlen(CONTROL_HEADER)) == 0) {
       if (saveInfo.serverPrintData == 3) 
-        SafePrintf("Client [%-2d]IP:%s len:%d cmd: %-60s\n", 
+        SafePrintf("Client [%-2d]IP: %s len:%d cmd: %-60s\n", 
             clientInfo->index, clientInfo->ip, bytesReceived, tcpRecvBuffer);
       
       HandleClientCommand(&clientInfo->socket, tcpRecvBuffer + strlen(CONTROL_HEADER));
@@ -415,7 +417,7 @@ static bool sendMonopolizeExamine(ClientNode_t* client)
   if( runInfo.monopolizeComRecvIndex && *runInfo.monopolizeComRecvIndex != client->index){ 
     const char *ClientIP = getClientIP(*runInfo.monopolizeComRecvIndex);
     if( ClientIP != NULL && runInfo.monopolizeComSendIndex == NULL)
-      printfSend(&client->socket, "Send data to COM, but [%-2d]IP:%s "
+      printfSend(&client->socket, "Send data to COM, but [%-2d]IP: %s "
           "monopolize! You cannot receive COM data\n", 
           *runInfo.monopolizeComRecvIndex, ClientIP ); 
     if( ClientIP == NULL )
@@ -425,7 +427,7 @@ static bool sendMonopolizeExamine(ClientNode_t* client)
   if( runInfo.monopolizeComSendIndex && *runInfo.monopolizeComSendIndex != client->index){ 
     const char *ClientIP = getClientIP(*runInfo.monopolizeComSendIndex);
     if( ClientIP != NULL ) {
-      printfSend(&client->socket, "Send data to COM, but [%-2d]IP:%s monopolize!\n",
+      printfSend(&client->socket, "Send data to COM, but [%-2d]IP: %s monopolize!\n",
         *runInfo.monopolizeComSendIndex, ClientIP ); 
       return true; 
     }
@@ -473,7 +475,7 @@ bool addNewClient(socket_t socket, const char *ip)
   newNode->hThread = threadCreate(&newNode->threadId, ClientRecvDataThread, newNode);
   if (newNode->hThread) {
     static uint64_t connectCount = 0;
-    SafePrintf("Client [%-2d]IP:%-16s Connected %d/%d Count:%" PRIu64 "\n",
+    SafePrintf("Client [%-2d]IP: %-16s Connected %d/%d Count:%" PRIu64 "\n",
         newNode->index, newNode->ip, clientList.num.count, getMaxClient(), ++connectCount);
   }
   else 
@@ -484,7 +486,7 @@ bool addNewClient(socket_t socket, const char *ip)
 }
 
 // 获取所有客户端IP和索引
-void getAllClientIPandIndexInfo(char *retStr, uint16_t len) 
+void getAllClientIPandIndexInfo(const socket_t *Socket, char *retStr, uint16_t len) 
 {
   if(retStr == NULL || len == 0)
     return;
@@ -498,7 +500,8 @@ void getAllClientIPandIndexInfo(char *retStr, uint16_t len)
   for (ClientNode_t* curr = clientList.head; curr && strLen < len; curr = curr->next) {
     memset(clientInfo, 0, sizeof clientInfo);
     snprintf(clientInfo, sizeof clientInfo, 
-        "client [%-2d]IP:%-16s\n", curr->index, curr->ip);
+        "client [%-2d]IP: %-16s%s\n", curr->index, curr->ip, 
+          Socket==NULL || *Socket != curr->socket?"":" (You)");
     uint16_t infoLen = strlen(clientInfo);
     if (strLen + infoLen >= len) 
       break;
@@ -509,7 +512,7 @@ void getAllClientIPandIndexInfo(char *retStr, uint16_t len)
 }
 
 static void CloseClient(ClientNode_t* node, const char *reason)
-{ 
+{
   if (!node){
     SafePrintf("Client [-1]IP:0.0.0.0          Closed NO node,"
       " reason: %s\n", reason? reason:"未知");
@@ -521,11 +524,12 @@ static void CloseClient(ClientNode_t* node, const char *reason)
 
   // 使用原子操作确保只有一个线程执行关闭
   #ifdef _WIN32
-  if (InterlockedCompareExchange(&node->isClosing, 1, 0)) {
+  if (InterlockedCompareExchange(&node->isClosing, 1, 0))
   #else
-  if (__sync_val_compare_and_swap(&node->isClosing, 0, 1)) {
+  if (__sync_val_compare_and_swap(&node->isClosing, 0, 1)) 
   #endif
-    SafePrintf("Client [%-2d]IP:%-16s Closed [SelfCall %s] is Already, reason: %s%s", 
+  {
+    SafePrintf("Client [%-2d]IP: %-16s Closed [SelfCall %s] is Already, reason: %s%s", 
         node->index, node->ip, isSelfCall? "YES":"NO ",
         reason? reason:"未知", g_clientsNum->count == 0 ? "\n\n":"\n");
     LeaveCriticalSection_Wrapper(&csClient);
@@ -548,14 +552,14 @@ static void CloseClient(ClientNode_t* node, const char *reason)
     // 外部调用，等待线程退出
     DWORD waitResult = WaitForSingleObject_Wrapper(closeThread, 1000); 
     if (waitResult == WAIT_TIMEOUT) {
-      SafePrintf("Client [%-2d]IP:%-16s recv thread wait timeout\n", 
+      SafePrintf("Client [%-2d]IP: %-16s recv thread wait timeout\n", 
               node->index, node->ip);
     }
     bool CloseRet = CloseHandle(closeThread);
     CloseInfo = getPrintf("Handle:%s wait:%ld ", CloseRet? "OK":"Fail", waitResult);
   }
 
-  SafePrintf("Client [%-2d]IP:%-16s Closed [SelfCall %s] sok:%s %sreason: %s%s", 
+  SafePrintf("Client [%-2d]IP: %-16s Closed [SelfCall %s] sok:%s %sreason: %s%s", 
       node->index, node->ip, isSelfCall? "YES":"NO ",
       closeSocketRet==0? "OK":"Fail", CloseInfo, reason, 
       g_clientsNum->count == 0 ? "\n\n":"\n");
@@ -608,8 +612,18 @@ static void sendFailErrorHandle(bool wide, ClientNode_t *ClientInfo, int error,
 
 // Socket 如果为空就会发送给所有客户端，不为空且有效的话就会只发送给指定的客户端
 int sendDataToClients(const socket_t *socket, const char* buff, int len) 
-{
+{ 
   EnterCriticalSection_Wrapper(&csClient);
+  
+  #ifdef __DISCOVERY_H_
+  if( socket!= NULL && *socket != INVALID_SOCKET_VALUE 
+      && isDiscoveryServiceSocket( *socket ) ){
+      DiscoveryServiceSend(*socket, buff, len);
+      LeaveCriticalSection_Wrapper(&csClient);
+      return len;
+  }
+  #endif
+
   int sendRet = 0, error = 0; 
   uint64_t currentTime = 0; 
   
@@ -735,7 +749,7 @@ void usbDeviceChange(void)
   COM_AutoReOpen_OnDeviceChange();
 }
 
-void sendComPortsListToClient(socket_t *socket, bool VPID)
+void sendComPortsListToClient(const socket_t *socket, bool VPID)
 {
   const char *comList = getComPortList(VPID);
   printfSend(socket, "%s\n", comList? comList: "Failed to get COM port list");

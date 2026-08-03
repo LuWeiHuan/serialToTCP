@@ -76,6 +76,12 @@
     #define CloseHandle(noIn)   true  
 #endif
 
+// IPv6 地址缓冲区大小
+//#define INET6_ADDRSTRLEN 46
+
+// 判断地址族
+#define IS_IPV4(addr) (addr->sa_family == AF_INET)
+#define IS_IPV6(addr) (addr->sa_family == AF_INET6)
 
 #ifdef __cplusplus  
 extern "C" {

@@ -27,6 +27,8 @@
 #include <unistd.h>
 #include <arpa/inet.h>
 #include <fcntl.h>
+#include <sys/socket.h>
+#include <netdb.h>
 #endif
 
 #include "main.h"
@@ -78,9 +80,10 @@ void serverCleanup(serverInfo_t *server)
     SafePrintf(" has been released\n");
 }
 
+// 修改 serverStart 函数支持双栈
 bool serverStart(serverInfo_t *server)
 {
-  if( server == NULL )
+  if (server == NULL)
     return false;
 
   // 查找可用端口
@@ -90,58 +93,84 @@ bool serverStart(serverInfo_t *server)
     return false;
   }
 
-  // 创建服务器套接字
-  server->socket = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
+  // 创建服务器套接字 - 使用 IPv6 双栈
+  // 注意：AF_INET6 默认支持 IPv4 映射（需要设置 IPV6_V6ONLY=0）
+  server->socket = socket(AF_INET6, SOCK_STREAM, IPPROTO_TCP);
   if (server->socket == INVALID_SOCKET_VALUE) {
+    // 如果 IPv6 不可用，回退到 IPv4
+    server->socket = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
+    if (server->socket == INVALID_SOCKET_VALUE) {
       SafePrintf("Error at socket(): %ld\n", GetLastError());
       return false;
+    }
+    server->isIPv6 = false;// 标记为 IPv4 only
+  } 
+  else {
+    // 关闭 IPv6 V6ONLY，允许双栈
+    int v6only = 0;
+    if (setsockopt(server->socket, IPPROTO_IPV6, IPV6_V6ONLY, 
+                    (char*)&v6only, sizeof(v6only)) == SOCKET_ERROR) {
+      SafePrintf("Set IPV6_V6ONLY failed: %ld\n", GetLastError());
+    }
+    server->isIPv6 = true;
   }
 
-  // 关键修复：在绑定前设置SO_REUSEADDR
+  // 设置 SO_REUSEADDR
   int reuse = 1;
   if (setsockopt(server->socket, SOL_SOCKET, SO_REUSEADDR, 
-                (char*)&reuse, sizeof(reuse)) == SOCKET_ERROR) {
-      SafePrintf("Set SO_REUSEADDR failed: %ld\n", GetLastError());
-      // 不要立即返回，继续尝试
+                  (char*)&reuse, sizeof(reuse)) == SOCKET_ERROR) {
+    SafePrintf("Set SO_REUSEADDR failed: %ld\n", GetLastError());
   }
   
-  // 对于Linux，设置SO_LINGER确保快速释放端口
 #ifndef _WIN32
-  struct linger ling = {1, 0};  // 立即关闭，不等待
+  struct linger ling = {1, 0};
   if (setsockopt(server->socket, SOL_SOCKET, SO_LINGER, 
-                &ling, sizeof(ling)) == SOCKET_ERROR) {
-      SafePrintf("Set SO_LINGER failed: %ld\n", GetLastError());
+                  &ling, sizeof(ling)) == SOCKET_ERROR) {
+    SafePrintf("Set SO_LINGER failed: %ld\n", GetLastError());
   }
 #endif
 
-  int nagleStatus = true;   // 禁用Nagle算法
+  // 禁用 Nagle
+  int nagleStatus = true;
   int result = setsockopt(server->socket, IPPROTO_TCP, TCP_NODELAY,
-                          (char*)&nagleStatus, sizeof nagleStatus);      
-  if( result < 0 ) 
-    SafePrintf("Disable Nagle Failed, result %d, error: %ld, nagleStatus %d\n", 
-      result, GetLastError(), nagleStatus);
+                          (char*)&nagleStatus, sizeof nagleStatus);
+  if (result < 0) 
+    SafePrintf("Disable Nagle Failed, Result %d, Error: %ld\n", result, GetLastError());
 
-  // 绑定套接字
-  struct sockaddr_in service;
-  service.sin_family = AF_INET;
-  service.sin_addr.s_addr = INADDR_ANY;
-  service.sin_port = htons(server->port);
-
-  if (bind(server->socket, (struct sockaddr*)&service, sizeof(service)) == SOCKET_ERROR) {
-      SafePrintf("bind failed with error: %ld\n", GetLastError());
-      closeSocket(server->socket);
-      return false;
+  // 绑定套接字 - 使用 sockaddr_storage
+  struct sockaddr_storage service;
+  socklen_t addr_len;
+  
+  memset(&service, 0, sizeof service);
+  if (server->isIPv6) {
+    struct sockaddr_in6* addr6 = (struct sockaddr_in6*)&service;
+    addr6->sin6_family = AF_INET6;
+    addr6->sin6_addr = in6addr_any;
+    addr6->sin6_port = htons(server->port);
+    addr_len = sizeof(struct sockaddr_in6);
+  } else {
+    struct sockaddr_in* addr4 = (struct sockaddr_in*)&service;
+    addr4->sin_family = AF_INET;
+    addr4->sin_addr.s_addr = INADDR_ANY;
+    addr4->sin_port = htons(server->port);
+    addr_len = sizeof(struct sockaddr_in);
   }
 
-  // 监听
+  if (bind(server->socket, (struct sockaddr*)&service, addr_len) == SOCKET_ERROR) {
+    SafePrintf("bind failed with error: %ld\n", GetLastError());
+    closeSocket(server->socket);
+    return false;
+  }
+
   if (listen(server->socket, SOMAXCONN) == SOCKET_ERROR) {
-      SafePrintf("listen failed with error: %ld\n", GetLastError());
-      closeSocket(server->socket);
-      return false;
+    SafePrintf("listen failed with error: %ld\n", GetLastError());
+    closeSocket(server->socket);
+    return false;
   }
-
+  
   return true;
 }
+
 
 /*=============================================================================
  功   能：监听新客户端连接
@@ -178,18 +207,43 @@ int8_t listenNewClientConnect(serverInfo_t *server, uint8_t timeOut)
     return 2; // 继续监听
 
   // 接受客户端连接
-  struct sockaddr_in clientAddr;
-  socklen_t addrLen = sizeof clientAddr;
-  socket_t clientSocket = accept(server->socket, (struct sockaddr*)&clientAddr, &addrLen);
+  struct sockaddr_storage clientAddr;  // 改用通用结构
+  socklen_t addrLen = sizeof clientAddr ; 
+  socket_t clientSocket = accept(server->socket, (struct sockaddr*)&clientAddr, &addrLen); 
   if (clientSocket == INVALID_SOCKET_VALUE) {
-      SafePrintf("accept failed, error=%ld\n", GetLastError());
+      SafePrintf("accept failed, Error=%ld\n", GetLastError() ); 
       return 3; // 继续监听
   }
 
   // 获取客户端IP地址
-  char *clientIP = inet_ntoa( clientAddr.sin_addr );
+  char clientIP[INET6_ADDRSTRLEN];  // Windows 下这个宏值为 65
+  memset(clientIP, 0, sizeof clientIP);
+
+  if (clientAddr.ss_family == AF_INET) {
+      struct sockaddr_in* addr4 = (struct sockaddr_in*)&clientAddr;
+      inet_ntop(AF_INET, &addr4->sin_addr, clientIP, sizeof clientIP);
+  } 
+  else if (clientAddr.ss_family == AF_INET6) {
+      struct sockaddr_in6* addr6 = (struct sockaddr_in6*)&clientAddr;
+      // 检查是否为 IPv4 映射地址
+      if (IN6_IS_ADDR_V4MAPPED(&addr6->sin6_addr)) {
+          struct in_addr addr4;
+          memcpy(&addr4, &addr6->sin6_addr.s6_addr[12], 4);
+          inet_ntop(AF_INET, &addr4, clientIP, sizeof clientIP);
+      }
+      else 
+          inet_ntop(AF_INET6, &addr6->sin6_addr, clientIP, sizeof clientIP);
+      
+  } else {
+    SafePrintf("Get IP Addr Failed! , Error:%ld\n", GetLastError());
+    strcpy(clientIP, "Unknown");
+    closeSocket(clientSocket);
+    return 4; // 没有IP地址的不要，继续监听
+  }
+  
   memset(server->newIP, 0, sizeof server->newIP);
-  strcpy(server->newIP, clientIP? clientIP:"Unknown");
+  strcpy(server->newIP,   clientIP );
+  
   server->newSocket = clientSocket;
   return 0; // 有新的客户端连接
 }
@@ -212,18 +266,18 @@ uint16_t ParsePortParameter(int argc, char const* argv[])
           
           // 验证转换是否成功
           if (*endPtr != '\0') {
-              fprintf(stderr, "错误: 端口号 '%s' 包含非数字字符\n", portStr);
+              printf("错误: 端口号 '%s' 包含非数字字符\n", portStr);
               return 0;
           }
           
           // 检查端口范围
           if (port <= MIN_USER_PORT) {
-              fprintf(stderr, "错误: 端口号必须大于 %d (当前: %ld)\n", MIN_USER_PORT, port);
+              printf("错误: 端口号必须大于 %d (当前: %ld)\n", MIN_USER_PORT, port);
               return 0;
           }
           
           if (port > MAX_PORT) {
-              fprintf(stderr, "错误: 端口号不能超过 %d (当前: %ld)\n", MAX_PORT, port);
+              printf("错误: 端口号不能超过 %d (当前: %ld)\n", MAX_PORT, port);
               return 0;
           }
           
@@ -240,17 +294,17 @@ uint16_t ParsePortParameter(int argc, char const* argv[])
           long port = strtol(portStr, &endPtr, 10);
           
           if (*endPtr != '\0') {
-              fprintf(stderr, "错误: 端口号 '%s' 包含非数字字符\n", portStr);
+              printf("错误: 端口号 '%s' 包含非数字字符\n", portStr);
               return 0;
           }
           
           if (port <= MIN_USER_PORT) {
-              fprintf(stderr, "错误: 端口号必须大于 %d (当前: %ld)\n", MIN_USER_PORT, port);
+              printf("错误: 端口号必须大于 %d (当前: %ld)\n", MIN_USER_PORT, port);
               return 0;
           }
           
           if (port > MAX_PORT) {
-              fprintf(stderr, "错误: 端口号不能超过 %d (当前: %ld)\n", MAX_PORT, port);
+              printf("错误: 端口号不能超过 %d (当前: %ld)\n", MAX_PORT, port);
               return 0;
           }
           
@@ -265,25 +319,52 @@ uint16_t ParsePortParameter(int argc, char const* argv[])
 // 从指定端口开始查找100个可用端口，返回0是无效端口
 static uint16_t FindAvailablePort(uint16_t startPort) 
 {
-    int bindRet;
-    struct sockaddr_in service;
-    uint16_t port = startPort;
+  for (uint16_t port = startPort; port < startPort + 100; port++) {
+    bool portAvailable = false;
     
-    for (port = startPort; port < startPort + 100; port++) {
-        socket_t testSocket = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
-        if (testSocket == INVALID_SOCKET_VALUE)
-            break;
-
-        service.sin_family = AF_INET;
-        service.sin_addr.s_addr = INADDR_ANY;
-        service.sin_port = htons(port);
-
-        bindRet = bind(testSocket, (struct sockaddr*)&service, sizeof(service));
-        closeSocket(testSocket);
-        
-        if( bindRet != SOCKET_ERROR)
-            return port;
+    // 优先尝试IPv6（能同时检测IPv4和IPv6占用）
+    socket_t testSocket = socket(AF_INET6, SOCK_STREAM, IPPROTO_TCP);
+    if (testSocket != INVALID_SOCKET_VALUE) {
+      struct sockaddr_in6 service6;
+      memset(&service6, 0, sizeof service6);
+      service6.sin6_family = AF_INET6;
+      service6.sin6_addr = in6addr_any;
+      service6.sin6_port = htons(port);
+      
+      // 关键：让IPv6套接字也处理IPv4
+      int v6only = 0;
+      setsockopt(testSocket, IPPROTO_IPV6, IPV6_V6ONLY, (char*)&v6only, sizeof v6only);
+      
+      if (bind(testSocket, (struct sockaddr*)&service6, sizeof service6) == 0)
+          portAvailable = true;
+      
+      closeSocket(testSocket);
+      
+      if (portAvailable)
+          return port;
+      
+      continue;  // IPv6绑定失败，直接下一个端口
     }
-
-    return 0;
+    
+    // IPv6不可用，回退到IPv4
+    testSocket = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
+    if (testSocket == INVALID_SOCKET_VALUE) 
+      break;
+    
+    struct sockaddr_in service;
+    memset(&service, 0, sizeof service);
+    service.sin_family = AF_INET;
+    service.sin_addr.s_addr = htonl(INADDR_ANY);
+    service.sin_port = htons(port);
+    
+    if (bind(testSocket, (struct sockaddr*)&service, sizeof service) == 0)
+      portAvailable = true;
+    
+    closeSocket(testSocket);
+    
+    if (portAvailable) 
+        return port;
+  }
+  
+  return 0;
 }

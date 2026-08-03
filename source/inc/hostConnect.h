@@ -14,6 +14,8 @@ extern "C" {
 
 #ifdef __linux__
 #include <sys/socket.h>
+#else
+#include <ws2tcpip.h>
 #endif // __linux__
 
 /*================== 宏定义声明			=========================================*/
@@ -24,13 +26,16 @@ extern "C" {
 //extern
 
 /*================== 外部函数声明		=========================================*/
-int8_t resolveHostname(const char* hostname, char* ipBuffer, uint8_t bufferSize, int*);
-bool startConnectToServer(const char* host, uint16_t port, 
-        uint16_t timeoutMs, socket_t *retSocket, char *retIP);
+int8_t resolveHostDomainName(const char* hostname, char* ipBuffer, uint8_t bufferSize, 
+                          int *retErr, bool preferIPv4);
+bool startConnectToServer(const char* host, uint16_t port, uint16_t timeoutMs, 
+                            socket_t *retSocket, char *retIP, int *retAddrFamily);
 
 const char* GetMatchingSubnetIP(struct sockaddr_in* clientAddr);
 const char* SelectMatchingSubnetIP(const char* clientAddr);
+const char* GetMatchingSubnetIPv6(struct sockaddr_in6* clientAddr6);
 bool getSockfdPeerInfo(int sockfd, char *retIPstr, uint16_t *retPort);
+int8_t hostStringIdentify(const char *str, bool print);
 #ifdef __cplusplus
 }
 #endif

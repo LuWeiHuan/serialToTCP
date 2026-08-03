@@ -1,5 +1,6 @@
 @echo off
-chcp 65001 >nul
+:: 设置编码为UTF-8
+::chcp 65001 >nul
 
 setlocal
 
@@ -16,5 +17,5 @@ powershell -Command "$ip='%IP%'; $port=%PORT%; $message='%MESSAGE%'; $timeout=%T
 echo 操作完成
 endlocal
 
-copy /Y .\com2tcp_server.exe "\\Hx-qxb-fs\器械部共享盘\软件包\远程工具\远程串口"
-::copy /Y .\com2tcp_server.exe "\\Wh-sf\d盘\远程串口"
+copy /Y .\com2tcp_server.exe "\\hx-qxb-fs\器械部共享盘\软件包\远程工具\远程串口"
+::copy /Y .\com2tcp_server.exe "\\wh-sf\D盘\远程串口"

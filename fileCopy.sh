@@ -66,13 +66,19 @@ ssh_copy() {
     local source_file="$1"
     local password_file="$2"
     local remote_host="$3"
+    local remote_port="$4"  # 新增端口参数
     local remote_path="/home/cat/software/com2tcp_server"
     local temp_path="${remote_path}.tmp"
     local ssh_host="$remote_host"
     local ip_version=""  # 用于存储 -4 或 -6 选项
+    
+    # 设置默认端口
+    if [ -z "$remote_port" ]; then
+        remote_port="22"
+    fi
 
     if check_file "$password_file"; then
-        log_info "通过SSH推送到远程主机..."
+        log_info "通过SSH推送到远程主机 (端口: $remote_port)..."
         
         # 判断IP版本
         if [[ "$remote_host" =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
@@ -93,27 +99,28 @@ ssh_copy() {
         
         log_info "正在连接并推送文件..."
         
-        # 使用检测到的IP版本
-        if sshpass -f "$password_file" scp $ip_version -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
+        # 使用检测到的IP版本和端口
+        if sshpass -f "$password_file" scp $ip_version -P "$remote_port" -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
               -o ConnectTimeout=2 "$source_file" "root@$ssh_host:$temp_path" 2>&1; then
             
             log_success "SCP推送成功"
             
-            # SSH连接也使用相同的IP版本
-            if sshpass -f "$password_file" ssh $ip_version -o StrictHostKeyChecking=no \
+            # SSH连接也使用相同的IP版本和端口
+            if sshpass -f "$password_file" ssh $ip_version -p "$remote_port" -o StrictHostKeyChecking=no \
                 -o UserKnownHostsFile=/dev/null "root@$remote_host" \
                 "mv -f $temp_path $remote_path" 2>&1; then
                 log_success "远程文件移动成功"
             else
                 log_error "远程文件移动失败"
                 return 1
-            fi
+            fi 
         else
             log_error "SSH推送失败，请检查:"
             log_error " 1. 网络是否连通"
             log_error " 2. 目标主机是否运行SSH服务"
             log_error " 3. 密码文件是否正确"
             log_error " 4. 目标路径是否可写"
+            log_error " 5. SSH端口是否正确 (当前: $remote_port)"
             return 1
         fi
     else
@@ -137,8 +144,14 @@ main() {
     local_copy "$source_file" "/mnt/NFS"
     local_copy "$source_file" "/mnt/tftp"
 
-    # SSH复制
-    ssh_copy "$source_file" "password.txt" "192.168.1.166"
+    # SSH复制 - 可指定端口，默认22
+    # 使用方法: ssh_copy 源文件 密码文件 主机地址 [端口号]
+    ssh_copy "$source_file" "password.txt" "192.168.1.40" "51022"
+    ssh_copy "$source_file" "password.txt" "192.168.1.131" "51022"
+    
+    # 如果需要使用其他端口，例如:
+    # ssh_copy "$source_file" "password.txt" "240e:3bb:a90:3b40:31cc:1623:0000:e3a3" "2222"
+    # ssh_copy "$source_file" "password.txt" "192.168.1.100" "2222"
     
     log_success "文件分发完成"
 }

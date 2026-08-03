@@ -24,6 +24,7 @@
 #include "main.h"
 #include "configSave.h"
 #include "COMAutoReOpen.h"
+#include "hostConnect.h"
 
 #include <stdio.h>
 #include <string.h>
@@ -55,7 +56,7 @@ static const char* freeCommandsList[] = {
 
 /*================== 本地变量声明    ========================================*/
 /*================== 本地数据类型   =========================================*/
-typedef void (*CmdHandlerFunc)(socket_t*, char*);
+typedef void (*CmdHandlerFunc)(const socket_t*, char*);
 
 typedef struct {
     const char* cmdName;
@@ -64,7 +65,7 @@ typedef struct {
 
 typedef struct{
   char cmd[1024];
-  socket_t *Socket;
+  const socket_t *Socket;
   bool getResult;
 }asyncExecuteSystemCommands_t;
 
@@ -72,25 +73,26 @@ typedef struct{
 #define DECOLLATOR    ",\n"
 
 /*================== 本地函数声明   =========================================*/
-static void broadcastSendHandleResult(socket_t *Socket, const char *info);
-static void cmdServerOverExit(socket_t*, char*);
-static void cmdComlist(socket_t*, char*);
-static void cmdRunNewServer(socket_t*, char*);
-static void cmdSetComAsyncSend(socket_t*, char*);
-static void cmdSetComAsyncRecv(socket_t*, char*);
-static void cmdPrintAllclientIP(socket_t*, char*);
-static void cmdSetMonopolize(socket_t*, char*);
-static void cmdDataPrintMode(socket_t*, char*);
-static void cmdUpdatePassword(socket_t *, char*);
-static void cmdVerifyPassword(socket_t*, char*);
-static void cmdRunSystemCmd(socket_t*, char*);
-static void cmdServerConnect(socket_t*, char*);
-static void cmdOpenSerialCom(socket_t*, char*);
-static void cmdDoNotConnectCOM2TCP(socket_t*, char*);
-static void cmdSetLogPollCut(socket_t*, char*);
-static void cmdKickAllClients(socket_t*, char*);
-static void cmdsetCOMalignedNum(socket_t*, char*);
-static void cmdAutoReOpenPort(socket_t*, char*);
+static void broadcastSendHandleResult(const socket_t *, const char *);
+static void cmdServerOverExit(const socket_t*, char*);
+static void cmdComlist(const socket_t*, char*);
+static void cmdRunNewServer(const socket_t*, char*);
+static void cmdSetComAsyncSend(const socket_t*, char*);
+static void cmdSetComAsyncRecv(const socket_t*, char*);
+static void cmdPrintAllclientIP(const socket_t*, char*);
+static void cmdSetMonopolize(const socket_t*, char*);
+static void cmdDataPrintMode(const socket_t*, char*);
+static void cmdUpdatePassword(const socket_t *, char*);
+static void cmdVerifyPassword(const socket_t*, char*);
+static void cmdRunSystemCmd(const socket_t*, char*);
+static void cmdServerConnect(const socket_t*, char*);
+static void cmdOpenSerialCom(const socket_t*, char*);
+static void cmdDoNotConnectCOM2TCP(const socket_t*, char*);
+static void cmdSetLogPollCut(const socket_t*, char*);
+static void cmdKickAllClients(const socket_t*, char*);
+static void cmdsetCOMalignedNum(const socket_t*, char*);
+static void cmdAutoReOpenPort(const socket_t*, char*);
+static void cmdBuildInfo(const socket_t*, char*);
 
 /*================== 命令映射表     =========================================*/
 static const CommandEntry cmdTable[] = {
@@ -103,6 +105,7 @@ static const CommandEntry cmdTable[] = {
   {"setCOMasyncRecv",                 cmdSetComAsyncRecv},
   {"setCOMalignedNum",                cmdsetCOMalignedNum},
   {"setCOMdata",                      cmdSetMonopolize},
+  {"buildInfo",                       cmdBuildInfo},
   {"exit",                            cmdServerOverExit},
   {"serverPrintData",                 cmdDataPrintMode},
   {"SystemCommands",                  cmdRunSystemCmd},
@@ -129,7 +132,7 @@ static const CommandEntry cmdTable[] = {
  * @return
  * @attention
  */
-void HandleClientCommand(socket_t *Socket, const char* command)
+void HandleClientCommand(const socket_t *Socket, const char* command)
 { 
   if( Socket == NULL ){
     SafePrintf("Command Handle Not Client Socket !\n");
@@ -152,7 +155,7 @@ void HandleClientCommand(socket_t *Socket, const char* command)
 }
 
 // 让所有客户端下线
-static void cmdKickAllClients(socket_t *Socket, char* commandData)
+static void cmdKickAllClients(const socket_t *Socket, char* commandData)
 {
   (void)commandData;
 
@@ -161,14 +164,14 @@ static void cmdKickAllClients(socket_t *Socket, char* commandData)
     return; 
 
   const char *exitInfo;
-  if( getDiscoverySocket() == *Socket ) {
-    exitInfo = getPrintf("Discovery UDP IP [%s]:%d",
-        getDiscoveryNewClientIPAddr(), getDiscoveryNewClientPort());
+  if( isDiscoveryServiceSocket(*Socket) ) {
+    exitInfo = getPrintf("Discovery UDP IPv%d \n%s:%d", getDiscoveryServiceNewClientIPvNum(),
+        getDiscoveryServiceNewClientIPAddr(true), getDiscoveryServiceNewClientPort());
   }
   else{
     uint16_t ClientIndex = 0;
     bool getRet = getClientIndex(Socket, &ClientIndex); 
-    exitInfo = getPrintf("Client TPC IP [%d]:%s", getRet? ClientIndex:-1, 
+    exitInfo = getPrintf("Client TCP IP [%d]:%s", getRet? ClientIndex:-1, 
         getRet? getClientIP(ClientIndex):"invalid");
   }
   SafePrintf("\033[H\033[J 全员下线 %s\n", exitInfo); 
@@ -177,7 +180,7 @@ static void cmdKickAllClients(socket_t *Socket, char* commandData)
 }
 
 // 收发日志是否滚动
-static void cmdSetLogPollCut(socket_t *Socket, char* commandData)
+static void cmdSetLogPollCut(const socket_t *Socket, char* commandData)
 {
   (void)Socket; (void)commandData;
   char *token = strtok(commandData, DECOLLATOR);
@@ -206,14 +209,14 @@ static void cmdSetLogPollCut(socket_t *Socket, char* commandData)
   saveConfig();
 }
 
-static void cmdDoNotConnectCOM2TCP(socket_t *Socket, char* commandData)
+static void cmdDoNotConnectCOM2TCP(const socket_t *Socket, char* commandData)
 {
   (void)commandData;
   printfSend(Socket, "Please do not connect COM2TCP!\n" );
   CloseClientSocket(Socket, "请不要互联串口转服务器程序！");
 }
 
-static void cmdComlist(socket_t *Socket, char* commandData)
+static void cmdComlist(const socket_t *Socket, char* commandData)
 {
   // 如果遇到小写id就改成大写ID
   for( uint8_t i=0; commandData[i]; i++ ){
@@ -224,7 +227,7 @@ static void cmdComlist(socket_t *Socket, char* commandData)
   sendComPortsListToClient(Socket, strstr(commandData, "ID") ? true:false ); 
 }
 
-static void cmdServerOverExit(socket_t *Socket, char* commandData)
+static void cmdServerOverExit(const socket_t *Socket, char* commandData)
 { 
   (void)commandData;
   uint16_t port = getMainServerPort();
@@ -236,14 +239,16 @@ static void cmdServerOverExit(socket_t *Socket, char* commandData)
   uint16_t ClientIndex = 0;
   bool getRet = false;
   char *exitInfo = "Unknown Client Ask For Server Ready Exit\n";
-  if( getDiscoverySocket() == *Socket){
-    exitInfo = getPrintf("Discovery UDP IP %s:%d Ask For Server Ready Exit\n", 
-      getDiscoveryNewClientIPAddr(), getDiscoveryNewClientPort());
+  if( isDiscoveryServiceSocket(*Socket) ){
+    exitInfo = getPrintf("Discovery UDP IPv%d %s:%d Ask For Server Ready Exit\n", 
+        getDiscoveryServiceNewClientIPvNum(),
+        getDiscoveryServiceNewClientIPAddr(true), 
+        getDiscoveryServiceNewClientPort());
   }
   else{ 
     getRet = getClientIndex(Socket, &ClientIndex);
     if( getRet )
-      exitInfo = getPrintf("Client [%-2d]IP:%s Ask For Server Ready Exit\n", 
+      exitInfo = getPrintf("Client [%-2d]IP: %s Ask For Server Ready Exit\n", 
         ClientIndex, getClientIP(ClientIndex) );
   }
 
@@ -252,61 +257,59 @@ static void cmdServerOverExit(socket_t *Socket, char* commandData)
   voluntaryWithdrawal( exitInfo );
 }
 
-static void cmdPrintAllclientIP(socket_t *Socket, char* commandData)
+static void cmdPrintAllclientIP(const socket_t *Socket, char* commandData)
 {
   (void)commandData;
   static char handleString[512];
   memset(handleString, 0, sizeof handleString);
-  getAllClientIPandIndexInfo(handleString, sizeof handleString);
+  getAllClientIPandIndexInfo(Socket, handleString, sizeof handleString);
   SafePrintf("All %d/%d Client index IP:\n%s\n", getClientNum(), getMaxClient(), handleString);
   printfSend(Socket, "All %d/%d Client index IP\n%s\n", getClientNum(), getMaxClient(), handleString);
 }
 
 // 运行一个新服务器程序
-static void cmdRunNewServer(socket_t *Socket, char* commandData)
+static void cmdRunNewServer(const socket_t *Socket, char* commandData)
 {
+  char *token = strtok(commandData, DECOLLATOR);
+  token = strtok(NULL, DECOLLATOR); // 传递参数
+
 #ifdef _WIN32
-  char path[MAX_PATH + 50];
+  char path[MAX_PATH + 50], *fullCmd = path;
   strcpy(path, "start \"\" \"");
   if (GetModuleFileName(NULL, path + strlen(path), MAX_PATH) == 0) { 
     printfSend(Socket, "Error: Get Server File Name Path failed (%ld)\n",  GetLastError());
     return;
   }
+
   strcat(path, "\" ");
-  char *token = strtok(commandData, DECOLLATOR);
-  token = strtok(NULL, DECOLLATOR); // 传递参数
+
   if( token )
     strcat(path, token);
-
-  int cmdret = system(path);
-  SafePrintf("run New Server, result:%d, Run Cmd: %s\n", cmdret, path);
-  printfSend(Socket, "run New Server result:%d, arg:%s\n", cmdret, token?token:"NULL");
 #else
-  char path[1024];
-  ssize_t len = readlink("/proc/self/exe", path, sizeof(path) - 1);
-  if (len != -1) {
-    path[len] = '\0';
-    
-    char full_cmd[2048];
-    snprintf(full_cmd, sizeof(full_cmd), "%s &", path);
-    
-    char *token = strtok(commandData, DECOLLATOR);
-    token = strtok(NULL, DECOLLATOR);
-    if( token ) {
-      snprintf(full_cmd, sizeof(full_cmd), "%s %s &", path, token);
+  static char path[1024] = {0};
+  if( path[0] == 0 ){
+    ssize_t len = readlink("/proc/self/exe", path, sizeof path - 1);
+    if (len == -1) {
+      printfSend(Socket, "Error: Get Server File Name Path failed (%ld)\n",  GetLastError());
+      return;
     }
-     
-    int cmdret = system(full_cmd);
-    SafePrintf("run New Server, result:%d, Run Cmd: %s\n", cmdret, path);
-    printfSend(Socket, "run New Server result:%d, arg:%s\n", cmdret, token?token:"NULL");
-  } else {
-    printfSend(Socket, "Error: Get Server File Name Path failed\n");
+    path[len] = '\0'; 
   }
+    //getcwd(path, sizeof path);
+
+  char fullCmd[2048];
+  snprintf(fullCmd, sizeof fullCmd, "%s %s &", path, token ? token :"");
 #endif
+
+  int cmdret = system(fullCmd);
+  SafePrintf("Run New Server Result:%d, Arg:%s, Run Cmd:%s\n", 
+      cmdret, token ? token:"NULL", fullCmd);
+  printfSend(Socket, "Run New Server Result:%d, Arg:%s, Run Cmd:%s\n", 
+      cmdret, token ? token:"NULL", fullCmd);
 }
 
 // 设置客户端数据异步发给串口
-static void cmdSetComAsyncSend(socket_t *Socket, char* commandData)
+static void cmdSetComAsyncSend(const socket_t *Socket, char* commandData)
 {
   (void)Socket; 
   char *token = strtok(commandData, DECOLLATOR);
@@ -319,7 +322,7 @@ static void cmdSetComAsyncSend(socket_t *Socket, char* commandData)
 }
 
 // 设置收到串口数据异步发给客户端
-static void cmdSetComAsyncRecv(socket_t *Socket, char* commandData)
+static void cmdSetComAsyncRecv(const socket_t *Socket, char* commandData)
 {
   (void)Socket; 
   char *token = strtok(commandData, DECOLLATOR);
@@ -331,7 +334,7 @@ static void cmdSetComAsyncRecv(socket_t *Socket, char* commandData)
   broadcastSendHandleResult(Socket, setInfo);
 }
 
-static void cmdsetCOMalignedNum(socket_t *Socket, char* commandData)
+static void cmdsetCOMalignedNum(const socket_t *Socket, char* commandData)
 {
   char *token = strtok(commandData, DECOLLATOR);
   token = strtok(NULL, DECOLLATOR);
@@ -346,7 +349,7 @@ static void cmdsetCOMalignedNum(socket_t *Socket, char* commandData)
 }
 
 // 设置独占信息
-static void cmdSetMonopolize(socket_t *Socket, char* commandData)
+static void cmdSetMonopolize(const socket_t *Socket, char* commandData)
 {
   char *token = strtok(commandData, DECOLLATOR);
   token = strtok(NULL, DECOLLATOR); //Recv Send  my or All
@@ -403,7 +406,7 @@ static void cmdSetMonopolize(socket_t *Socket, char* commandData)
 }
 
 // 数据打印模式
-static void cmdDataPrintMode(socket_t *Socket, char* commandData)
+static void cmdDataPrintMode(const socket_t *Socket, char* commandData)
 { 
   (void)Socket;
 
@@ -470,7 +473,7 @@ static void trueExecuteSystemCommands(void *arg)
 
 // 执行一条系统命令，想要执行需先验证密码，
 // 但 freeCommandsList 列表里的命令可以免密码执行
-static void cmdRunSystemCmd(socket_t *Socket, char* commandData)
+static void cmdRunSystemCmd(const socket_t *Socket, char* commandData)
 {
   static asyncExecuteSystemCommands_t aesc = {.Socket = NULL};
 
@@ -506,7 +509,7 @@ static void cmdRunSystemCmd(socket_t *Socket, char* commandData)
   threadTtaskStart(gThreadPool, &asyncExecuteSystemCommandsTime);
 }
 
-static void cmdVerifyPassword(socket_t *Socket, char* commandData)
+static void cmdVerifyPassword(const socket_t *Socket, char* commandData)
 {
   #define MaxVerifyNum      30
   static uint8_t verifyNum = MaxVerifyNum;
@@ -517,14 +520,15 @@ static void cmdVerifyPassword(socket_t *Socket, char* commandData)
   }
   char *token = strtok(commandData, DECOLLATOR);
   token = strtok(NULL, DECOLLATOR);
+  uint8_t passwordMD5ValueLen = strlen(saveInfo.passwordMD5Value);
   uint8_t steLen = token == NULL? 0 : strlen(token);
-  if( steLen != sizeof saveInfo.passwordMD5 ){
+  if( steLen != passwordMD5ValueLen ){
     printfSend(Socket, "Password MD5 Value unequal %d/%d\n", 
-      steLen, sizeof saveInfo.passwordMD5);
+      steLen, passwordMD5ValueLen);
     return;
   }
   
-  passwordVerify = strncmp(token, saveInfo.passwordMD5, sizeof saveInfo.passwordMD5) == 0 ? true:false;
+  passwordVerify = strncmp(token, saveInfo.passwordMD5Value, passwordMD5ValueLen) == 0 ? true:false;
   verifyNum = passwordVerify? MaxVerifyNum:verifyNum - 1;
 
   char *setInfo = getPrintf(", Verify Number %d/%d\n", verifyNum, MaxVerifyNum);
@@ -532,7 +536,7 @@ static void cmdVerifyPassword(socket_t *Socket, char* commandData)
     passwordVerify? "Success":"Failed", passwordVerify? " ":setInfo);
 }
 
-static void cmdUpdatePassword(socket_t *Socket, char* commandData)
+static void cmdUpdatePassword(const socket_t *Socket, char* commandData)
 {
   if( passwordVerify == false ){
     printfSend(Socket, "Please Verify Password\n");
@@ -541,11 +545,11 @@ static void cmdUpdatePassword(socket_t *Socket, char* commandData)
 
   char *token = strtok(commandData, DECOLLATOR);
   token = strtok(NULL, DECOLLATOR);
-
+  uint8_t passwordMD5ValueLen = strlen(saveInfo.passwordMD5Value);
   uint8_t steLen = token == NULL? 0 : strlen(token);
-  if( steLen != sizeof saveInfo.passwordMD5 ){
+  if( steLen != passwordMD5ValueLen ){
     printfSend(Socket, "Password MD5 Value unequal %d/%d\n", 
-      steLen, sizeof saveInfo.passwordMD5);
+      steLen, passwordMD5ValueLen);
     return;
   }
 
@@ -554,17 +558,17 @@ static void cmdUpdatePassword(socket_t *Socket, char* commandData)
     return;
   }
 
-  bool retCmp = strcmp(token, saveInfo.passwordMD5) == 0 ? true:false;
-  strcpy(saveInfo.passwordMD5, token);
+  bool retCmp = strcmp(token, saveInfo.passwordMD5Value) == 0 ? true:false;
+  strcpy(saveInfo.passwordMD5Value, token);
   if( retCmp == false )
     saveConfig();
   printfSend(Socket, "Update Password %s! Value:%s\n",
-    retCmp? "OK":"Done", saveInfo.passwordMD5);
+    retCmp? "OK":"Done", saveInfo.passwordMD5Value);
 }
 
 // 连接服务器结果回调
 static void connectServerResultCoback(ConnectState_t State, 
-        void* arg, const char *hsot, uint16_t port, uint16_t residueTimeMs)
+        const void* arg, const char *hsot, uint16_t port, uint16_t residueTimeMs)
 {
   if( State > 4 )
     State = 4;
@@ -573,23 +577,31 @@ static void connectServerResultCoback(ConnectState_t State,
     "ing",
     "ed OK",
     " invalid", };
+  
+  char resolvedIP[ INET6_ADDRSTRLEN ] = {0}, residueTimeMsString[50] = {0};
 
-  socket_t *replySocket = (socket_t*)arg;
-
-  char resolvedIP[46] = {0}, residueTimeMsString[50] = {0};
-  bool ResolveRet = ResolveDomainName(hsot, resolvedIP, sizeof resolvedIP);
+  int getErr = 0; 
+  int8_t resolveRet = resolveHostDomainName(hsot, resolvedIP, sizeof resolvedIP, &getErr, false);
+  if( resolveRet == -1 )
+    SafePrintf("Failed to resolve hsot name: %s, code:%d\n", hsot, getErr);
+  
+  if( resolveRet == -2 )
+    SafePrintf("No valid IP address found for: %s, code:%d\n", hsot, getErr);
   
   snprintf(residueTimeMsString, sizeof residueTimeMsString,
     "Please Wait %d/%d ms", residueTimeMs, CONNECT_TIMEOUT_MS);
 
-  if( replySocket )
-    printfSend(replySocket, "Server [%s] [%s:%d] Connect%s %s\n", 
-              ResolveRet? hsot:"IP",
-              ResolveRet? resolvedIP:hsot, port,
+  int identifyRet = hostStringIdentify(hsot, false);
+
+  const socket_t *replySocket = (const socket_t*)arg;
+  if( replySocket != NULL && *replySocket != INVALID_SOCKET_VALUE)
+    printfSend(replySocket, "Server [%s] [%s,%d] Connect%s %s\n", 
+              identifyRet==3? hsot:"IP",
+              identifyRet==3? resolvedIP:hsot, port,
               stateStrings[State], State==1? residueTimeMsString:" ");  
 }
 
-static void cmdServerConnect(socket_t *Socket, char* commandData) 
+static void cmdServerConnect(const socket_t *Socket, char* commandData) 
 {
   char *token = strtok(commandData, DECOLLATOR);
   token = strtok(NULL, DECOLLATOR); // 远端服务器地址（域名或IP） 或查询连接状态和断开连接
@@ -621,7 +633,7 @@ static void cmdServerConnect(socket_t *Socket, char* commandData)
 }
 
 // 打开串口命令
-static void cmdOpenSerialCom(socket_t *Socket, char* commandData) 
+static void cmdOpenSerialCom(const socket_t *Socket, char* commandData) 
 {
   char *token = strtok(commandData, DECOLLATOR);
   token = strtok(NULL, DECOLLATOR);   // 串口号
@@ -690,8 +702,15 @@ static void cmdOpenSerialCom(socket_t *Socket, char* commandData)
   SafePrintf("%s", comParameter);
 }
 
+// 返回程序构建信息
+static void cmdBuildInfo(const socket_t *Socket, char* commandData)
+{ 
+  const char * buildInfo = printBuildInfo(false);
+  printfSend(Socket, "%s%s", commandData, buildInfo);
+}
+
 // 开启自动打开串口功能
-static void cmdAutoReOpenPort(socket_t *Socket, char* commandData)
+static void cmdAutoReOpenPort(const socket_t *Socket, char* commandData)
 {
   (void)Socket; 
   char *token = strtok(commandData, DECOLLATOR);
@@ -705,10 +724,10 @@ static void cmdAutoReOpenPort(socket_t *Socket, char* commandData)
 }
 
 // 广播发送处理结果
-static void broadcastSendHandleResult(socket_t *Socket, const char *info)
+static void broadcastSendHandleResult(const socket_t *Socket, const char *info)
 { 
   uint16_t sendLen = strlen(info);
-  if( getDiscoverySocket() == *Socket )
+  if( isDiscoveryServiceSocket(*Socket) )
     printfSend(Socket, info, sendLen);
   printfSend(NULL, info, sendLen);
 }

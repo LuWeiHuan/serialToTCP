@@ -50,11 +50,11 @@ const uint16_t * const mainServerPort = &mainServer.port;
 
 /*================== 本地函数声明    ========================================*/
 static void microFuncCodeTest(void);
-static bool startServer(int argc, char const *argv[]);
+static bool startServer(uint16_t port);
 static void PlatformSpecificInit(void);
 static void PlatformSpecificCleanup(void);
 static void linuxPlatformIsRoot(void);
-static bool logFileInit(void);
+static void logFileInit(void);
 static void startTimeTask(void);
 
 /*=============================================================================
@@ -66,34 +66,31 @@ static void startTimeTask(void);
 =============================================================================*/
 int main(int argc, char const *argv[])
 {
-  PlatformSpecificInit(); // 平台通用初始化 
-  printBuildInfo();
+  uint16_t retPort = ParsePortParameter(argc, argv);
 
-  // 初始化异常监控，它会设置信号处理
-  ProcessExceptionMonitorInit(); 
-  microFuncCodeTest();
-
-  SafePrintResourceInit(true);
-
-  if( !startServer(argc, argv) )  // 启动服务器
-    return -1;
-
-  if( !logFileInit() )            // 初始化日志文件
-    return -1;
-
+  PlatformSpecificInit();        // 平台通用初始化 
+  printBuildInfo(true);          // 打印构建信息
+  ProcessExceptionMonitorInit(); // 初始化异常监控，它会设置信号处理
+  microFuncCodeTest();           // 微小功能测试
   loadConfig();                   // 加载配置信息
 
-  // 启动各种服务   
+  SafePrintResourceInit(true);    // 安全打印初始化
+  logFileInit();                  // 初始化日志文件
+
+  /*******  启动各种服务 ***********/
+  if( !startServer( retPort) )    // 启动服务器
+    return -1;
   DiscoveryService(true);         // 启动发现服务
-    
+  
   startAsyncFuncHandle(true);     // 启动异步函数处理
   ClientResourceInit(true);       // 客户端管理初始化
   ComPortResourceInit(true);      // 串口资源初始化
-  DeviceChangeMonitor(true);      // 启动设备插拔变化监听 
-  ServerConnectInit(true);        // 服务器连接初始化
+  DeviceChangeMonitor(true);      // 启动设备插拔变化监听
+  ServerConnectInit(true);        // 服务器接受请求初始化
+  
   globalThreadPoolInit(20);       // 启动带有定时功能的线程池
   startTimeTask();                // 启动定时任务
-  broadcastTestIsNormal();        // 测试广播功能是否正常
+  DiscoveryServiceTestIsNormal(); // 简单测试广播功能是否正常
 
   while( true ) {                 // 主事件循环 循环
     
@@ -145,49 +142,49 @@ void voluntaryWithdrawal(const char *reason)
   exit(0);
 }
 
-static bool logFileInit(void)
+static void logFileInit(void)
 { 
-  char *platform = "Win";
-  #ifdef __linux
-  platform = "Linux";
-  #endif
-
 #ifndef CLOSE_EXCEPTION_MONITOR 
   LogLevel_t logLevel = LOG_LEVEL_DEBUG;
 #else
   LogLevel_t logLevel = LOG_LEVEL_INFO;
 #endif
 
-  const char *logFileName = getPrintf("logFile%s-PORT%d", platform, mainServer.port); 
+  const char *logFileName = getPrintf("logFile"SYSTEM_NAME"-PORT%d", mainServer.port); 
   bool start = logStorageInit(SAVE_DIR, logFileName, logLevel, 2, 5, 200);
-
   if(!start)
-    printf("Failed to initialize log storage\n");
-  return start;
+    printf("Initialize Log Storage Failed, Error Logs May Not Be Stored\n");
 }
 
 // 启动服务器
-static bool startServer(int argc, char const *argv[])
-{
-  // 解析来自程序传递的端口号
-  uint16_t retPort = ParsePortParameter(argc, argv);
-  mainServer.port = retPort == 0 ? DEFAULT_PORT : retPort;
+static bool startServer(uint16_t port)
+{ 
+  mainServer.port = port == 0 ? DEFAULT_PORT : port;
   mainServer.socket = INVALID_SOCKET_VALUE; 
   mainServer.newSocket = INVALID_SOCKET_VALUE;
   strcpy(mainServer.newIP, "NULL");
 
+  char failedPort[128] = {'\n'};
+  if( mainServer.port != port && port != 0 )
+    snprintf(failedPort, sizeof failedPort, ", Assign Port %d Out Of Use\n", port);
+
   // 真实启动服务器
   bool serRet = serverStart(&mainServer);
-  SafePrintf("Server Started %s!  Port: %d\n",
-      serRet ? "Succeed" : "Fail", mainServer.port);
-      
+
+  const char *ipStack = mainServer.isIPv6?"IPv4/IPv6 dual-stack" : "IPv4 only";
+  SafePrintf("Server Started listening %s %s! Port: %d%s", ipStack,
+      serRet ? "Succeed" : "Failed", mainServer.port, failedPort);
+ 
+  if(!serRet) 
+    logPrintFull(LOG_LEVEL_ERROR, "Server Started Failed! Port: %d%s",
+        mainServer.port, failedPort);
   return serRet;
 }
 
-// 平台特定初始化
+// 平台特定初始化%s
 static void PlatformSpecificInit(void)
 {
-  linuxPlatformIsRoot();
+  linuxPlatformIsRoot(); // Linux系统权限检测
 
 #ifdef _WIN32
   system("cls"); 

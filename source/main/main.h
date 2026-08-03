@@ -15,7 +15,7 @@ extern "C" {
 #define RECV_BUFFER_SIZE    1024*100+1
 #define RECV_4K_MAX         (RECV_BUFFER_SIZE) - 4096 - 1
 
-#define VERSIONS            "V0.5"
+#define VERSIONS            "V0.6"
 #define SAVE_DIR            "./serverInfo"
 
 // 密码默认是字符串 "COM2TCP" 进行MD5运算后的结果
@@ -23,6 +23,17 @@ extern "C" {
 
 #if MAX_CLIENTS<3
 #error "建议不要把客户端数量设置那么少，至少给3个嘛，老铁！"
+#endif
+
+
+#if defined(_WIN32)       // Windows
+#define SYSTEM_NAME  "Win"
+#elif defined(__linux__)  // Linux
+#define SYSTEM_NAME  "Linux"
+#elif defined(__APPLE__)  // macOS
+#define SYSTEM_NAME  "macOS"
+#else
+#define SYSTEM_NAME  "UnknownSystem?"
 #endif
 
 /*================== 数据类型声明		=========================================*/
