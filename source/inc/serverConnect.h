@@ -31,9 +31,6 @@ typedef void(*connectResultCallback)(ConnectState_t state,
 void ServerConnectInit(bool);
 void ConnectToServer(const char* host, uint16_t port, 
           connectResultCallback connectResult, void *arg);
-
-bool ResolveDomainName(const char* domain, char* ipBuffer, uint8_t bufferSize);
-
 #ifdef __cplusplus
 }
 #endif

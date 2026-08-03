@@ -189,9 +189,9 @@ char *getCurrentTimeStringSec(void)
 void printBuildInfo(void) 
 { 
     uint8_t ipCount;
-    char localIPs[25][20];  
+    char localIPs[25][INET6_ADDRSTRLEN];  
     memset(localIPs, 0, sizeof localIPs); 
-    GetAllLocalIPs(localIPs, &ipCount, 25);
+    getAllLocalIPs(localIPs, &ipCount, 25, false);
     
     printf("========================================\n");
     printf("  Program    : %s\n", "串口转TCP服务端");
@@ -220,51 +220,95 @@ void printBuildInfo(void)
     printf("========================================\n\n");
 }
 
-// 获取所有本地IP地址
-void GetAllLocalIPs(char ips[][20], uint8_t *count, uint8_t num)
+
+// 获取本机所有IP地址 - 支持IPv6
+void getAllLocalIPs(char localIPs[][INET6_ADDRSTRLEN], uint8_t *ipCount, uint8_t maxIPs, bool includeIPv6)
 {
-    if( count == NULL )
-      return;
-
-    *count = 0;
-
+    *ipCount = 0;
+    
 #ifdef _WIN32
+    // Windows 使用 GetAdaptersAddresses
+    // 这里简化处理，使用 getaddrinfo 方式
     char hostname[256];
-    if (gethostname(hostname, sizeof hostname) == SOCKET_ERROR)
+    if (gethostname(hostname, sizeof(hostname)) != 0) {
         return;
-
-    struct hostent* hostinfo = gethostbyname(hostname);
-    if (hostinfo == NULL) 
-        return;
-    
-    struct in_addr addr;
-    for (uint8_t i = 0; hostinfo->h_addr_list[i] != NULL && *count < num; i++) {
-      memcpy(&addr, hostinfo->h_addr_list[i], sizeof(struct in_addr));
-      if (strcmp(inet_ntoa(addr), "127.0.0.1") == 0) 
-        continue;
-      strncpy(ips[*count], inet_ntoa(addr), 16);
-      (*count)++;
     }
-#else
-    struct ifaddrs *ifaddr, *ifa;
     
-    if (getifaddrs(&ifaddr) == -1) 
+    struct addrinfo hints, *result = NULL;
+    memset(&hints, 0, sizeof hints);
+    hints.ai_family = includeIPv6 ? AF_UNSPEC : AF_INET;
+    hints.ai_socktype = SOCK_STREAM;
+    
+    if (getaddrinfo(hostname, NULL, &hints, &result) != 0) {
         return;
+    }
     
-    for (ifa = ifaddr; ifa != NULL && *count < num; ifa = ifa->ifa_next) {
-        if (ifa->ifa_addr == NULL) continue;
+    for (struct addrinfo* ptr = result; ptr && *ipCount < maxIPs; ptr = ptr->ai_next) {
+        void* addr = NULL;
+        int family = ptr->ai_family;
         
-        if (ifa->ifa_addr->sa_family == AF_INET) { // IPv4
-            struct sockaddr_in *sa = (struct sockaddr_in *)ifa->ifa_addr;
-            char *ip = inet_ntoa(sa->sin_addr);
-            
-            if (strcmp(ip, "127.0.0.1") != 0) {
-                strncpy(ips[*count], ip, 16);
-                (*count)++;
-            }
+        if (family == AF_INET) {
+            struct sockaddr_in* ipv4 = (struct sockaddr_in*)ptr->ai_addr;
+            addr = &(ipv4->sin_addr);
+        } else if (family == AF_INET6 && includeIPv6) {
+            struct sockaddr_in6* ipv6 = (struct sockaddr_in6*)ptr->ai_addr;
+            addr = &(ipv6->sin6_addr);
+        } else {
+            continue;
+        }
+        
+        if (addr) {
+            inet_ntop(family, addr, localIPs[*ipCount], INET6_ADDRSTRLEN);
+            (*ipCount)++;
         }
     }
+    freeaddrinfo(result);
     
+#else
+    // Linux 使用 getifaddrs
+    struct ifaddrs *ifaddr, *ifa;
+    if (getifaddrs(&ifaddr) == -1) {
+        return;
+    }
+    
+    for (ifa = ifaddr; ifa && *ipCount < maxIPs; ifa = ifa->ifa_next) {
+        if (ifa->ifa_addr == NULL)
+            continue;
+        
+        int family = ifa->ifa_addr->sa_family;
+        void* addr = NULL;
+        
+        if (family == AF_INET) {
+            struct sockaddr_in* ipv4 = (struct sockaddr_in*)ifa->ifa_addr;
+            addr = &(ipv4->sin_addr);
+        } else if (family == AF_INET6 && includeIPv6) {
+            struct sockaddr_in6* ipv6 = (struct sockaddr_in6*)ifa->ifa_addr;
+            addr = &(ipv6->sin6_addr);
+        } else {
+            continue;
+        }
+        
+        // 跳过回环地址
+        if (family == AF_INET) {
+            uint32_t ip = ntohl(*(uint32_t*)addr);
+            if ((ip & 0xFF000000) == 0x7F000000)
+                continue;
+        } else if (family == AF_INET6) {
+            // 跳过 IPv6 回环 ::1
+            uint8_t* bytes = (uint8_t*)addr;
+            bool isLoopback = true;
+            for (int i = 0; i < 15; i++) {
+                if (bytes[i] != 0) { isLoopback = false; break; }
+            }
+            if (isLoopback && bytes[15] == 1)
+                continue;
+        }
+        
+        if (addr) {
+            inet_ntop(family, addr, localIPs[*ipCount], INET6_ADDRSTRLEN);
+            (*ipCount)++;
+        }
+    }
     freeifaddrs(ifaddr);
 #endif
 }

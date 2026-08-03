@@ -24,6 +24,7 @@
 #include "main.h"
 #include "configSave.h"
 #include "COMAutoReOpen.h"
+#include "hostConnect.h"
 
 #include <stdio.h>
 #include <string.h>
@@ -243,7 +244,7 @@ static void cmdServerOverExit(socket_t *Socket, char* commandData)
   else{ 
     getRet = getClientIndex(Socket, &ClientIndex);
     if( getRet )
-      exitInfo = getPrintf("Client [%-2d]IP:%s Ask For Server Ready Exit\n", 
+      exitInfo = getPrintf("Client [%-2d]IP: %s Ask For Server Ready Exit\n", 
         ClientIndex, getClientIP(ClientIndex) );
   }
 
@@ -265,44 +266,42 @@ static void cmdPrintAllclientIP(socket_t *Socket, char* commandData)
 // 运行一个新服务器程序
 static void cmdRunNewServer(socket_t *Socket, char* commandData)
 {
+  char *token = strtok(commandData, DECOLLATOR);
+  token = strtok(NULL, DECOLLATOR); // 传递参数
+
 #ifdef _WIN32
-  char path[MAX_PATH + 50];
+  char path[MAX_PATH + 50], *fullCmd = path;
   strcpy(path, "start \"\" \"");
   if (GetModuleFileName(NULL, path + strlen(path), MAX_PATH) == 0) { 
     printfSend(Socket, "Error: Get Server File Name Path failed (%ld)\n",  GetLastError());
     return;
   }
+
   strcat(path, "\" ");
-  char *token = strtok(commandData, DECOLLATOR);
-  token = strtok(NULL, DECOLLATOR); // 传递参数
+
   if( token )
     strcat(path, token);
-
-  int cmdret = system(path);
-  SafePrintf("run New Server, result:%d, Run Cmd: %s\n", cmdret, path);
-  printfSend(Socket, "run New Server result:%d, arg:%s\n", cmdret, token?token:"NULL");
 #else
-  char path[1024];
-  ssize_t len = readlink("/proc/self/exe", path, sizeof(path) - 1);
-  if (len != -1) {
-    path[len] = '\0';
-    
-    char full_cmd[2048];
-    snprintf(full_cmd, sizeof(full_cmd), "%s &", path);
-    
-    char *token = strtok(commandData, DECOLLATOR);
-    token = strtok(NULL, DECOLLATOR);
-    if( token ) {
-      snprintf(full_cmd, sizeof(full_cmd), "%s %s &", path, token);
+  static char path[1024] = {0};
+  if( path[0] == 0 ){
+    ssize_t len = readlink("/proc/self/exe", path, sizeof path - 1);
+    if (len == -1) {
+      printfSend(Socket, "Error: Get Server File Name Path failed (%ld)\n",  GetLastError());
+      return;
     }
-     
-    int cmdret = system(full_cmd);
-    SafePrintf("run New Server, result:%d, Run Cmd: %s\n", cmdret, path);
-    printfSend(Socket, "run New Server result:%d, arg:%s\n", cmdret, token?token:"NULL");
-  } else {
-    printfSend(Socket, "Error: Get Server File Name Path failed\n");
+    path[len] = '\0'; 
   }
+    //getcwd(path, sizeof path);
+
+  char fullCmd[2048];
+  snprintf(fullCmd, sizeof fullCmd, "%s %s &", path, token ? token :"");
 #endif
+
+  int cmdret = system(fullCmd);
+  SafePrintf("Run New Server Result:%d, Arg:%s, Run Cmd:%s\n", 
+      cmdret, token ? token:"NULL", fullCmd);
+  printfSend(Socket, "Run New Server Result:%d, Arg:%s, Run Cmd:%s\n", 
+      cmdret, token ? token:"NULL", fullCmd);
 }
 
 // 设置客户端数据异步发给串口
@@ -573,19 +572,27 @@ static void connectServerResultCoback(ConnectState_t State,
     "ing",
     "ed OK",
     " invalid", };
+  
+  char resolvedIP[ INET6_ADDRSTRLEN ] = {0}, residueTimeMsString[50] = {0};
 
-  socket_t *replySocket = (socket_t*)arg;
-
-  char resolvedIP[46] = {0}, residueTimeMsString[50] = {0};
-  bool ResolveRet = ResolveDomainName(hsot, resolvedIP, sizeof resolvedIP);
+  int getErr = 0; 
+  int8_t resolveRet = resolveHostDomainName(hsot, resolvedIP, sizeof resolvedIP, &getErr, false);
+  if( resolveRet == -1 )
+    SafePrintf("Failed to resolve hsot name: %s, code:%d\n", hsot, getErr);
+  
+  if( resolveRet == -2 )
+    SafePrintf("No valid IP address found for: %s, code:%d\n", hsot, getErr);
   
   snprintf(residueTimeMsString, sizeof residueTimeMsString,
     "Please Wait %d/%d ms", residueTimeMs, CONNECT_TIMEOUT_MS);
 
+  int identifyRet = hostStringIdentify(hsot, false);
+
+  socket_t *replySocket = (socket_t*)arg;
   if( replySocket )
-    printfSend(replySocket, "Server [%s] [%s:%d] Connect%s %s\n", 
-              ResolveRet? hsot:"IP",
-              ResolveRet? resolvedIP:hsot, port,
+    printfSend(replySocket, "Server [%s] [%s,%d] Connect%s %s\n", 
+              identifyRet==3? hsot:"IP",
+              identifyRet==3? resolvedIP:hsot, port,
               stateStrings[State], State==1? residueTimeMsString:" ");  
 }
 
