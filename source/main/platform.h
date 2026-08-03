@@ -29,11 +29,11 @@
     #include <errno.h>
     #include <semaphore.h>
 
-    #if defined(__aarch64__) || defined(_M_ARM64)// ARM 64位 
+    #if defined(__aarch64__) || defined(_M_ARM64) // ARM 64位 
     #define PRIu64 "lu"
-    #elif defined(__arm__) || defined(_M_ARM)// ARM 32位 
+    #elif defined(__arm__) || defined(_M_ARM) // ARM 32位 
     #define PRIu64 "llu"
-    #else// 其他架构 
+    #else // 其他架构 
     #define PRIu64 "lu"
     #endif
 
@@ -76,6 +76,12 @@
     #define CloseHandle(noIn)   true  
 #endif
 
+// IPv6 地址缓冲区大小
+//#define INET6_ADDRSTRLEN 46
+
+// 判断地址族
+#define IS_IPV4(addr) (addr->sa_family == AF_INET)
+#define IS_IPV6(addr) (addr->sa_family == AF_INET6)
 
 #ifdef __cplusplus  
 extern "C" {

@@ -10,21 +10,26 @@ extern "C" {
 #include <stdbool.h>
 
 #include "platform.h"
-
 /*================== 宏定义声明			=========================================*/
-#define DISCOVERY_PORT              19000       // UDP发现端口
-//#define DISCOVERY_RESPONSE_PORT   19001       // UDP响应端口
+#define DISCOVERY_PORT              19000             // UDP发现端口(IPv4/IPv6共用)
 #define DISCOVERY_MAGIC             "COM2TCP_SERVER"  // 魔术字标识
+
+// IPv6组播地址（链路本地范围，所有节点）
+#define DISCOVERY_IPV6_MULTICAST    "ff02::1"
+
 
 /*================== 数据类型声明		=========================================*/
 /*================== 外部变量声明		=========================================*/
-/*================== 外部函数声明		=========================================*/
+/*================== 外部函数声明 ===========================================*/
 void DiscoveryService(bool start);
+bool isDiscoveryServiceSocket(socket_t sock);
+void DiscoveryServiceTestIsNormal(void);
 
-socket_t getDiscoverySocket(void);
-const char *getDiscoveryNewClientIPAddr(void);
-uint16_t getDiscoveryNewClientPort(void);
-void broadcastTestIsNormal(void);
+int DiscoveryServiceSend(socket_t sock, const char *buf, uint32_t len);
+
+uint8_t getDiscoveryServiceNewClientIPvNum(void);
+const char *getDiscoveryServiceNewClientIPAddr(bool autoFormat);
+uint16_t getDiscoveryServiceNewClientPort(void);
 #ifdef __cplusplus
 }
 #endif

@@ -19,8 +19,8 @@ BEGIN
             VALUE "CompanyName", "WH\0"
             VALUE "FileDescription", "可以将串口数据转到TCP网络中去\n让串口可以和多个设备通信\0"
             VALUE "FileVersion", "0.5\0"
-            VALUE "InternalName", "com2tcp_server\0"
-            VALUE "OriginalFilename", "com2tcp_server.exe\0"
+            VALUE "InternalName", "com2tcp\0"
+            VALUE "OriginalFilename", "com2tcp.exe\0"
             VALUE "ProductName", "串口转TCP\0"
             VALUE "ProductVersion", "0.5\0"
         END

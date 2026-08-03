@@ -43,15 +43,15 @@
 #endif
 
 /*================== 本地常量声明    ========================================*/
-static mutex_type g_log_cs;
-static long g_logFileSizeByte = 1024*1024*10; // 默认日志文件大小10MB
+static mutex_type gSafePrintCs;
+static long gLogFileSizeByte = 1024*1024*10; // 默认日志文件大小10MB
 
 /*================== 本地变量声明    ========================================*/
 #if MAX_ASYNC_PRINTF_LEN
 static AsyncQueue_t AsyncPrintQueue;
 static void AsyncPrintfCallBack(char *, uint32_t);
 #endif
-void DisableQuickEditMode(void);
+void DisableWinSystemQuickEditMode(void);
 
 
 // 获取当前时间字符串
@@ -73,18 +73,18 @@ static bool createDirectoryRecursive(const char* path) {
 void SafePrintResourceInit(bool start)
 {
   if( start ){
-    InitializeCriticalSection_Wrapper(&g_log_cs);
+    InitializeCriticalSection_Wrapper(&gSafePrintCs);
     #if MAX_ASYNC_PRINTF_LEN 
     startAsyncQueue(&AsyncPrintQueue, 
         AsyncPrintfCallBack, 200, MAX_ASYNC_PRINTF_LEN, "Printf");
     #endif
-    DisableQuickEditMode();
+    DisableWinSystemQuickEditMode();
   }
   else{ 
     #if MAX_ASYNC_PRINTF_LEN
     FreeAsyncQueue(&AsyncPrintQueue);
     #endif
-    DeleteCriticalSection_Wrapper(&g_log_cs);
+    DeleteCriticalSection_Wrapper(&gSafePrintCs);
   }
   
 }
@@ -99,7 +99,7 @@ static void AsyncPrintfCallBack(char *data, uint32_t len)
 
 int SafePrintf(const char* format, ...)
 {
-  EnterCriticalSection_Wrapper(&g_log_cs);
+  EnterCriticalSection_Wrapper(&gSafePrintCs);
   
 #if !MAX_ASYNC_PRINTF_LEN
   va_list args;
@@ -128,7 +128,7 @@ int SafePrintf(const char* format, ...)
   }
 #endif
   
-  LeaveCriticalSection_Wrapper(&g_log_cs);
+  LeaveCriticalSection_Wrapper(&gSafePrintCs);
   return retLen;
 }
 
@@ -143,7 +143,7 @@ int SafePrintf(const char* format, ...)
 =============================================================================*/
 void printHex(const uint8_t *pdata, uint16_t len, uint8_t numEnter, uint8_t endEnter)
 {
-  EnterCriticalSection_Wrapper(&g_log_cs);
+  EnterCriticalSection_Wrapper(&gSafePrintCs);
   static char outputBuffer[4096];
   static const char *hexTable = "0123456789ABCDEF";
   
@@ -185,7 +185,7 @@ void printHex(const uint8_t *pdata, uint16_t len, uint8_t numEnter, uint8_t endE
     putchar('\n');
   
   fflush(stdout);
-  LeaveCriticalSection_Wrapper(&g_log_cs);
+  LeaveCriticalSection_Wrapper(&gSafePrintCs);
 }
 
 /**
@@ -219,7 +219,8 @@ char *getPrintf(const char *format, ...)
 }
 
 // 禁用快捷编辑模式，防止Win10以上系统点击控制台导致程序阻塞挂起
-void DisableQuickEditMode(void) 
+
+void DisableWinSystemQuickEditMode(void) 
 {
 #ifdef _WIN32
   HANDLE hInput = GetStdHandle(STD_INPUT_HANDLE);
@@ -235,6 +236,8 @@ void DisableQuickEditMode(void)
   mode |= ENABLE_MOUSE_INPUT;
   
   SetConsoleMode(hInput, mode); 
+  printf("Win系统关闭快速编辑模式，鼠标点击会导致程序挂起暂停运行。\n");
+  printf("Disable QuickEdit on Windows, Mouse Clicks May Pause The Program.\n");
 #endif
 }
 
@@ -242,12 +245,12 @@ void DisableQuickEditMode(void)
 // 在 logPrint.c 中修改线程相关代码
 
 /*================== 日志存储相关变量和函数 ========================================*/
-static char g_logDir[256] = {0};
-static char g_logFileName[128] = {0};
-static char g_logFullPath[512] = {0};
-static FILE* g_logFile = NULL;
-static LogLevel_t g_logLevel = LOG_LEVEL_DEBUG;
-static mutex_type g_log_file_cs;
+static char gLogDir[256] = {0};
+static char gLogFileName[128] = {0};
+static char gLogFullPath[512] = {0};
+static FILE* gLogFile = NULL;
+static LogLevel_t gLogLevel = LOG_LEVEL_DEBUG;
+static mutex_type gLogFileCs;
 
 // 新增变量 - 使用 platform.h 的类型
 static uint8_t g_maxLogFiles = 5;
@@ -283,20 +286,18 @@ static long getFileSize(const char* filename) {
 // 删除最旧的日志文件
 static void deleteOldestLogFiles(void) {
 #ifdef _WIN32
-    // Windows 版本使用 FindFirstFile/FindNextFile
-    WIN32_FIND_DATAA findFileData;
-    HANDLE hFind;
     char searchPath[512];
-    
-    snprintf(searchPath, sizeof(searchPath), "%s%c%s*.log", g_logDir, PATH_SEPARATOR, g_logFileName);
-    
-    hFind = FindFirstFileA(searchPath, &findFileData);
+    snprintf(searchPath, sizeof searchPath, "%s%c%s*.log",
+              gLogDir, PATH_SEPARATOR, gLogFileName);
+
+    WIN32_FIND_DATAA findFileData; // Windows 版本使用 FindFirstFile/FindNextFile
+    HANDLE hFind = FindFirstFileA(searchPath, &findFileData);
     if (hFind == INVALID_HANDLE_VALUE) {
-        snprintf(searchPath, sizeof(searchPath), "%s%c%s*.log", g_logDir, PATH_SEPARATOR, g_logFileName);
+        snprintf(searchPath, sizeof(searchPath), "%s%c%s*.log", 
+                  gLogDir, PATH_SEPARATOR, gLogFileName);
         hFind = FindFirstFileA(searchPath, &findFileData);
-        if (hFind == INVALID_HANDLE_VALUE) {
+        if (hFind == INVALID_HANDLE_VALUE) 
             return;
-        }
     }
     
     typedef struct {
@@ -308,11 +309,11 @@ static void deleteOldestLogFiles(void) {
     int fileCount = 0;
     
     do {
-        if (strstr(findFileData.cFileName, g_logFileName) != NULL && 
+        if (strstr(findFileData.cFileName, gLogFileName) != NULL && 
             (strstr(findFileData.cFileName, ".log") != NULL || strstr(findFileData.cFileName, ".log") != NULL)) {
             
             char filepath[600];
-            snprintf(filepath, sizeof(filepath), "%s%c%s", g_logDir, PATH_SEPARATOR, findFileData.cFileName);
+            snprintf(filepath, sizeof(filepath), "%s%c%s", gLogDir, PATH_SEPARATOR, findFileData.cFileName);
             
             memcpy(logFiles[fileCount].filename, filepath, sizeof(logFiles[fileCount].filename) - 1);
             logFiles[fileCount].ftWrite = findFileData.ftLastWriteTime;
@@ -348,7 +349,7 @@ static void deleteOldestLogFiles(void) {
     struct stat fileStat;
     char filepath[512];
     
-    dir = opendir(g_logDir);
+    dir = opendir(gLogDir);
     if (dir == NULL) {
         return;
     }
@@ -362,10 +363,10 @@ static void deleteOldestLogFiles(void) {
     int fileCount = 0;
     
     while ((entry = readdir(dir)) != NULL && fileCount < 50) {
-        if (strstr(entry->d_name, g_logFileName) != NULL && 
+        if (strstr(entry->d_name, gLogFileName) != NULL && 
             (strstr(entry->d_name, ".log") != NULL || strstr(entry->d_name, ".log") != NULL)) {
             
-            snprintf(filepath, sizeof(filepath), "%s%c%s", g_logDir, PATH_SEPARATOR, entry->d_name);
+            snprintf(filepath, sizeof(filepath), "%s%c%s", gLogDir, PATH_SEPARATOR, entry->d_name);
             
             if (stat(filepath, &fileStat) == 0) {
                 memcpy(logFiles[fileCount].filename, filepath, sizeof(logFiles[fileCount].filename) - 1);
@@ -407,17 +408,17 @@ void Time1SecCheckAndRotateLogFile(void *arg)
       return ;
     SecCount = 0;
 
-    if(g_logFile == NULL)
+    if(gLogFile == NULL)
         return ;
     
-    long fileSize = getFileSize(g_logFullPath);
-    if (fileSize < 0 || fileSize < g_logFileSizeByte)
+    long fileSize = getFileSize(gLogFullPath);
+    if (fileSize < 0 || fileSize < gLogFileSizeByte)
         return ;
     
-    EnterCriticalSection_Wrapper(&g_log_file_cs);
+    EnterCriticalSection_Wrapper(&gLogFileCs);
     
-    fclose(g_logFile);
-    g_logFile = NULL;
+    fclose(gLogFile);
+    gLogFile = NULL;
     
     char backupPath[512] = {0};
     char timeStr[32] = {0};
@@ -426,33 +427,33 @@ void Time1SecCheckAndRotateLogFile(void *arg)
     strftime(timeStr, sizeof(timeStr), "%Y%m%d_%H%M%S", timeinfo);
     
     snprintf(backupPath, sizeof(backupPath), "%s%c%s_%s.log", 
-             g_logDir, PATH_SEPARATOR, g_logFileName, timeStr);
+             gLogDir, PATH_SEPARATOR, gLogFileName, timeStr);
     
-    if (rename(g_logFullPath, backupPath) == 0) {
+    if (rename(gLogFullPath, backupPath) == 0) {
         deleteOldestLogFiles();
         
-        g_logFile = fopen(g_logFullPath, "a");
-        if(g_logFile != NULL) {
-            if (setvbuf(g_logFile, NULL, _IOLBF, 4096) != 0)
-              setvbuf(g_logFile, NULL, _IONBF, 0);
+        gLogFile = fopen(gLogFullPath, "a");
+        if(gLogFile != NULL) {
+            if (setvbuf(gLogFile, NULL, _IOLBF, 4096) != 0)
+              setvbuf(gLogFile, NULL, _IONBF, 0);
             
             char newTimeStr[32] = {0};
             getCurrentTimeString(newTimeStr, sizeof(newTimeStr));
-            fprintf(g_logFile, "=== Log rotated at %s ===\n", newTimeStr);
-            fflush(g_logFile);
+            fprintf(gLogFile, "=== Log rotated at %s ===\n", newTimeStr);
+            fflush(gLogFile);
             
-            SafePrintf("日志文件已滚动: %s -> %s\n", g_logFullPath, backupPath);
+            SafePrintf("日志文件已滚动: %s -> %s\n", gLogFullPath, backupPath);
             
-            LeaveCriticalSection_Wrapper(&g_log_file_cs);
+            LeaveCriticalSection_Wrapper(&gLogFileCs);
             return ;
         }
     }
     
-    g_logFile = fopen(g_logFullPath, "a");
-    if(g_logFile != NULL)
-        setvbuf(g_logFile, NULL, _IOLBF, 0);
+    gLogFile = fopen(gLogFullPath, "a");
+    if(gLogFile != NULL)
+        setvbuf(gLogFile, NULL, _IOLBF, 0);
     
-    LeaveCriticalSection_Wrapper(&g_log_file_cs);
+    LeaveCriticalSection_Wrapper(&gLogFileCs);
 }
 
 
@@ -476,19 +477,19 @@ bool logStorageInit(const char* logDir, const char* logFileName, LogLevel_t leve
     // 参数验证和设置
 
     if(logFileSizeKB > 9)  // 必须大于10KB
-        g_logFileSizeByte = logFileSizeKB * 1024;
+        gLogFileSizeByte = logFileSizeKB * 1024;
     
     g_checkIntervalSec = checkIntervalSec;
     g_maxLogFiles = (maxFilesToKeep < 1) ? 1 : maxFilesToKeep;
 
     // 初始化临界区
-    InitializeCriticalSection_Wrapper(&g_log_file_cs);
-    EnterCriticalSection_Wrapper(&g_log_file_cs);
+    InitializeCriticalSection_Wrapper(&gLogFileCs);
+    EnterCriticalSection_Wrapper(&gLogFileCs);
     
     // 保存配置
-    strncpy(g_logDir, logDir, sizeof(g_logDir) - 1);
-    strncpy(g_logFileName, logFileName, sizeof(g_logFileName) - 1);
-    g_logLevel = level;
+    strncpy(gLogDir, logDir, sizeof(gLogDir) - 1);
+    strncpy(gLogFileName, logFileName, sizeof(gLogFileName) - 1);
+    gLogLevel = level;
     
     // 创建目录（如果需要）
     if(strcmp(logDir, "./") != 0 && strcmp(logDir, ".") != 0) {
@@ -496,29 +497,27 @@ bool logStorageInit(const char* logDir, const char* logFileName, LogLevel_t leve
     }
  
     // 构建完整路径
-    snprintf(g_logFullPath, sizeof(g_logFullPath), "%s%c%s.log", 
+    snprintf(gLogFullPath, sizeof(gLogFullPath), "%s%c%s.log", 
              logDir, PATH_SEPARATOR, logFileName);
     
     // 打开日志文件
-    g_logFile = fopen(g_logFullPath, "a");
-    if(g_logFile == NULL) {
-        LeaveCriticalSection_Wrapper(&g_log_file_cs);
+    gLogFile = fopen(gLogFullPath, "a");
+    if(gLogFile == NULL) {
+        LeaveCriticalSection_Wrapper(&gLogFileCs);
         return false;
     }
     
-    setvbuf(g_logFile, NULL, _IOFBF, 4096);
+    setvbuf(gLogFile, NULL, _IOFBF, 4096);
     
     // 写入初始信息
     char timeStr[32] = {0};
     getCurrentTimeString(timeStr, sizeof(timeStr));
-    fprintf(g_logFile, "=== Log started at %s (maxFiles: %d, checkInterval: %d Sec) ===\n", 
+    fprintf(gLogFile, "=== Log started at %s (maxFiles: %d, checkInterval: %d Sec) ===\n", 
             timeStr, g_maxLogFiles, g_checkIntervalSec);
-    fflush(g_logFile);
+    fflush(gLogFile);
     
-    LeaveCriticalSection_Wrapper(&g_log_file_cs);
+    LeaveCriticalSection_Wrapper(&gLogFileCs);
     
- 
-
     // SafePrintf("日志系统初始化完成: 目录=%s, 文件=%s, 最大文件数=%d, 检查间隔=%dms\n",
     //            logDir, logFileName, g_maxLogFiles, g_checkIntervalSec);
     
@@ -527,63 +526,101 @@ bool logStorageInit(const char* logDir, const char* logFileName, LogLevel_t leve
 
 // 修改反初始化函数
 void logStorageUninit(void) { 
-    EnterCriticalSection_Wrapper(&g_log_file_cs);
+    EnterCriticalSection_Wrapper(&gLogFileCs);
     
-    if(g_logFile != NULL) {
+    if(gLogFile != NULL) {
         char timeStr[32] = {0};
         getCurrentTimeString(timeStr, sizeof(timeStr));
-        fprintf(g_logFile, "=== Log ended at %s ===\n\n", timeStr);
-        fflush(g_logFile);
-        fclose(g_logFile);
-        g_logFile = NULL;
+        fprintf(gLogFile, "=== Log ended at %s ===\n\n", timeStr);
+        fflush(gLogFile);
+        fclose(gLogFile);
+        gLogFile = NULL;
     }
     
-    LeaveCriticalSection_Wrapper(&g_log_file_cs);
-    DeleteCriticalSection_Wrapper(&g_log_file_cs);
+    LeaveCriticalSection_Wrapper(&gLogFileCs);
+    DeleteCriticalSection_Wrapper(&gLogFileCs);
     
     SafePrintf("日志系统已卸载\n");
 }
 
-// 简化日志写入函数
+// 完整日志存储
 void logPrintFull(LogLevel_t level, const char* format, ...) { 
-    if(level < g_logLevel || g_logFile == NULL) {
-        return;
-    }
- 
-    EnterCriticalSection_Wrapper(&g_log_file_cs);
+    if(gLogFile == NULL )
+      printf("Log File Not Initialized. Full Log Storage\n");
+    
+    if(level < gLogLevel || gLogFile == NULL) 
+      return;
+    
+    EnterCriticalSection_Wrapper(&gLogFileCs);
     
     char timeStr[32] = {0};
     getCurrentTimeString(timeStr, sizeof timeStr);
     const char* levelStr = getLogLevelString(level);
     
-    fprintf(g_logFile, "[%s %-5s] ", timeStr, levelStr);
+    fprintf(gLogFile, "[%s %-5s] ", timeStr, levelStr);
     
     va_list args;
     va_start(args, format);
-    vfprintf(g_logFile, format, args);
+    vfprintf(gLogFile, format, args);
     va_end(args);
     
-    fprintf(g_logFile, "\n");
-    fflush(g_logFile);
+    fprintf(gLogFile, "\n");
+    fflush(gLogFile);
     
-    LeaveCriticalSection_Wrapper(&g_log_file_cs); 
+    LeaveCriticalSection_Wrapper(&gLogFileCs);
+}
+
+
+// 完整日志存储 无锁
+void logPrintUnLock(LogLevel_t level, const char* format, ...) { 
+    if(gLogFile == NULL )
+      printf("Log File Not Initialized. UnLock Log Storage\n");
+    
+    if(level < gLogLevel || gLogFile == NULL) 
+      return;
+    
+    //EnterCriticalSection_Wrapper(&gLogFileCs);
+    
+    char timeStr[32] = {0};
+    getCurrentTimeString(timeStr, sizeof timeStr);
+    const char* levelStr = getLogLevelString(level);
+    
+    fprintf(gLogFile, "[%s %-5s] ", timeStr, levelStr);
+    
+    va_list args;
+    va_start(args, format);
+    vfprintf(gLogFile, format, args);
+    va_end(args);
+    
+    fprintf(gLogFile, "\n");
+    fflush(gLogFile);
+    
+    //LeaveCriticalSection_Wrapper(&gLogFileCs);
 }
 
 // 简化 logPrint 函数
 void logPrint(const char* format, ...) {
-    if(g_logFile == NULL) {
-        return;
+    if(gLogFile == NULL) {
+
+      static bool printOne = false;
+      if(!printOne){
+        printOne = true;
+        printf("Log File Not Initialized. Common Log Storage\n");
+      }
+
+      return;
     }
     
-    EnterCriticalSection_Wrapper(&g_log_file_cs);
+    EnterCriticalSection_Wrapper(&gLogFileCs);
     
     va_list args;
     va_start(args, format);
-    vfprintf(g_logFile, format, args);
+    vfprintf(gLogFile, format, args);
     va_end(args);
     
-    fprintf(g_logFile, "\n");
-    fflush(g_logFile);
+    fprintf(gLogFile, "\n");
+    fflush(gLogFile);
     
-    LeaveCriticalSection_Wrapper(&g_log_file_cs);
+    LeaveCriticalSection_Wrapper(&gLogFileCs);
 }
+

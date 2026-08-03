@@ -1,0 +1,10 @@
+{
+  "armv7": [
+    "https://ports.ubuntu.com/ubuntu-ports/pool/main/s/systemd/libudev-dev_262.1-1ubuntu1_armhf.deb",
+    "https://ports.ubuntu.com/ubuntu-ports/pool/main/s/systemd/libudev1_262.1-1ubuntu1_armhf.deb"
+  ],
+  "aarch64": [
+    "https://ports.ubuntu.com/ubuntu-ports/pool/main/s/systemd/libudev-dev_262.1-1ubuntu1_arm64.deb",
+    "https://ports.ubuntu.com/ubuntu-ports/pool/main/s/systemd/libudev1_262.1-1ubuntu1_arm64.deb"
+  ]
+}

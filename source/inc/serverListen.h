@@ -10,6 +10,11 @@ extern "C" {
 #include <stdbool.h>
 #include "platform.h"
 
+#ifdef _WIN32
+#include <ws2tcpip.h>
+#else
+#include <netinet/in.h>
+#endif
 /*================== 宏定义声明			=========================================*/
 
 /*================== 数据类型声明		=========================================*/
@@ -17,9 +22,12 @@ extern "C" {
 typedef struct {
   uint16_t  port;
   socket_t  socket;
+
+  bool      isIPv6;                   // 是否使用IPv6
+  uint16_t  newPort;
   socket_t  newSocket;
-  char      newIP[20];
-} serverInfo_t;
+  char      newIP[INET6_ADDRSTRLEN];  // 改为支持IPv6
+}serverInfo_t;
 /*================== 外部变量声明		=========================================*/
 
 /*================== 外部函数声明		=========================================*/

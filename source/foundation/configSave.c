@@ -37,7 +37,7 @@ saveInfo_t saveInfo = {
   .COMalignedRecv4K = RECV_4K_MAX,
   .hostName = DEFAULT_HOST,
   .serverPrintData = 0,
-  .passwordMD5 = PASSWORD_MD5,
+  .passwordMD5Value = PASSWORD_MD5,
 };
 
 runInfo_t  runInfo = {
@@ -59,13 +59,9 @@ void setConfigFilePath(const char *path)
 
 void loadConfig(void)
 {
-  char *platform = "Win";
-  #ifdef __linux
-  platform = "Linux";
-  #endif
   char configFileName[100];
   snprintf(configFileName, sizeof configFileName,
-    "%s/configInfo%s-PORT%d.ini", SAVE_DIR, platform, getMainServerPort());
+    "%s/configInfo%s-PORT%d.ini", SAVE_DIR, SYSTEM_NAME, getMainServerPort());
   setConfigFilePath(configFileName);
 
   saveInfo.COMsendPoll = ini_getl("Settings", "COMsendPoll", saveInfo.COMsendPoll, configFile);
@@ -76,13 +72,15 @@ void loadConfig(void)
   saveInfo.serverPrintData = ini_getl("Settings", "serverPrintData", saveInfo.serverPrintData, configFile);
   ini_gets("Settings", "hostName", saveInfo.hostName, saveInfo.hostName, sizeof saveInfo.hostName, configFile);
 
-  ini_gets("password", "passwordMD5", saveInfo.passwordMD5, saveInfo.passwordMD5, sizeof saveInfo.passwordMD5, passwordMD5File);
-  if( strlen(saveInfo.passwordMD5) != sizeof saveInfo.passwordMD5 )
-    memcpy(saveInfo.passwordMD5, PASSWORD_MD5, sizeof saveInfo.passwordMD5);
+  ini_gets("password", "passwordMD5", saveInfo.passwordMD5Value, 
+    saveInfo.passwordMD5Value, strlen(PASSWORD_MD5), passwordMD5File);
+  if( strlen(saveInfo.passwordMD5Value) != strlen(PASSWORD_MD5) )
+    strcpy(saveInfo.passwordMD5Value, PASSWORD_MD5);
 }
 
-void saveConfig(void)
+void saveConfig(void *arg)
 {
+  (void)arg;
   static volatile bool runOnce = false;
   
   // 简单忙等待
@@ -93,7 +91,7 @@ void saveConfig(void)
   }
   runOnce = true;
 
-  char buffer[20];
+  char buffer[256];
 
   ini_puts("Settings", "COMsendPoll", saveInfo.COMsendPoll? "1" : "0", configFile);
   ini_puts("Settings", "COMrecvPoll", saveInfo.COMrecvPoll? "1" : "0", configFile);
@@ -106,7 +104,7 @@ void saveConfig(void)
   if( strncmp(saveInfo.hostName, DEFAULT_HOST, strlen(DEFAULT_HOST)) != 0 ) 
     ini_puts("Settings", "hostName", saveInfo.hostName, configFile);
   
-  ini_puts("password", "passwordMD5", saveInfo.passwordMD5, passwordMD5File);
+  ini_puts("password", "passwordMD5", saveInfo.passwordMD5Value, passwordMD5File);
   runOnce = false;
 }
 
