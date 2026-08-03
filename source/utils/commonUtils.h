@@ -5,6 +5,11 @@
 #include <stdbool.h>
 #include <time.h>
 
+#ifdef _WIN32
+#include <ws2tcpip.h>
+#else
+#include <netinet/in.h>
+#endif
 /*================== 数据类型声明    ========================================*/
 /*================== 外部变量声明    ========================================*/
 
@@ -13,13 +18,13 @@
 #ifdef __cplusplus  
 extern "C" {
 #endif
-void printBuildInfo(void);
+const char *printBuildInfo(bool);
 uint64_t getRuningTimeMs(void);
 char *getCurrentTimeStringSec(void);
 void updataConsoleTitle(const char *threadName);
 char *getSendRecvDirectionStr(const char *direct, uint8_t index);
 const char *getComputerFullName(void);
-void GetAllLocalIPs(char ips[][20], uint8_t *count, uint8_t num);
+void getAllLocalIPs(char localIPs[][INET6_ADDRSTRLEN], uint8_t *ipCount, uint8_t maxIPs, bool includeIPv6);
 
 const char *GetSystemUniqueIdentifier(void);
 uint8_t getWindowsVersionSimple(char *retStr);
@@ -34,11 +39,12 @@ bool EnableVTMode(void);
 #endif
 
 void ErrorCodeTest(void);
-bool is_running_as_service();
+bool isRunningAsService();
 bool executeCommand(const char* cmd, char* output, size_t output_size);
 char* stristr(const char* haystack, const char* needle);
 bool isValidHexRange(const char *str);
 uint64_t getSystemUptimeSeconds(void);
+const char* getBuildDate(void);
 #ifdef __cplusplus
 }
 #endif

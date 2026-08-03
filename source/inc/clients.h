@@ -16,9 +16,9 @@ typedef struct {
   uint16_t max;
 } ClientsNum_t;
 
-extern ClientsNum_t const * const g_clientsNum;
-#define getClientNum() g_clientsNum->count
-#define getMaxClient() g_clientsNum->max
+extern ClientsNum_t const * const gClientsNum;
+#define getClientNum() gClientsNum->count
+#define getMaxClient() gClientsNum->max
 
 /*================== 外部函数声明    ========================================*/
 void ClientResourceInit(bool start);
@@ -31,10 +31,10 @@ int printfSend(const socket_t *Socket, const char *fmt, ...);
 bool getClientIndex(const socket_t *Socket, uint16_t *retIndex);
 const socket_t *getClientSocket(uint16_t index);
 const char *getClientIP(uint16_t index);
-void getAllClientIPandIndexInfo(char *retStr, uint16_t len);
+void getAllClientIPandIndexInfo(const socket_t *Socket, char *retStr, uint16_t len);
 void KickAllClients(const char* reason);
 
-void sendComPortsListToClient(socket_t *socket, bool VPID);
+void sendComPortsListToClient(const socket_t *socket, bool VPID);
 #ifdef __cplusplus
 }
 #endif

@@ -73,7 +73,7 @@ ComPortInfo_t const * const ComPort = &comPort;
 /*================== 本地函数声明    ========================================*/
 static threadRet WINAPI ComRecvDataThread(void *param);
 static void HandleReceivedData(const uint8_t *data, uint32_t len);
-static uint32_t handleAlignReceivedData(const char *newData, uint32_t bytesRead);
+static uint32_t handleAlignReceivedData(const char *newData, const uint32_t bytesRead);
 
 
 bool getComIsOpen(void)
@@ -389,7 +389,7 @@ static threadRet WINAPI ComRecvDataThread(void *param)
           if (!GetOverlappedResult(comPort.hCom, &overlapped, &bytesRead, false)) {
             error = GetLastError();
             if (error != ERROR_OPERATION_ABORTED) {
-              ThreadExitReason = getPrintf("Thread Exit[B], %s read error:%ld", 
+              ThreadExitReason = getPrintf("Thread Exit[B], %s Read Error:%ld", 
                   comPort.portName, error);
               break;
             }
@@ -397,7 +397,7 @@ static threadRet WINAPI ComRecvDataThread(void *param)
         }
       } 
       else if (error != ERROR_OPERATION_ABORTED) {
-        ThreadExitReason = getPrintf("Thread Exit[A], %s read error:%ld", 
+        ThreadExitReason = getPrintf("Thread Exit[A], %s Read Error:%ld", 
             comPort.portName, error);
         break;
       }
@@ -465,7 +465,7 @@ static threadRet WINAPI ComRecvDataThread(void *param)
         totalBytes = handleAlignReceivedData(comRecvBuffer, bytesRead);
     }
     else if (bytesRead == 0) {    // EOF - 设备断开 
-      ThreadExitReason = getPrintf("Device disconnected (EOF): %s", strerror(errno));
+      ThreadExitReason = getPrintf("Device Disconnected (EOF): %s", strerror(errno));
       break;
     }
     else { // 读取错误
@@ -529,7 +529,7 @@ static void handleReceivedDataAuotAsync(const char *comRecvBuffer, uint32_t len)
     2. 记录每一个对齐数据包接收的时间戳，计算时间差，如果时间差超过某个值就发送出去。
        这个方法实现起来比较复杂，而且时间差值和性能上调度上也不好把握。
  */
-static uint32_t handleAlignReceivedData(const char *newData, uint32_t length)
+static uint32_t handleAlignReceivedData(const char *newData, const uint32_t length)
 {  
   if( saveInfo.COMalignedRecv4K == 0){ // 禁用限定阈值就直接发送
     handleReceivedDataAuotAsync(newData, length);
@@ -562,14 +562,18 @@ static uint32_t handleAlignReceivedData(const char *newData, uint32_t length)
   // if (infiniteZero == false )
   //   SafePrintf("COM Zero %d/%d, length：%-10d\n", zeroNumCount, autoZeroMax, length);
 
- uint32_t sumBytes = totalBytes + length;
-  bool condition[3];
-  static uint8_t zeroNumMax = 3;      // 这个固定3~4的方法表现还怪好的，很奇怪
-  static uint8_t autoZeroCount = 0;   // 连续零读取计数
+  uint32_t sumBytes = totalBytes + length; 
+#ifdef __linux
+  static uint8_t zeroNumMax = 10;   // Linux 这个固定8~10的方法表好一点，具体要看性能
+#else
+  static uint8_t zeroNumMax = 3;    // Win 这个固定3~4的方法表现还怪好的，很奇怪
+#endif
+  static uint8_t autoZeroCount = 0; // 连续零读取计数
   autoZeroCount = (totalBytes && length==0 ? autoZeroCount+1 : 0);
-  condition[0] = autoZeroCount >= zeroNumMax;         // 积攒数据且多次空读 
-  condition[1] = saveInfo.COMalignedRecv4K < sumBytes; // 超过积攒阈值，发送数据
-  condition[2] = totalBytes > buffMax;                // 缓冲区即将满，必须发送
+  bool condition[3];
+  condition[0] = autoZeroCount >= zeroNumMax;           // 积攒数据且多次空读 
+  condition[1] = saveInfo.COMalignedRecv4K < sumBytes;  // 超过积攒阈值，发送数据
+  condition[2] = totalBytes > buffMax;                  // 缓冲区即将满，必须发送
   
   if( condition[1] || condition[2] )      // 超过阈值发送数据，空读次数降低要求
       autoZeroMax = 3;
@@ -583,9 +587,10 @@ static uint32_t handleAlignReceivedData(const char *newData, uint32_t length)
       snprintf(Recv4095NumSrting, sizeof Recv4095NumSrting,
           ", Linux Recv 4095 Num:%-5d", LinuxRecv4095Num );
     #endif
-    SafePrintf("%sOM Aligned Recv%s%s: %-6u/%-6u/%-6u Bytes, %s:%d/%d/%-2d%s%-33s\n", 
-        condition[1]? "\nC":"C", condition[2]? " Fill":" ",
-        condition[1]? " Restrict":" ", totalBytes, saveInfo.COMalignedRecv4K, buffMax,  
+    SafePrintf("%sOM Aligned Recv%s%s: %-6u/%-6u/%-6u Bytes, (%d%d%d)%s:%d/%d/%-2d%s%-33s\n", 
+        condition[1]? "\nC":"C", condition[2]? " Fill":" ", condition[1]? " Restrict":" ", 
+        totalBytes, saveInfo.COMalignedRecv4K, buffMax,
+        condition[0], condition[1], condition[2],
         condition[0]? "ZERO":"Zero", autoZeroCount, zeroNumMax, autoZeroMax,
         cmpZeroMax != zeroNumCount? " NEW":" ", Recv4095NumSrting);
     handleReceivedDataAuotAsync(totalBuffer, totalBytes);
@@ -614,7 +619,7 @@ static uint32_t handleAlignReceivedData(const char *newData, uint32_t length)
 #endif
 
  // 非对齐数据且有积攒数据，立即发送
- if (sumBytes % aligningValue != 0 && totalBytes ) {
+  if (sumBytes % aligningValue != 0 && totalBytes ) {
     handleReceivedDataAuotAsync(totalBuffer, totalBytes);
     totalBytes = LinuxRecv4095Num = 0; 
   } 

@@ -1,0 +1,2 @@
+必须先要 apt update
+apt-get install -y udev

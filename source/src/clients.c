@@ -6,6 +6,9 @@
   * @brief   简介 连接的客户端
   ******************************************************************************
   * @attention 注意
+  * 
+  * 网络编程中必须 忽略SIGPIPE信号，否则程序会被收到 SIGPIPE信号后会退出
+  * signal(SIGPIPE, SIG_IGN);
   *
   * 日志：2025-09-17
   * 客户端列表使用的是数组，改成内核链链表作为客户端列表，新客户端添加到尾，
@@ -31,8 +34,10 @@
 #include "TrafficStats.h"
 #include "Command.h"
 #include "configSave.h"
+#include "hostConnect.h"
 
 #include "uthash.h"
+#include "discovery.h"
 
 #include <stdio.h>
 #include <stdarg.h>
@@ -57,7 +62,8 @@ typedef struct ClientNode {
   thread_t           hThread;
   threadID_t         threadId;
   uint16_t           index;
-  char               ip[50];
+  char               ip[INET6_ADDRSTRLEN];  // 支持 IPv6
+  int                addrFamily;            // 地址族 AF_INET/AF_INET6
   uint64_t           connectTime;
   bool               sendTempUnav;
   uint64_t           tempUnavStart;
@@ -75,12 +81,13 @@ typedef struct {
 /*================== 本地宏定义      ========================================*/
 /*================== 本地常量声明    ========================================*/
 /*================== 本地变量声明    ========================================*/
+#define SEND_DEAD_PEER_TIMEOUT_SEC    2 
 static mutex_type csClient; 
 static ClientNode_t *clientPool = NULL, *socketHashTable = NULL;
 static ClientList_t clientList = { .num.max = MAX_CLIENTS };
 
 /*================== 全局共享变量    ========================================*/
-ClientsNum_t const * const g_clientsNum = &clientList.num;
+ClientsNum_t const * const gClientsNum = &clientList.num;
 
 /*================== 本地函数声明    ========================================*/
 static void ClientList_Init(void);
@@ -268,7 +275,7 @@ static threadRet WINAPI ClientRecvDataThread(void *param)
   }
 
   ClientNode_t* clientInfo = (ClientNode_t*)param;
-  int bytesReceived = 0, bytesWritten, retSelect, error;
+  int bytesReceived = 0, bytesWritten, retSelect, errorCode;
   fd_set readSet;
   struct timeval timeout;
   uint64_t sendCount = 0;
@@ -288,8 +295,8 @@ static threadRet WINAPI ClientRecvDataThread(void *param)
 #endif
   
   if (block != 0) {
-    error = GetLastError();
-    threadExitInfo = getPrintf("线程退出，设置非阻塞失败。错误代码：%d ", error); 
+    errorCode = GetLastError();
+    threadExitInfo = getPrintf("线程退出，设置非阻塞失败。错误代码：%d ", errorCode); 
   }
   
   // 发送连接成功消息
@@ -298,9 +305,9 @@ static threadRet WINAPI ClientRecvDataThread(void *param)
 
   while ( block == 0 ) {
     if (clientInfo->socket == INVALID_SOCKET_VALUE){
-      error = GetLastError(); 
+      errorCode = GetLastError(); 
       threadExitInfo = getPrintf("线程退出，套接字无效。错误代码：%d，接收：%d", 
-          error, bytesReceived);
+          errorCode, bytesReceived);
       break;
     }
     
@@ -311,9 +318,9 @@ static threadRet WINAPI ClientRecvDataThread(void *param)
 
     retSelect = select(clientInfo->socket + 1, &readSet, NULL, NULL, &timeout);
     if (retSelect == SOCKET_ERROR) { 
-      error = GetLastError(); 
+      errorCode = GetLastError(); 
       threadExitInfo = getPrintf("线程退出，选择错误。接收：%d，错误代码：%d ", 
-          bytesReceived, error);
+          bytesReceived, errorCode);
       break;
     }
     else if (retSelect == 0) {  // 超时，没有数据可读，继续循环
@@ -323,31 +330,32 @@ static threadRet WINAPI ClientRecvDataThread(void *param)
 
     bytesReceived = recv(clientInfo->socket, tcpRecvBuffer, sizeof tcpRecvBuffer - 1, 0);
     if (bytesReceived == 0) { // 客户端正常关闭连接
-      error = GetLastError();
+      errorCode = GetLastError();
       threadExitInfo = getPrintf("线程退出，优雅地断开连接。错误代码：%d，接收：%d", 
-          error, bytesReceived); 
+          errorCode, bytesReceived); 
       break;
     }
     else if (bytesReceived < 0) {
-      error = GetLastError();
+      errorCode = GetLastError();
 #ifdef _WIN32
-      if (error == WSAEWOULDBLOCK) 
+      if (errorCode == WSAEWOULDBLOCK) 
 #else
-      if (error == EWOULDBLOCK || error == EAGAIN)
+      if (errorCode == EWOULDBLOCK || errorCode == EAGAIN)
 #endif
         continue; // 非阻塞模式下没有数据是正常情况
 #ifdef _WIN32
-      else if (error == WSAECONNRESET || error == WSAECONNABORTED) {
+      else if (errorCode == WSAECONNRESET || errorCode == WSAECONNABORTED)
 #else
-      else if (error == ECONNRESET || error == ECONNABORTED) {
+      else if (errorCode == ECONNRESET || errorCode == ECONNABORTED || errorCode == ETIMEDOUT) 
 #endif
-        threadExitInfo = getPrintf( "线程退出，连接被重置。错误代码：%d，接收：%d", 
-            error, bytesReceived);
+      {
+        threadExitInfo = getPrintf( "线程退出，连接被重置（拔网线）。错误代码：%d，接收：%d", 
+            errorCode, bytesReceived);
         break;
       }
       else {  // 其他错误，断开连接
         threadExitInfo = getPrintf("线程退出，接收错误。错误代码：%d，接收：%d", 
-            error, bytesReceived);
+            errorCode, bytesReceived);
         break;
       }
     }
@@ -357,7 +365,7 @@ static threadRet WINAPI ClientRecvDataThread(void *param)
     // 检查是否是控制命令
     if (strnicmp(tcpRecvBuffer, CONTROL_HEADER, strlen(CONTROL_HEADER)) == 0) {
       if (saveInfo.serverPrintData == 3) 
-        SafePrintf("Client [%-2d]IP:%s len:%d cmd: %-60s\n", 
+        SafePrintf("Client [%-2d]IP: %s len:%d cmd: %-60s\n", 
             clientInfo->index, clientInfo->ip, bytesReceived, tcpRecvBuffer);
       
       HandleClientCommand(&clientInfo->socket, tcpRecvBuffer + strlen(CONTROL_HEADER));
@@ -415,7 +423,7 @@ static bool sendMonopolizeExamine(ClientNode_t* client)
   if( runInfo.monopolizeComRecvIndex && *runInfo.monopolizeComRecvIndex != client->index){ 
     const char *ClientIP = getClientIP(*runInfo.monopolizeComRecvIndex);
     if( ClientIP != NULL && runInfo.monopolizeComSendIndex == NULL)
-      printfSend(&client->socket, "Send data to COM, but [%-2d]IP:%s "
+      printfSend(&client->socket, "Send data to COM, but [%-2d]IP: %s "
           "monopolize! You cannot receive COM data\n", 
           *runInfo.monopolizeComRecvIndex, ClientIP ); 
     if( ClientIP == NULL )
@@ -425,7 +433,7 @@ static bool sendMonopolizeExamine(ClientNode_t* client)
   if( runInfo.monopolizeComSendIndex && *runInfo.monopolizeComSendIndex != client->index){ 
     const char *ClientIP = getClientIP(*runInfo.monopolizeComSendIndex);
     if( ClientIP != NULL ) {
-      printfSend(&client->socket, "Send data to COM, but [%-2d]IP:%s monopolize!\n",
+      printfSend(&client->socket, "Send data to COM, but [%-2d]IP: %s monopolize!\n",
         *runInfo.monopolizeComSendIndex, ClientIP ); 
       return true; 
     }
@@ -473,18 +481,21 @@ bool addNewClient(socket_t socket, const char *ip)
   newNode->hThread = threadCreate(&newNode->threadId, ClientRecvDataThread, newNode);
   if (newNode->hThread) {
     static uint64_t connectCount = 0;
-    SafePrintf("Client [%-2d]IP:%-16s Connected %d/%d Count:%" PRIu64 "\n",
+    SafePrintf("Client [%-2d]IP: %-16s Connected %d/%d Count:%" PRIu64 "\n",
         newNode->index, newNode->ip, clientList.num.count, getMaxClient(), ++connectCount);
   }
   else 
     ClientList_Remove(newNode);
+  
+  // 设置套接字死链超时，单位秒，IPPROTO_TCP，针对拔掉网线情况
+  setSocketDeadPeerTimeout(socket, SEND_DEAD_PEER_TIMEOUT_SEC); 
   
   LeaveCriticalSection_Wrapper(&csClient);
   return true;
 }
 
 // 获取所有客户端IP和索引
-void getAllClientIPandIndexInfo(char *retStr, uint16_t len) 
+void getAllClientIPandIndexInfo(const socket_t *Socket, char *retStr, uint16_t len) 
 {
   if(retStr == NULL || len == 0)
     return;
@@ -498,7 +509,8 @@ void getAllClientIPandIndexInfo(char *retStr, uint16_t len)
   for (ClientNode_t* curr = clientList.head; curr && strLen < len; curr = curr->next) {
     memset(clientInfo, 0, sizeof clientInfo);
     snprintf(clientInfo, sizeof clientInfo, 
-        "client [%-2d]IP:%-16s\n", curr->index, curr->ip);
+        "client [%-2d]IP: %-16s%s\n", curr->index, curr->ip, 
+          Socket==NULL || *Socket != curr->socket?"":" (You)");
     uint16_t infoLen = strlen(clientInfo);
     if (strLen + infoLen >= len) 
       break;
@@ -509,9 +521,9 @@ void getAllClientIPandIndexInfo(char *retStr, uint16_t len)
 }
 
 static void CloseClient(ClientNode_t* node, const char *reason)
-{ 
+{
   if (!node){
-    SafePrintf("Client [-1]IP:0.0.0.0          Closed NO node,"
+    SafePrintf("Client [-1]IP:0.0.0.0          Closed No Node,"
       " reason: %s\n", reason? reason:"未知");
     return;
   }
@@ -521,13 +533,14 @@ static void CloseClient(ClientNode_t* node, const char *reason)
 
   // 使用原子操作确保只有一个线程执行关闭
   #ifdef _WIN32
-  if (InterlockedCompareExchange(&node->isClosing, 1, 0)) {
+  if (InterlockedCompareExchange(&node->isClosing, 1, 0))
   #else
-  if (__sync_val_compare_and_swap(&node->isClosing, 0, 1)) {
+  if (__sync_val_compare_and_swap(&node->isClosing, 0, 1)) 
   #endif
-    SafePrintf("Client [%-2d]IP:%-16s Closed [SelfCall %s] is Already, reason: %s%s", 
+  {
+    SafePrintf("Client [%-2d]IP: %-16s Closed [SelfCall %s] is Already, reason: %s%s", 
         node->index, node->ip, isSelfCall? "YES":"NO ",
-        reason? reason:"未知", g_clientsNum->count == 0 ? "\n\n":"\n");
+        reason? reason:"未知", gClientsNum->count == 0 ? "\n\n":"\n");
     LeaveCriticalSection_Wrapper(&csClient);
     return;
   }
@@ -548,17 +561,17 @@ static void CloseClient(ClientNode_t* node, const char *reason)
     // 外部调用，等待线程退出
     DWORD waitResult = WaitForSingleObject_Wrapper(closeThread, 1000); 
     if (waitResult == WAIT_TIMEOUT) {
-      SafePrintf("Client [%-2d]IP:%-16s recv thread wait timeout\n", 
+      SafePrintf("Client [%-2d]IP: %-16s recv thread wait timeout\n", 
               node->index, node->ip);
     }
     bool CloseRet = CloseHandle(closeThread);
     CloseInfo = getPrintf("Handle:%s wait:%ld ", CloseRet? "OK":"Fail", waitResult);
   }
 
-  SafePrintf("Client [%-2d]IP:%-16s Closed [SelfCall %s] sok:%s %sreason: %s%s", 
+  SafePrintf("Client [%-2d]IP: %-16s Closed [SelfCall %s] sok:%s %sreason: %s%s", 
       node->index, node->ip, isSelfCall? "YES":"NO ",
       closeSocketRet==0? "OK":"Fail", CloseInfo, reason, 
-      g_clientsNum->count == 0 ? "\n\n":"\n");
+      gClientsNum->count == 0 ? "\n\n":"\n");
 }
 
 
@@ -567,17 +580,18 @@ static void sendFailErrorHandle(bool wide, ClientNode_t *ClientInfo, int error,
   uint16_t *closeCount, int *errorList, ClientNode_t **clientsToClose, 
   uint64_t *retCurrentTime, int sendRet, int sendLen)
 {
+  static const uint32_t timeoutMs = (SEND_DEAD_PEER_TIMEOUT_SEC * 1000) + 500;
   *retCurrentTime = getRuningTimeMs(); 
-  uint64_t timeDiff = ClientInfo? *retCurrentTime - ClientInfo->tempUnavStart: 0;
-  if( timeDiff > 2000 )
-    timeDiff = 1;
+  uint64_t timeDiffms = ClientInfo? *retCurrentTime - ClientInfo->tempUnavStart: 0;
+  if( timeDiffms > timeoutMs + 2000 )
+    timeDiffms = 0;
 
-  static uint8_t timeDiffIsChange = 0;
-  if( timeDiffIsChange != timeDiff/200){
-    timeDiffIsChange = timeDiff/200;
+  static uint16_t timeDiffIsChange = 0;
+  if( timeDiffIsChange != timeDiffms/200){
+    timeDiffIsChange = timeDiffms/200;
 
-    SafePrintf("%s播发送 错误:%6d，超时:%4" PRIu64 " ms ==> %-2d %-16s]  %-6d/%-6d Byte (%s : %d)     \n",
-        wide? "广":"单", error, timeDiff, ClientInfo? ClientInfo->index:-1, 
+    SafePrintf("%s播发送 错误:%6d，超时:%5" PRIu64 " ms ==> %-2d %-16s]  %-6d/%-6d Byte (%s : %d)     \n",
+        wide? "广":"单", error, timeDiffms, ClientInfo? ClientInfo->index:-1, 
         ClientInfo? ClientInfo->ip:"Unknown IP", 
         sendRet, sendLen, sendRet - sendLen == 0? "OK":"Fail", sendRet - sendLen );
   }
@@ -598,7 +612,7 @@ static void sendFailErrorHandle(bool wide, ClientNode_t *ClientInfo, int error,
     ClientInfo->tempUnavStart = ClientInfo->sendTempUnav = false; 
   
   if( error == WSAECONNRESET || error == WSAECONNABORTED || 
-      (ClientInfo->sendTempUnav && (*retCurrentTime - ClientInfo->tempUnavStart) >= 1000) ) { 
+      (ClientInfo->sendTempUnav && (*retCurrentTime - ClientInfo->tempUnavStart) >= timeoutMs) ) { 
       // 连接重置或中止，立即关闭
       errorList[*closeCount] = error;
       clientsToClose[(*closeCount)++] = ClientInfo;
@@ -608,8 +622,18 @@ static void sendFailErrorHandle(bool wide, ClientNode_t *ClientInfo, int error,
 
 // Socket 如果为空就会发送给所有客户端，不为空且有效的话就会只发送给指定的客户端
 int sendDataToClients(const socket_t *socket, const char* buff, int len) 
-{
+{ 
   EnterCriticalSection_Wrapper(&csClient);
+  
+  #ifdef __DISCOVERY_H_
+  if( socket!= NULL && *socket != INVALID_SOCKET_VALUE 
+      && isDiscoveryServiceSocket( *socket ) ){
+      DiscoveryServiceSend(*socket, buff, len);
+      LeaveCriticalSection_Wrapper(&csClient);
+      return len;
+  }
+  #endif
+
   int sendRet = 0, error = 0; 
   uint64_t currentTime = 0; 
   
@@ -618,9 +642,17 @@ int sendDataToClients(const socket_t *socket, const char* buff, int len)
   static int errorList[ MAX_CLIENTS ] = {0};
   static ClientNode_t *clientsToClose[ MAX_CLIENTS ] = {0};
 
+
+  #ifdef __linux 
+  int flags = MSG_NOSIGNAL;
+  #else
+  int flags = 0;
+  #endif
+
   if (socket && *socket != INVALID_SOCKET_VALUE) {  // 单播 发送给指定客户端
     do {
-      sendRet = send(*socket, buff, len, 0);
+
+      sendRet = send(*socket, buff, len, flags);
       if ( sendRet > 0 ) 
           break;
       
@@ -646,7 +678,7 @@ int sendDataToClients(const socket_t *socket, const char* buff, int len)
     if( curr->socket == INVALID_SOCKET_VALUE ) 
       continue;
     
-    int ret = send(curr->socket, buff, len, 0);
+    int ret = send(curr->socket, buff, len, flags);
     if (ret > 0) {  // 发送成功，重置计数器
       curr->tempUnavStart = curr->sendTempUnav = false;
       sendRet += ret;
@@ -735,7 +767,7 @@ void usbDeviceChange(void)
   COM_AutoReOpen_OnDeviceChange();
 }
 
-void sendComPortsListToClient(socket_t *socket, bool VPID)
+void sendComPortsListToClient(const socket_t *socket, bool VPID)
 {
   const char *comList = getComPortList(VPID);
   printfSend(socket, "%s\n", comList? comList: "Failed to get COM port list");

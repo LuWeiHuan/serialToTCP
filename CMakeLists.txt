@@ -352,6 +352,7 @@ if(PLATFORM_WINDOWS)
         ws2_32
         setupapi 
         advapi32
+        iphlpapi
     )
     
     # Windows 异常监控库

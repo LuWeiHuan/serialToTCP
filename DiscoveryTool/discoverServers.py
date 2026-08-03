@@ -1,172 +1,113 @@
+#!/usr/bin/env python3
+# mk.py - 跨平台构建脚本
+# 独立 UDP 测试脚本：发送线程 + 接收线程分离
+
 import socket
-import time
-import netifaces
-import ipaddress
+import threading
+import sys
+import os
 
-def get_local_networks():
-    """获取本机的所有网络接口和对应的网段"""
-    networks = []
-    
-    # 获取所有网络接口
-    interfaces = netifaces.interfaces()
-    
-    for interface in interfaces:
+# ==================== 配置 ====================
+IP = "255.255.255.255"
+PORT = 19000
+MESSAGE = "discover_com2tcp_server"   # 先测这条；可改成 ctrlInfo:exit
+INTERVAL_S = 1.0                       # 每隔多少秒发一次
+RECV_BUFSIZE = 4096
+# =============================================
+
+
+# 用于让接收线程能感知到"是否收到过任何包"
+recv_count = 0
+recv_lock = threading.Lock()
+
+
+def recv_thread(sock: socket.socket, stop_event: threading.Event) -> None:
+    """独立接收线程：一直等回复，收到就打印"""
+    global recv_count
+    print("[接收线程] 启动，等待回复...")
+    sock.settimeout(0.5)  # 用短超时轮询，方便响应 stop_event
+
+    while not stop_event.is_set():
         try:
-            # 获取接口的地址信息
-            addrs = netifaces.ifaddresses(interface)
-            if netifaces.AF_INET in addrs:
-                for addr_info in addrs[netifaces.AF_INET]:
-                    if 'addr' in addr_info and 'netmask' in addr_info:
-                        ip = addr_info['addr']
-                        netmask = addr_info['netmask']
-                        
-                        # 跳过回环地址和无效地址
-                        if ip == '127.0.0.1' or ip.startswith('169.254.'):
-                            continue
-                            
-                        # 计算网络地址
-                        network = ipaddress.IPv4Network(f"{ip}/{netmask}", strict=False)
-                        networks.append({
-                            'interface': interface,
-                            'ip': ip,
-                            'netmask': netmask,
-                            'network': network,
-                            'broadcast': str(network.broadcast_address)
-                        })
-        except Exception as e:
-            print(f"获取接口 {interface} 信息时出错: {e}")
-    
-    return networks
+            data, addr = sock.recvfrom(RECV_BUFSIZE)
+            text = data.decode("ascii", errors="replace")
+            with recv_lock:
+                recv_count += 1
+                n = recv_count
+            print(f"[接收线程] #{n:<3} 来自 {addr[0]:<15}:{addr[1]}  内容: {text!r}")
+        except socket.timeout:
+            continue
+        except OSError as e:
+            if not stop_event.is_set():
+                print(f"[接收线程] 错误: {e}")
+            break
 
-def discover_servers():
-    print("正在搜索COM2TCP服务器...")
-    
-    # 获取本机网络信息
-    networks = get_local_networks()
-    
-    # 创建UDP socket
+    print("[接收线程] 退出")
+
+def clear_screen():
+    print("\033[2J\033[H", end="")
+def send_thread(sock: socket.socket, stop_event: threading.Event) -> None:
+    """独立发送线程：每隔 INTERVAL_S 秒发一次"""
+    print("[发送线程] 启动")
+    data = MESSAGE.encode("ascii")
+    seq = 0
+
+    while not stop_event.is_set():
+        try:
+            seq += 1
+            sent = sock.sendto(data, (IP, PORT))
+            print(f"\n[发送线程] #{seq:<3} 向-> {IP}:{PORT} 发送 {sent} 字节，内容: {MESSAGE!r}")
+        except OSError as e:
+            print(f"[发送线程] 发送错误: {e}")
+
+        # 可中断的 sleep
+        stop_event.wait(INTERVAL_S)
+
+    print("[发送线程] 退出")
+
+def set_console_size_windows(cols=120, lines=40):
+    if sys.platform.startswith("win"):
+        os.system(f"mode con cols={cols} lines={lines}")
+def main() -> int:
+    set_console_size_windows(150, 40)
+    print(f"=== UDP 测试开始 ===")
+    print(f"目标: {IP}:{PORT}")
+    print(f"消息: {MESSAGE!r}")
+    print(f"间隔: {INTERVAL_S}s")
+    print("按 Ctrl+C 结束\n")
+
     sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     sock.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)
-    sock.settimeout(2.0)  # 2秒超时
-    
-    servers = []
-    discovery_msg = "DISCOVER_COM2TCP_SERVER"
-    
+    # 绑定到任意本地端口，方便接收回复
+    sock.bind(("0.0.0.0", 0))
+    local = sock.getsockname()
+    print(f"[主线程] 本地绑定: {local[0]}:{local[1]}\n")
+
+    stop_event = threading.Event()
+
+    t_recv = threading.Thread(target=recv_thread, args=(sock, stop_event), daemon=True)
+    t_send = threading.Thread(target=send_thread, args=(sock, stop_event), daemon=True)
+
+    t_recv.start()
+    t_send.start()
+
     try:
-        # 首先发送到全局广播地址 255.255.255.255
-        print("发送广播请求到 255.255.255.255:19000 (全局广播)")
-        try:
-            sock.sendto(discovery_msg.encode(), ('255.255.255.255', 19000))
-        except Exception as e:
-            print(f"发送到 255.255.255.255 失败: {e}")
-        
-        # 对每个网络接口发送广播
-        if networks:
-            print(f"找到 {len(networks)} 个网络接口:")
-            for net in networks:
-                broadcast_addr = net['broadcast']
-                print(f"发送广播请求到 {broadcast_addr}:19000 (接口: {net['interface']})")
-                
-                try:
-                    sock.sendto(discovery_msg.encode(), (broadcast_addr, 19000))
-                except Exception as e:
-                    print(f"发送到 {broadcast_addr} 失败: {e}")
-                    continue
-        else:
-            print("❌ 未找到有效的网络接口，仅使用全局广播")
-        
-        print("已发送所有发现请求")
-        
-        # 接收响应
-        start_time = time.time()
-        unique_servers = set()  # 用于去重的集合
-        
-        while time.time() - start_time < 5.0:  # 接收5秒
-            try:
-                data, addr = sock.recvfrom(256)
-                response = data.decode().strip()
-                
-                if response.startswith("COM2TCP_Server"):
-                    parts = response.split('|')
-                    if len(parts) >= 6:
-                        server_ip = parts[2]
-                        server_port = int(parts[3])
-                        
-                        # 创建服务器唯一标识 (IP:端口)
-                        server_id = f"{server_ip}:{server_port}"
-                        
-                        # 检查是否已存在
-                        if server_id not in unique_servers:
-                            unique_servers.add(server_id)
-                            
-                            server_info = {
-                                'ip': server_ip,
-                                'port': server_port,
-                                'clients': int(parts[4]),
-                                'max_clients': int(parts[5]),
-                                'response': response  # 保存原始响应
-                            }
-                            servers.append(server_info)
-                            print(f"发现新服务器: {server_ip}:{server_port}")
-                        else:
-                            print(f"收到重复服务器响应: {server_ip}:{server_port}")
-                            
-            except socket.timeout:
-                # 正常的超时，不显示错误
-                continue
-            except ConnectionResetError as e:
-                # Windows特有的连接重置错误，忽略它
-                if "[WinError 10054]" in str(e):
-                    continue
-                else:
-                    print(f"接收错误: {e}")
-            except Exception as e:
-                print(f"接收错误: {e}")
-                continue
-        
-        return servers
-        
-    finally:
-        sock.close()
+        # 主线程等待，直到 Ctrl+C
+        while t_send.is_alive():
+            t_send.join(timeout=0.5)
+    except KeyboardInterrupt:
+        print("\n[主线程] 收到 Ctrl+C，正在停止...")
 
-def print_servers(servers):
-    if not servers:
-        print("\n❌ 未找到任何COM2TCP服务器")
-        return
-    
-    print(f"\n✅ 找到 {len(servers)} 个服务器 (已去重):")
-    print("=" * 60)
-    
-    for i, server in enumerate(servers, 1):
-        print(f"服务器 #{i}:")
-        print(f"  IP地址:     {server['ip']}")
-        print(f"  端口:       {server['port']}")
-        print(f"  客户端数:   {server['clients']}/{server['max_clients']}")
-        print(f"  原始响应:   {server['response']}")
-        print("-" * 40)
+    stop_event.set()
+    t_send.join(timeout=2)
+    t_recv.join(timeout=2)
+    sock.close()
 
-def create_connection_command(servers):
-    if not servers:
-        return
-    
-    print("\n📋 连接命令示例:")
-    for i, server in enumerate(servers, 1):
-        print(f"{i}. telnet {server['ip']} {server['port']}")
-        print(f"   nc {server['ip']} {server['port']}")
-        print(f"   或者使用网络调试助手连接 TCP {server['ip']}:{server['port']}")
+    with recv_lock:
+        total = recv_count
+    print(f"\n=== 测试结束，共收到 {total} 个回复包 ===")
+    return 0
 
-# 主程序
+
 if __name__ == "__main__":
-    print("COM2TCP服务器搜索工具 (改进版)")
-    print("=" * 40)
-    
-    try:
-        servers = discover_servers()
-        print_servers(servers)
-        create_connection_command(servers)
-    except Exception as e:
-        print(f"程序执行出错: {e}")
-    
-    # 无论结果如何，延迟5秒退出
-    print("\n程序将在5秒后退出...")
-    time.sleep(5)
+    sys.exit(main())

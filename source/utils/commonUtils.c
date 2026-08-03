@@ -37,6 +37,7 @@
 #include <stdlib.h>
 #include <arpa/inet.h>
 #include <ctype.h>
+#include <sys/utsname.h>
 #endif
 
 /*================== 本地变量    ========================================*/
@@ -186,85 +187,173 @@ char *getCurrentTimeStringSec(void)
     return timeStr;
 }
 
-void printBuildInfo(void) 
-{ 
-    uint8_t ipCount;
-    char localIPs[25][20];  
-    memset(localIPs, 0, sizeof localIPs); 
-    GetAllLocalIPs(localIPs, &ipCount, 25);
-    
-    printf("========================================\n");
-    printf("  Program    : %s\n", "串口转TCP服务端");
-#ifndef CLOSE_EXCEPTION_MONITOR
-    printf("  Version    : %s  Debug\n", VERSIONS);
+/*
+ * 打印并返回构建信息。
+ * 返回指向静态缓冲区的指针（不要 free，不要长期保存，非线程安全）。
+ */
+const char *printBuildInfo(bool print)
+{
+    uint8_t ipCount = 0;
+    char localIPs[25][INET6_ADDRSTRLEN];
+    memset(localIPs, 0, sizeof localIPs);
+    getAllLocalIPs(localIPs, &ipCount, 25, false);
+
+    char getVersions[196];
+    memset(getVersions, 0, sizeof getVersions);
+#ifdef _WIN32
+    char getSystemVersions[20];
+    memset(getSystemVersions, 0, sizeof getSystemVersions);
+    getWindowsVersionSimple(getSystemVersions);
+    snprintf(getVersions, sizeof getVersions, "Windows %s", getSystemVersions);
 #else
-    printf("  Version    : %s  Release\n", VERSIONS);
+    struct utsname systemInfo;
+    if (uname(&systemInfo) != 0)
+        snprintf(getVersions, sizeof getVersions, "Linux Null Versions");
+    else
+        snprintf(getVersions, sizeof getVersions, "%s %s %s",
+                 systemInfo.sysname, systemInfo.machine, systemInfo.release);
 #endif
 
-    printf("  Build Date : %s %s\n", __DATE__, __TIME__);
-#ifdef __GNUC__
-    printf("  Compiler   : GCC %d.%d.%d\n", __GNUC__, __GNUC_MINOR__, __GNUC_PATCHLEVEL__);
-#endif
-    
-#ifdef _WIN32
-    char getversions[5] = "NULL";
-    getWindowsVersionSimple(getversions);
-    printf("  Platform   : Windows %s\n", getversions);
+    time_t currentTimeSec = getCurrentTimeSec();
+    uint16_t day = currentTimeSec / 86400;
+    uint8_t hour = currentTimeSec / 3600 % 24;
+    uint8_t minute  = currentTimeSec / 60 % 60;
+    uint8_t sec  = currentTimeSec % 60; 
+
+    /* 静态缓冲区，函数返回后依然有效，但下次调用会被覆盖 */
+    static char buf[2048];
+    memset(buf, 0, sizeof buf);
+    size_t used = 0;
+    int n;
+
+#define APPEND(...)                                                      \
+    do {                                                                 \
+        if (used < sizeof buf) {                                         \
+            n = snprintf(buf + used, sizeof buf - used, __VA_ARGS__);    \
+            if (n > 0) used += (size_t)n;                                \
+            if (used >= sizeof buf) used = sizeof buf - 1;               \
+        }                                                                \
+    } while (0)
+
+    APPEND("========================================\n");
+    APPEND("  Program    : 串口转TCP服务端 \n");
+#ifndef CLOSE_EXCEPTION_MONITOR
+    APPEND("  Version    : %s  Debug\n", VERSIONS);
 #else
-    printf("  Platform   : Linux\n");
+    APPEND("  Version    : %s  Release\n", VERSIONS);
 #endif
-    printf("  UUID       : %s\n", GetSystemUniqueIdentifier()); 
-    printf("  host Name  : %s\n", getComputerFullName());
-    for (uint8_t i = 0; i < ipCount; i++) 
-        printf("  IP addr  %d : %s\n", i+1, localIPs[i]); 
-    printf("========================================\n\n");
+    APPEND("  Build Date : %s %s\n", getBuildDate(), __TIME__);
+#ifdef __GNUC__
+    APPEND("  Compiler   : GCC %d.%d.%d\n", __GNUC__, __GNUC_MINOR__, __GNUC_PATCHLEVEL__);
+#endif
+    APPEND("  Platform   : %s\n", getVersions);
+    APPEND("  UUID       : %s\n", GetSystemUniqueIdentifier());
+    APPEND("  host Name  : %s\n", getComputerFullName());
+    APPEND("  Client     : %d/%d\n", getClientNum(), getMaxClient());
+    APPEND("  Run Time   : %d Day %02d:%02d:%02d\n", day, hour, minute, sec);
+    for (uint8_t i = 0; i < ipCount; i++)
+        APPEND("  IP Addr %-3d: %s\n", i + 1, localIPs[i]);
+    APPEND("========================================\n\n");
+
+#undef APPEND
+
+    buf[used] = '\0';
+
+    if(print)
+      printf("%s",buf);
+      
+    return buf; // 返回静态缓冲区
 }
 
-// 获取所有本地IP地址
-void GetAllLocalIPs(char ips[][20], uint8_t *count, uint8_t num)
+
+// 获取本机所有IP地址 - 支持IPv6
+void getAllLocalIPs(char localIPs[][INET6_ADDRSTRLEN], uint8_t *ipCount, uint8_t maxIPs, bool includeIPv6)
 {
-    if( count == NULL )
-      return;
-
-    *count = 0;
-
+    *ipCount = 0;
+    
 #ifdef _WIN32
+    // Windows 使用 GetAdaptersAddresses
+    // 这里简化处理，使用 getaddrinfo 方式
     char hostname[256];
-    if (gethostname(hostname, sizeof hostname) == SOCKET_ERROR)
+    if (gethostname(hostname, sizeof(hostname)) != 0) {
         return;
-
-    struct hostent* hostinfo = gethostbyname(hostname);
-    if (hostinfo == NULL) 
-        return;
-    
-    struct in_addr addr;
-    for (uint8_t i = 0; hostinfo->h_addr_list[i] != NULL && *count < num; i++) {
-      memcpy(&addr, hostinfo->h_addr_list[i], sizeof(struct in_addr));
-      if (strcmp(inet_ntoa(addr), "127.0.0.1") == 0) 
-        continue;
-      strncpy(ips[*count], inet_ntoa(addr), 16);
-      (*count)++;
     }
-#else
-    struct ifaddrs *ifaddr, *ifa;
     
-    if (getifaddrs(&ifaddr) == -1) 
+    struct addrinfo hints, *result = NULL;
+    memset(&hints, 0, sizeof hints);
+    hints.ai_family = includeIPv6 ? AF_UNSPEC : AF_INET;
+    hints.ai_socktype = SOCK_STREAM;
+    
+    if (getaddrinfo(hostname, NULL, &hints, &result) != 0) {
         return;
+    }
     
-    for (ifa = ifaddr; ifa != NULL && *count < num; ifa = ifa->ifa_next) {
-        if (ifa->ifa_addr == NULL) continue;
+    for (struct addrinfo* ptr = result; ptr && *ipCount < maxIPs; ptr = ptr->ai_next) {
+        void* addr = NULL;
+        int family = ptr->ai_family;
         
-        if (ifa->ifa_addr->sa_family == AF_INET) { // IPv4
-            struct sockaddr_in *sa = (struct sockaddr_in *)ifa->ifa_addr;
-            char *ip = inet_ntoa(sa->sin_addr);
-            
-            if (strcmp(ip, "127.0.0.1") != 0) {
-                strncpy(ips[*count], ip, 16);
-                (*count)++;
-            }
+        if (family == AF_INET) {
+            struct sockaddr_in* ipv4 = (struct sockaddr_in*)ptr->ai_addr;
+            addr = &(ipv4->sin_addr);
+        } else if (family == AF_INET6 && includeIPv6) {
+            struct sockaddr_in6* ipv6 = (struct sockaddr_in6*)ptr->ai_addr;
+            addr = &(ipv6->sin6_addr);
+        } else {
+            continue;
+        }
+        
+        if (addr) {
+            inet_ntop(family, addr, localIPs[*ipCount], INET6_ADDRSTRLEN);
+            (*ipCount)++;
         }
     }
+    freeaddrinfo(result);
     
+#else
+    // Linux 使用 getifaddrs
+    struct ifaddrs *ifaddr, *ifa;
+    if (getifaddrs(&ifaddr) == -1) {
+        return;
+    }
+    
+    for (ifa = ifaddr; ifa && *ipCount < maxIPs; ifa = ifa->ifa_next) {
+        if (ifa->ifa_addr == NULL)
+            continue;
+        
+        int family = ifa->ifa_addr->sa_family;
+        void* addr = NULL;
+        
+        if (family == AF_INET) {
+            struct sockaddr_in* ipv4 = (struct sockaddr_in*)ifa->ifa_addr;
+            addr = &(ipv4->sin_addr);
+        } else if (family == AF_INET6 && includeIPv6) {
+            struct sockaddr_in6* ipv6 = (struct sockaddr_in6*)ifa->ifa_addr;
+            addr = &(ipv6->sin6_addr);
+        } else {
+            continue;
+        }
+        
+        // 跳过回环地址
+        if (family == AF_INET) {
+            uint32_t ip = ntohl(*(uint32_t*)addr);
+            if ((ip & 0xFF000000) == 0x7F000000)
+                continue;
+        } else if (family == AF_INET6) {
+            // 跳过 IPv6 回环 ::1
+            uint8_t* bytes = (uint8_t*)addr;
+            bool isLoopback = true;
+            for (int i = 0; i < 15; i++) {
+                if (bytes[i] != 0) { isLoopback = false; break; }
+            }
+            if (isLoopback && bytes[15] == 1)
+                continue;
+        }
+        
+        if (addr) {
+            inet_ntop(family, addr, localIPs[*ipCount], INET6_ADDRSTRLEN);
+            (*ipCount)++;
+        }
+    }
     freeifaddrs(ifaddr);
 #endif
 }
@@ -418,8 +507,9 @@ bool EnableVTMode(void) {
 // 这里是进行程序异常退出捕获测试的位置，用于程序自我错误定位测试
 void ErrorCodeTest(void)
 {
-#if !defined(CLOSE_EXCEPTION_MONITOR) && 0
   uint32_t TimeMs = getRuningTimeMs() / 1000; 
+#if !defined(CLOSE_EXCEPTION_MONITOR) && 0
+  
   printf("开始错误代码测试，当前时间戳：%d sec\n", TimeMs);
   //Sleep(2000);
   if( TimeMs % 2 == 0 ) {
@@ -429,7 +519,9 @@ void ErrorCodeTest(void)
   else {
     for( int8_t i = -2; i < 2; i++)
       printf("开始异常除法运算 8 / %d = %d\n", i, 8/i);
-  } 
+  }
+#else
+  printf("Error Test Code Not Open: %d sec  \r", TimeMs);
 #endif
 }
 
@@ -540,7 +632,7 @@ uint8_t getWindowsVersionSimple(char *retStr)
 
 
 // systemd 设置的环境变量
-bool is_running_as_service() 
+bool isRunningAsService() 
 {
   bool isInit = false;
   static bool ret;
@@ -651,4 +743,40 @@ bool isValidHexRange(const char *str)
   }
     
   return isRange;
+}
+
+// 获取编译日期
+const char* getBuildDate(void)
+{
+	// 静态数组：存储转换后的日期字符串 "yyyy-mm-dd"
+	static char dateBuffer[11];  // 10个字符 + '\0'
+	// 静态指针：用于判断是否已初始化
+	static const char* retBuildDate = NULL;
+
+	// 如果已经初始化过，直接返回指针
+	if (retBuildDate != NULL)
+		return retBuildDate;
+
+	// --- 首次调用：进行转换 ---
+	// 复制 __DATE__ 到可修改的缓冲区
+	char date_str[] = __DATE__;
+
+	// 分割字符串："Mmm dd yyyy"
+	char *month_str = strtok(date_str, " ");
+	char *day_str = strtok(NULL, " ");
+	char *year_str = strtok(NULL, " ");
+
+	// 月份缩写转数字
+	const char *months[] = {"Jan", "Feb", "Mar", "Apr", "May", "Jun",
+							"Jul", "Aug", "Sep", "Oct", "Nov", "Dec"};
+	int month = 0;
+	for (int i = 0; i < 12; i++)
+		if (strcmp(month_str, months[i]) == 0) {
+			month = i + 1;
+			break;
+		}
+
+	// 格式化写入静态缓冲区
+	snprintf(dateBuffer, sizeof dateBuffer, "%s-%02d-%02d", year_str, month, atoi(day_str));
+	return retBuildDate = dateBuffer;// 将指针指向缓冲区，标记为已初始化
 }

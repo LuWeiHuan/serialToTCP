@@ -28,24 +28,22 @@
 #endif
 
 /*================== 平台特定头文件包含 =================================*/
-#ifdef _WIN32
-  /* Windows 头文件 */
+#ifdef _WIN32 /* Windows 头文件 */
   #include <windows.h>
   #include <psapi.h>
   #include <dbghelp.h>
   #include <io.h>
-  //#include <signal.h>  // 添加信号处理支持
   #define access _access
   #define F_OK 0
-#else
-  /* Linux 头文件 */
+
+#else/* Linux 头文件 */
   #include <stdint.h>
   #include <errno.h>
   #include <signal.h>
   #include <libgen.h>
   #include <unistd.h>
   #include <sys/types.h>
-  #include <sys/syscall.h>  // 添加这一行
+  #include <sys/syscall.h>
    
 #if ENABLE_EXCEPTION_MONITOR
   #include <execinfo.h>
@@ -62,7 +60,10 @@
 
 #ifndef _WIN32
 #define MAX_PATH  4096
-#endif 
+#endif
+
+
+
 
 /*================== 全局共享变量 =====================================*/
 
@@ -107,7 +108,7 @@ static const char *getExeName(void);
 
   #if ENABLE_EXCEPTION_MONITOR 
     static void RestoreSignalHandlers(void);
-    static const char* GetSignalDescription(int sig);
+    static const char* getSignalDescription(int sig, bool);
     static void GenerateLinuxStackTrace(char* buffer, size_t bufferSize);
     static void ResolveAddressToSource(void *address, char *output, size_t output_size);
     static bool CheckAddr2LineAvailable(void);
@@ -124,7 +125,7 @@ static const char *getExeName(void);
 static void outLogToFile(const char *log)
 {
   printf("\n%s\n", log);
-  logPrintFull(LOG_LEVEL_ERROR, "\n%s", log);
+  logPrintUnLock(LOG_LEVEL_ERROR, "\n%s", log);
 }
 
 static const char *getLocalTime(void)
@@ -177,6 +178,8 @@ static void LogVoluntaryExit(const char* reason)
     pid_t threadId = gettid();
     #endif
 #endif
+
+
     
     char exitInfo[1024];
     snprintf(exitInfo, sizeof(exitInfo),
@@ -614,9 +617,55 @@ static void ResolveAddressToSource(void *address, char *output, size_t output_si
     }
 }
 
-static const char* GetSignalDescription(int sig)
+static const char * getSignalInfo(int sig)
 {
     switch(sig) {
+        case SIGKILL:   return  "强制终止，不可捕获，必退出";
+        case SIGSTOP:   return  "停止执行，不可捕获，必停止";
+        case SIGSEGV:   return  "段错误 (无效内存访问)，默认终止，可捕获/可忽略";
+        case SIGFPE:    return  "算术异常 (除零/溢出)，默认终止，可捕获/可忽略";
+        case SIGILL:    return  "非法指令，默认终止，可捕获/可忽略";
+        case SIGBUS:    return  "总线错误，默认终止，可捕获/可忽略";
+        case SIGABRT:   return  "程序中止，默认终止，可捕获/可忽略";
+        case SIGTERM:   return  "终止信号，默认终止，可捕获/可忽略";
+        case SIGINT:    return  "中断信号，默认终止，可捕获/可忽略";
+        case SIGQUIT:   return  "退出信号，默认终止，可捕获/可忽略";
+        case SIGHUP:    return  "挂起信号，默认终止，可捕获/可忽略";
+        case SIGPIPE:   return  "管道错误，默认终止，可捕获/可忽略";
+        case SIGALRM:   return  "定时器信号，默认终止，可捕获/可忽略";
+        case SIGUSR1:   return  "用户自定义信号 1，默认终止，可捕获/可忽略";
+        case SIGUSR2:   return  "用户自定义信号 2，默认终止，可捕获/可忽略";
+        case SIGSYS:    return  "非法系统调用，默认终止，可捕获/可忽略";
+        case SIGTRAP:   return  "跟踪/断点陷阱，默认终止，可捕获/可忽略";
+        case SIGXCPU:   return  "超出 CPU 时间限制，默认终止，可捕获/可忽略";
+        case SIGXFSZ:   return  "超出文件大小限制，默认终止，可捕获/可忽略";
+#ifdef SIGSTKFLT
+        case SIGSTKFLT: return  "协处理器堆栈错误，默认终止，可捕获/可忽略";
+#endif
+        case SIGPOLL:   return  "可轮询事件 (同 SIGIO)，默认终止，可捕获/可忽略";
+        case SIGPROF:   return  "CPU 性能分析超时，默认终止，可捕获/可忽略";
+        case SIGVTALRM: return  "虚拟定时器超时，默认终止，可捕获/可忽略";
+        case SIGPWR:    return  "电源故障，默认终止，可捕获/可忽略";
+
+        case SIGCHLD:   return  "子进程状态变化，默认忽略，可捕获";
+        case SIGURG:    return  "套接字紧急数据，默认忽略，可捕获";
+        case SIGWINCH:  return  "窗口大小改变，默认忽略，可捕获";
+        case SIGCONT:   return  "继续执行，默认忽略，可捕获";
+
+        case SIGTSTP:   return  "终端停止信号，默认停止，可捕获";
+        case SIGTTIN:   return  "后台进程读终端，默认停止，可捕获";
+        case SIGTTOU:   return  "后台进程写终端，默认停止，可捕获";
+
+        default:        return  "未知信号，未知";
+    }
+}
+
+static const char* getSignalDescription(int sig, bool containInfo)
+{
+    if (containInfo)
+        return getSignalInfo(sig); 
+    switch(sig) {
+        // --- 原有部分 ---
         case SIGSEGV: return "段错误 (无效内存访问)";
         case SIGFPE:  return "算术异常 (除零/溢出)";
         case SIGILL:  return "非法指令";
@@ -627,7 +676,34 @@ static const char* GetSignalDescription(int sig)
         case SIGQUIT: return "退出信号";
         case SIGHUP:  return "挂起信号";
         case SIGALRM: return "定时器信号";
-        default:      return "未知信号";
+        
+        case SIGPIPE:   return "管道错误";
+        case SIGKILL:   return "强制终止 (不可捕获/忽略)";
+        case SIGTRAP:   return "跟踪/断点陷阱";
+        case SIGUSR1:   return "用户自定义信号 1";
+        case SIGUSR2:   return "用户自定义信号 2";
+        case SIGCHLD:   return "子进程停止或终止";
+        case SIGCONT:   return "继续执行 (若已停止)";
+        case SIGSTOP:   return "停止执行 (不可捕获/忽略)";
+        case SIGTSTP:   return "终端停止信号";
+        case SIGTTIN:   return "后台进程读终端";
+        case SIGTTOU:   return "后台进程写终端";
+        case SIGURG:    return "套接字紧急数据";
+        case SIGXCPU:   return "超出 CPU 时间限制";
+        case SIGXFSZ:   return "超出文件大小限制";
+        case SIGVTALRM: return "虚拟定时器超时";
+        case SIGPROF:   return "CPU 性能分析定时器超时";
+        case SIGWINCH:  return "窗口大小改变";
+        case SIGIO:     return "I/O 就绪 (同 SIGPOLL)";
+        case SIGPWR:    return "电源故障 (System V)";
+        case SIGSYS:    return "非法系统调用";
+        case SIGSTKFLT: return "协处理器堆栈错误 (x86 特有)";
+
+        // --- 常见别名 ---
+        // case SIGPOLL:   return "可轮询事件 (同 SIGIO)";
+        // case SIGIOT:    return "IOT 陷阱 (同 SIGABRT)";
+
+        default:        return "未知信号";
     }
 }
 
@@ -684,6 +760,14 @@ static const char* GetArchitectureInfo(void)
 
 static void SignalHandler(int sig, siginfo_t *info, void *context)
 {
+  /* SIGPIPE 特殊处理：记录后直接返回，不退出 */
+  if (sig == SIGPIPE) {
+    // 注意：printf / logPrintUnLock 不是 async-signal-safe，
+    // 严格来说不应在信号处理函数里调用，仅调试时可用
+    printf("检测到 SIGPIPE，管道/连接已断开，已忽略\n");
+    return;   // ← 关键：直接返回，不恢复默认，不 raise
+  }
+
     ucontext_t *ucontext = (ucontext_t *)context;
     // 根据不同架构获取指令指针
 #if defined(__x86_64__) // x86_64 架构
@@ -740,7 +824,7 @@ static void SignalHandler(int sig, siginfo_t *info, void *context)
               "发送者ID: %d\n"
               "堆栈跟踪:\n%s\n",
               timeStr, exeName, processId, threadId,
-              sig, GetSignalDescription(sig),
+              sig, getSignalDescription(sig, false),
               info->si_addr, instruction_ptr,
               GetArchitectureInfo(),
               info->si_code, info->si_pid, stackTrace);
@@ -752,36 +836,32 @@ static void SignalHandler(int sig, siginfo_t *info, void *context)
     raise(sig);
 }
 
+static int signals[] = {
+    SIGSEGV, // 段错误
+    SIGFPE,  // 算术异常
+    SIGILL,  // 非法指令
+    SIGBUS,  // 总线错误
+    SIGABRT, // 中止信号
+    SIGTERM, // 终止信号
+    SIGINT,  // 中断信号 (CTRL+C) - 新增
+    SIGPIPE, // 管道错误
+};
+
 static void SetupSignalHandlers(void)
 {
     struct sigaction sa;
     sa.sa_sigaction = SignalHandler;
     sigemptyset(&sa.sa_mask);
-    sa.sa_flags = SA_SIGINFO | SA_RESETHAND;
-    
-    // 注册需要处理的信号
-    int signals[] = {
-        SIGSEGV, // 段错误
-        SIGFPE,  // 算术异常
-        SIGILL,  // 非法指令
-        SIGBUS,  // 总线错误
-        SIGABRT, // 中止信号
-        SIGTERM, // 终止信号
-        SIGINT,  // 中断信号 (CTRL+C) - 新增
-    };
-    
-    for (size_t i = 0; i < sizeof(signals)/sizeof(signals[0]); i++) {
-        if (sigaction(signals[i], &sa, &g_OldActions[signals[i]]) == -1) {
+    sa.sa_flags = SA_SIGINFO | SA_RESETHAND; 
+    for (size_t i = 0; i < sizeof(signals)/sizeof(signals[0]); i++) 
+        if (sigaction(signals[i], &sa, &g_OldActions[signals[i]]) == -1) 
             printf("Failed to set handler for signal %d\n", signals[i]);
-        }
-    }
 }
 
 static void RestoreSignalHandlers(void)
-{
-    int signals[] = {SIGSEGV, SIGFPE, SIGILL, SIGBUS, SIGABRT, SIGTERM, SIGINT};
-    for (size_t i = 0; i < sizeof(signals)/sizeof(signals[0]); i++) 
-        sigaction(signals[i], &g_OldActions[signals[i]], NULL);
+{ 
+  for (size_t i = 0; i < sizeof(signals)/sizeof(signals[0]); i++) 
+      sigaction(signals[i], &g_OldActions[signals[i]], NULL);
 }
 
 #endif  // _WIN32
@@ -871,9 +951,8 @@ static void SetupSignalHandlers(void)
     
     int signals[] = {SIGSEGV, SIGFPE, SIGILL, SIGBUS, SIGABRT, SIGINT};
     
-    for (size_t i = 0; i < sizeof(signals)/sizeof(signals[0]); i++) {
+    for (size_t i = 0; i < sizeof(signals)/sizeof(signals[0]); i++) 
         sigaction(signals[i], &sa, NULL);
-    }
 }
 
 #endif  // _WIN32
@@ -887,7 +966,7 @@ extern void __asan_set_error_report_callback(void (*callback)(const char*));
 // ASAN 错误报告回调函数
 static void ASANReportCallback(const char* report)
 {
-    FILE* logFile = fopen("process_exceptions.log", "a");
+    FILE* logFile = fopen("process_exceptions.log，a");
     if (logFile) {
         fprintf(logFile, "=== ASAN Report ===\n");
         fprintf(logFile, "%s\n", report);
@@ -930,6 +1009,10 @@ void ProcessExceptionMonitorInit(void)
 #else           // Unix/Linux 系统
     SetupSignalHandlers();
 #endif // _WIN32
+
+#ifdef __linux
+  signal(SIGPIPE, SIG_IGN);
+#endif
 }
 
 /******************************************************************************
